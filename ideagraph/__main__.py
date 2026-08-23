@@ -21,6 +21,7 @@ import sys
 from .brain import Brain
 from .brain_engine import BrainEngine
 from .embedder import get_embedder
+from .retrieval import retrieve
 
 
 def make_engine() -> BrainEngine:
@@ -109,11 +110,14 @@ def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     if not args:
         print("Nutzung: ig search <begriff>")
         sys.exit(1)
-    q = " ".join(args).lower()
-    hits = [n for n in engine.brain.read_nodes() if q in n.text.lower()]
-    for n in hits:
-        print(f"{n.id}  {_short(n.text)}")
-    print(f"\n{len(hits)} Treffer")
+    q = " ".join(args)
+    id2node = {n.id: n for n in engine.brain.read_nodes()}
+    hits = retrieve(engine, q, k=5)
+    for nid, score in hits:
+        n = id2node.get(nid)
+        if n is not None:
+            print(f"{nid}  {score:.3f}  {_short(n.text)}")
+    print(f"\n{len(hits)} Treffer (hybrid dense+BM25)")
 
 
 COMMANDS = {

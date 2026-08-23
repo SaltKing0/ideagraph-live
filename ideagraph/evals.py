@@ -24,6 +24,7 @@ from typing import Callable
 
 from .brain import Brain, Node
 from .brain_engine import BrainEngine
+from .retrieval import retrieve
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,15 @@ class EdgeExpectation:
 
 
 @dataclass
+class RetrievalExpectation:
+    """Eine Retrieval-Erwartung (Hybrid dense+BM25): Query muss passende Nodes liefern."""
+    query: str
+    top: int = 5
+    includes: list[str] = field(default_factory=list)   # Node-Texte, die in den top-`top` vorkommen müssen
+    excludes: list[str] = field(default_factory=list)   # Node-Texte, die NICHT vorkommen dürfen
+
+
+@dataclass
 class EvalOracle:
     """Soll-Zustand des Brains nach der Ingest-Sequenz."""
     node_count: int | None = None
@@ -55,6 +65,7 @@ class EvalOracle:
     duplicate_merged: list[tuple[str, list[str]]] = field(default_factory=list)
     edges: list[EdgeExpectation] = field(default_factory=list)
     no_edge: list[EdgeExpectation] = field(default_factory=list)
+    retrieval: list[RetrievalExpectation] = field(default_factory=list)
 
 
 @dataclass
@@ -169,6 +180,22 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
     return failures
 
 
+def verify_retrieval(engine: BrainEngine, expectations: list[RetrievalExpectation]) -> list[str]:
+    """Prüft Hybrid-Retrieval: Query muss erwartete Nodes in den top-k liefern (bzw. ausschließen)."""
+    failures: list[str] = []
+    id2node = {n.id: n for n in engine.brain.read_nodes()}
+    for exp in expectations:
+        hits = retrieve(engine, exp.query, k=exp.top)
+        hit_texts = [_norm(id2node[nid].text) for nid, _ in hits if nid in id2node]
+        for want in exp.includes:
+            if not any(_norm(want) in t or t.startswith(_norm(want)) for t in hit_texts):
+                failures.append(f"retrieval '{exp.query}' should hit {want!r} in top-{exp.top}")
+        for avoid in exp.excludes:
+            if any(_norm(avoid) in t or t.startswith(_norm(avoid)) for t in hit_texts):
+                failures.append(f"retrieval '{exp.query}' should NOT hit {avoid!r} in top-{exp.top}")
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # Runner (pass^k)
 # ---------------------------------------------------------------------------
@@ -185,6 +212,7 @@ def run_eval(task: EvalTask, engine_factory: EngineFactory, k: int = 1) -> EvalR
         for action in task.actions:
             action(engine)
         failures = verify_end_state(engine.brain, task.oracle)
+        failures += verify_retrieval(engine, task.oracle.retrieval)
         if failures:
             return EvalResult(task.id, task.name, False, failures, run)
     return EvalResult(task.id, task.name, True, [], k)
@@ -294,6 +322,23 @@ GOLDEN_SET: list[EvalTask] = [
         oracle=EvalOracle(
             node_count=2,
             no_edge=[EdgeExpectation("katze hund tier futter", "quantenmechanik wellenfunktion schroedinger", "*")],
+        ),
+    ),
+    EvalTask(
+        id="retrieval-hybrid",
+        name="V2: Hybrid-Retrieval findet passende Node, nicht unverwandte",
+        ingests=[
+            ("katze hund tier futter", {}),
+            ("quantenmechanik wellenfunktion schroedinger", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            retrieval=[RetrievalExpectation(
+                query="katze futter",
+                top=1,
+                includes=["katze hund tier futter"],
+                excludes=["quantenmechanik wellenfunktion schroedinger"],
+            )],
         ),
     ),
     EvalTask(

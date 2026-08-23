@@ -15,7 +15,9 @@ from ideagraph.embedder import HashEmbedder
 from ideagraph.evals import (
     EvalOracle,
     EdgeExpectation,
+    RetrievalExpectation,
     verify_end_state,
+    verify_retrieval,
     run_eval,
     GOLDEN_SET,
     ROADMAP_CASES,
@@ -70,6 +72,19 @@ def test_verify_detects_unexpected_edge(tmp_path):
     b.add_edge(Edge(source="a", target="b", kind="erweitert"))
     failures = verify_end_state(b, EvalOracle(no_edge=[EdgeExpectation("alpha", "beta", "*")]))
     assert any("unexpected edge" in f for f in failures)
+
+
+def test_verify_retrieval_detects_missing_hit(tmp_path):
+    b = _brain(tmp_path)
+    b.write_node(Node(id="a", text="katze hund tier futter"))
+    b.write_node(Node(id="b", text="quantenmechanik wellenfunktion schroedinger"))
+    engine = BrainEngine(b, HashEmbedder())
+    # Erwartung stimmt → keine Fehler
+    ok = verify_retrieval(engine, [RetrievalExpectation(query="katze futter", top=1, includes=["katze hund tier futter"], excludes=["quantenmechanik wellenfunktion schroedinger"])])
+    assert ok == []
+    # Erwartung stimmt nicht → Fehler
+    bad = verify_retrieval(engine, [RetrievalExpectation(query="katze futter", top=1, includes=["quantenmechanik wellenfunktion schroedinger"])])
+    assert any("should hit" in f for f in bad)
 
 
 def test_verify_wildcard_kind_matches_any_edge(tmp_path):
