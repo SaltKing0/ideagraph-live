@@ -71,7 +71,8 @@ class Node:
 class Edge:
     def __init__(self, source: str, target: str, kind: str,
                  pending: bool = True, id: str | None = None,
-                 valid_from: str | None = None, valid_to: str | None = None):
+                 valid_from: str | None = None, valid_to: str | None = None,
+                 confidence: float | None = None):
         self.source = source
         self.target = target
         self.kind = kind
@@ -81,11 +82,14 @@ class Edge:
         # von der Commit-Zeit (die liefert die Git-Historie gratis).
         self.valid_from = valid_from or _now_iso()
         self.valid_to = valid_to  # None = aktuell gültig; gesetzt = invalidiert
+        # V2#3: Confidence (Kosinus) der Auto-Vorschläge; None bei manuellen Links.
+        self.confidence = confidence
 
     def to_dict(self) -> dict:
         return {"id": self.id, "source": self.source, "target": self.target,
                 "kind": self.kind, "pending": self.pending,
-                "valid_from": self.valid_from, "valid_to": self.valid_to}
+                "valid_from": self.valid_from, "valid_to": self.valid_to,
+                "confidence": self.confidence}
 
 
 class Brain:
@@ -215,7 +219,8 @@ class Brain:
                 edges.append(Edge(d["source"], d["target"], d["kind"],
                                   d.get("pending", False), d["id"],
                                   valid_from=d.get("valid_from"),
-                                  valid_to=d.get("valid_to")))
+                                  valid_to=d.get("valid_to"),
+                                  confidence=d.get("confidence")))
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:

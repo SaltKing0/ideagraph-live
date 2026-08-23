@@ -36,10 +36,13 @@ class EdgeExpectation:
 
     kind="*" bedeutet: irgendeine aktive Kante zwischen den beiden Nodes genügt
     (robust gegen exakte Kind-Namen, wenn es nur um "verbunden sein" geht).
+    pending/min_confidence sind optional und prüfen das Confidence-Band (V2#3).
     """
     source: str
     target: str
     kind: str
+    pending: bool | None = None          # falls gesetzt: Edge muss diesen pending-Wert haben
+    min_confidence: float | None = None  # falls gesetzt: Edge.confidence >= dieser Wert
 
 
 @dataclass
@@ -82,10 +85,15 @@ def _norm(text: str) -> str:
 
 
 def find_node_by_text(brain: Brain, text: str) -> Node | None:
-    """Node, dessen Inhalt (normalisiert) exakt == text ist, sonst None."""
+    """Node, dessen Inhalt (normalisiert) mit `text` beginnt, sonst None.
+
+    Starts-with statt exakt: Memory Evolution hängt auto-akzeptierten
+    "ähnlich"-Kanten einen "[evolved …]" Querverweis ans Ende — der ursprüngliche
+    Text bleibt Präfix, und die Zuordnung soll dennoch greifen.
+    """
     target = _norm(text)
     for n in brain.read_nodes():
-        if _norm(n.text) == target:
+        if _norm(n.text).startswith(target):
             return n
     return None
 
@@ -129,10 +137,25 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
             if e.valid_to is None
             and ((e.source == s.id and e.target == t.id) or (e.source == t.id and e.target == s.id))
         ]
-        if not any(e.kind == eexp.kind for e in active) and not (
-            eexp.kind == "*" and active
-        ):
+        if eexp.kind != "*":
+            kind_match = [e for e in active if e.kind == eexp.kind]
+        else:
+            kind_match = active
+        if not kind_match:
             failures.append(f"edge missing: {eexp.source!r} --[{eexp.kind}]--> {eexp.target!r}")
+            continue
+        if eexp.pending is not None and not any(e.pending == eexp.pending for e in kind_match):
+            failures.append(
+                f"edge {eexp.source!r}->{eexp.target!r}: expected pending={eexp.pending}, "
+                f"got {[e.pending for e in kind_match]}"
+            )
+        if eexp.min_confidence is not None and not any(
+            (e.confidence or 0.0) >= eexp.min_confidence for e in kind_match
+        ):
+            failures.append(
+                f"edge {eexp.source!r}->{eexp.target!r}: expected confidence>={eexp.min_confidence}, "
+                f"got {[e.confidence for e in kind_match]}"
+            )
 
     for eexp in oracle.no_edge:
         s = find_node_by_text(brain, eexp.source)
@@ -235,14 +258,30 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="edge-similar",
-        name="ähnliche Nodes werden über eine Kante verbunden",
+        name="ähnliche Nodes werden über eine Kante verbunden (pending <0.95)",
         ingests=[
             ("katze hund tier futter", {}),
             ("katze hund tier spiel", {}),
         ],
         oracle=EvalOracle(
             node_count=2,
-            edges=[EdgeExpectation("katze hund tier futter", "katze hund tier spiel", "*")],
+            edges=[EdgeExpectation("katze hund tier futter", "katze hund tier spiel", "*", pending=True)],
+        ),
+    ),
+    EvalTask(
+        id="conf-auto-accept",
+        name="V2: Confidence >=0.95 → Edge auto-akzeptiert (pending=False)",
+        ingests=[
+            ("x x x x x y y y y y z z z z z", {}),
+            ("x x x x x y y y y y z z z z w", {"allow_duplicates": True}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            edges=[EdgeExpectation(
+                "x x x x x y y y y y z z z z z",
+                "x x x x x y y y y y z z z z w",
+                "*", pending=False, min_confidence=0.95,
+            )],
         ),
     ),
     EvalTask(
@@ -286,18 +325,6 @@ GOLDEN_SET: list[EvalTask] = [
 # ---------------------------------------------------------------------------
 
 ROADMAP_CASES: list[EvalTask] = [
-    EvalTask(
-        id="roadmap-confidence-autoaccept",
-        name="V2: Confidence >=0.95 → Edge wird auto-akzeptiert (nicht pending)",
-        ingests=[
-            ("katze hund tier futter", {}),
-            ("katze hund tier futter spiel", {}),
-        ],
-        oracle=EvalOracle(
-            node_count=2,
-            edges=[EdgeExpectation("katze hund tier futter", "katze hund tier futter spiel", "*")],
-        ),
-    ),
     EvalTask(
         id="roadmap-contradiction",
         name="V2: widersprüchliche Aussagen → 'kontradiktorisch'-Edge auto-erkannt",

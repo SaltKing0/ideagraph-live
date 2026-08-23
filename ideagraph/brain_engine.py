@@ -11,7 +11,7 @@ import os
 from .brain import Brain, Node, Edge
 from .embedder import get_embedder
 from .similarity import cosine
-from .suggester import suggest
+from .suggester import suggest, is_auto_accept
 
 DEDUPE_THRESHOLD = 0.92
 AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
@@ -76,8 +76,11 @@ class BrainEngine:
         # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
         others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
         candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
+        # V2#3: pending nur, wenn weder das Confidence-Band (>=0.95) noch der
+        # Env-Override (IDEAGRAPH_AUTO_ACCEPT) die Edge auto-akzeptiert.
         edges = [Edge(source=s.source, target=s.target, kind=s.kind,
-                      pending=not auto_accept)
+                      pending=not (is_auto_accept(s.confidence) or auto_accept),
+                      confidence=s.confidence)
                  for s in suggest(node.id, vec, candidates)]
         existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
         new_edges = [e for e in edges if (e.source, e.target) not in existing_pairs]
@@ -88,11 +91,11 @@ class BrainEngine:
         cached[node.id] = vec
         self.brain.write_vectors(cached)
         # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (ähnlich,
-        # auto-akzeptiert) → verwandte Alt-Nodes mit Querverweis anreichern.
+        # auto-akzeptiert via Confidence-Band ODER Env) → verwandte Alt-Nodes
+        # mit Querverweis anreichern.
         evolved = 0
-        if auto_accept:
-            for e in new_edges:
-                if e.kind == "ähnlich":
+        for e in new_edges:
+            if not e.pending and e.kind == "ähnlich":
                     target_node = next((n for n in self.brain.read_nodes()
                                         if n.id == e.target), None)
                     if target_node is not None:

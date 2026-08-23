@@ -1,24 +1,27 @@
 """Edge-Vorschläge: aus den k nächsten Nachbarn werden getypte Vorschläge.
 
-Regeln (bewusst simpel, lernorientiert):
-- sim >= 0.75          → "ähnlich"
-- 0.45 <= sim < 0.75   → "erweitert" (thematisch verwandt)
-- darunter             → kein Vorschlag
+Regeln (V2#3 — Confidence-Bänder statt nur Schwellen):
+- sim >= 0.95            → "ähnlich", AUTO-ACCEPT (pending=False), confidence=sim
+- 0.75 <= sim < 0.95     → "ähnlich", pending
+- 0.45 <= sim < 0.75     → "erweitert", pending
+- sim < 0.45             → kein Vorschlag
+
+Jeder Vorschlag trägt einen confidence (die Kosinus-Ähnlichkeit). Der Aufrufer
+(BrainEngine) entscheidet anhand des Bands + Env-Override, ob pending bleibt.
 
 "same_as" wird nie automatisch vorgeschlagen — er entsteht manuell
 (CLI `link`, Cockpit) für Übersetzungs-/Alias-Paare.
-
-Liefert schlichte Suggestion-Objekte — der Aufrufer entscheidet,
-welche Edge-Klasse daraus wird (Store vs. Brain).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from .similarity import knn
 
 THRESHOLD_SIMILAR = 0.75
 THRESHOLD_EXTEND = 0.45
+AUTO_ACCEPT_CONFIDENCE = 0.95
 
 
 @dataclass
@@ -26,6 +29,7 @@ class Suggestion:
     source: str
     target: str
     kind: str
+    confidence: float = 0.0
 
 
 def suggest(source_id: str, query_vec: list[float],
@@ -42,8 +46,13 @@ def suggest(source_id: str, query_vec: list[float],
         else:
             continue
         seen.add(nid)
-        out.append(Suggestion(source=source_id, target=nid, kind=kind))
+        out.append(Suggestion(source=source_id, target=nid, kind=kind, confidence=sim))
     return out
+
+
+def is_auto_accept(confidence: float) -> bool:
+    """Confidence-Band: >=0.95 wird ohne HITL akzeptiert."""
+    return confidence >= AUTO_ACCEPT_CONFIDENCE
 
 
 # Rückwärtskompatibel für die JSONL-Engine (v0.0.1)
