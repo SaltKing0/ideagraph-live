@@ -1,56 +1,55 @@
 # Contributing to IdeaGraph Live Engine
 
-Danke, dass du mithelfen willst! Hier die wichtigsten Regeln, damit alles
-reibungslos läuft.
+Thanks for helping out! Here are the key rules to keep things running smoothly.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"   # Engine + Dev-Abhängigkeiten (pytest)
+.venv/bin/pip install -e ".[dev]"   # engine + dev dependencies (pytest)
 ```
 
 ## Tests
 
-Alle Tests laufen deterministisch mit dem HashEmbedder (kein Modell-Download):
+All tests run deterministically with the HashEmbedder (no model download):
 
 ```bash
 .venv/bin/python -m pytest tests/ -q
 ```
 
-Vor einem PR: Die volle Suite muss grün sein (`82 passed`). Neue Features
-brauchen Tests — insbesondere die Golden-Set-Evals (`ideagraph/evals.py`)
-und die Intent-/Hygiene-Integrationen.
+Before a PR: the full suite must be green (`82 passed`). New features need
+tests — in particular the golden-set evals (`ideagraph/evals.py`) and the
+intent/hygiene integrations.
 
-## Code-Stil
+## Code style
 
-- **Python 3.10+** (nutzt `str | None`-Typ-Hints). Type-Hints sind Pflicht.
-- **Keine externen Dependencies** außer den in `pyproject.toml` gelisteten.
-- **Deterministisch & stdlib-freundlich:** Heuristiken (z.B. Intent-Erkennung)
-  sollen ohne NLP-Dependency auskommen und testbar sein.
-- Kommentare auf Deutsch (konsistent mit dem Code).
+- **Python 3.10+** (uses `str | None` type hints). Type hints are required.
+- **No external dependencies** beyond those listed in `pyproject.toml`.
+- **Deterministic & stdlib-friendly:** heuristics (e.g. intent detection)
+  should work without an NLP dependency and stay testable.
+- Comments are in German (consistent with the existing code).
 
-## Architecture-Hinweise
+## Architecture notes
 
-- `ideagraph/` = Engine-Logik, `docs/` = Frontend (d3), `tests/` = pytest.
-- **Brain vs. Engine sind getrennt:** Die Engine ist generisch und zeigt per
-  `IG_BRAIN_PATH` auf den Nutzer-Brain. Kein hardcoded persönlicher Remote
-  oder private Daten im Repo.
-- Env-Variablen dokumentieren: neue Optionen in `README.md` (Env-Tabelle) und
-  in `brain_engine.py` als Konstante + `*_from_env()`-Helfer ergänzen.
+- `ideagraph/` = engine logic, `docs/` = frontend (d3), `tests/` = pytest.
+- **Brain and engine are separate:** the engine is generic and points to the
+  user's brain via `IG_BRAIN_PATH`. No hardcoded personal remote or private
+  data in the repo.
+- Document env vars: add new options to the `README.md` (env table) and to
+  `brain_engine.py` as a constant + `*_from_env()` helper.
 
 ## Release
 
-Packaging via `pyproject.toml`, Console-Script `ig`. Version in
-`pyproject.toml` + Git-Tag gemeinsam erhöhen. CI (GitHub Actions) läuft auf
-Push/PR und muss grün sein.
+Packaging via `pyproject.toml`, console script `ig`. Bump the version in
+`pyproject.toml` and the git tag together. CI (GitHub Actions) runs on
+push/PR and must be green.
 
 ## Issues / PRs
 
-- Bug-Report: Schritt zur Reproduktion + erwartetes vs. tatsächliches Verhalten.
-- Feature-Idee: erst als Issue diskutieren, dann PR.
-- PR: kleiner, fokussierter Scope; Tests inklusive; CI grün.
+- Bug report: reproduction steps + expected vs. actual behavior.
+- Feature idea: open an issue to discuss first, then a PR.
+- PR: small, focused scope; include tests; CI green.
 
-## Lizenz
+## License
 
-MIT — siehe `LICENSE`.
+MIT — see `LICENSE`.

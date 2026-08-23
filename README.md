@@ -1,135 +1,136 @@
 # IdeaGraph Live Engine 🕸️
 
-**Selbstwachsender Ideen-Graph: Ingest → Embed → Suggest → Visualize**
+**Self-growing idea graph: Ingest → Embed → Suggest → Visualize**
 
-Eine generische Engine für einen persistenten Wissensgraph aus Ideen. Das
-Gedächtnis ist **dein eigenes privates Git-Repo** (der "Brain") — die Engine
-ist vom Brain entkoppelt und zeigt per `IG_BRAIN_PATH` auf deinen Clone.
-Kein hardcoded Remote, keine privaten Daten im Code: open-source-tauglich.
+A generic engine for a persistent knowledge graph of ideas. The memory is
+**your own private git repo** (the "brain") — the engine is decoupled from
+the brain and points to your clone via `IG_BRAIN_PATH`. No hardcoded remote,
+no private data in the code: open-source ready.
 
-## Web-UI (Cockpit mit Tabs)
+## Web UI (tabbed cockpit)
 
-Starte den Server, öffne die URL, und du bekommst ein Cockpit mit drei Tabs:
+Start the server, open the URL, and you get a cockpit with three tabs:
 
-| Tab | Funktion |
+| Tab | Purpose |
 |---|---|
-| **Ingest** (Start) | Neue Ideen/Notizen erfassen (Quelle wählbar), Duplikat-Merge, Status |
-| **Graph** | d3-Force-Graph mit Zoom/Pan (Obsidian-artig): Scroll = Zoom, Ziehen = Pan, Hover = Tooltip, Klick = Details, Doppelklick = Fokus (Nachbarn hervorheben), Suche = zentrieren |
-| **Review** | Pending-Edge-Vorschläge akzeptieren/verwerfen + `same_as`-Picker |
+| **Ingest** (start) | Capture new ideas/notes (selectable source), duplicate merge, status |
+| **Graph** | d3 force graph with zoom/pan (Obsidian-like): scroll = zoom, drag = pan, hover = tooltip, click = details, double-click = focus (highlight neighbors), search = center |
+| **Review** | Accept/reject pending edge suggestions + `same_as` picker |
 
-Tastatur: `1/2/3` Tabs · `i` Ingest · `Space` Node-Text · `Esc` schließen ·
-`j/k/Enter` Review-Navigation.
+Keyboard: `1/2/3` tabs · `i` ingest · `Space` node text · `Esc` close ·
+`j/k/Enter` review navigation.
 
 ```
 uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localhost:8000
 ```
 
-![IdeaGraph Cockpit — Graph-Tab](docs/screenshot.png)
+![IdeaGraph Cockpit — Graph tab](docs/screenshot.png)
 
-## Architektur
+## Architecture
 
 ```
 ┌──────────────┐   git commit+push   ┌────────────────────┐   git pull   ┌─────────────────┐
-│ dein Agent   │ ──────────────────▶ │ dein Brain-Repo    │ ◀──────────▶ │ Live Engine     │
-│ (CLI/API)    │    (Wissen, gelerntes) │ (privat, Markdown)│  (sync)      │ Ingest→Embed→   │
+│ your agent   │ ──────────────────▶ │ your brain repo    │ ◀──────────▶ │ Live Engine     │
+│ (CLI/API)    │   (knowledge, learned) │ (private, Markdown)│  (sync)      │ Ingest→Embed→   │
 └──────────────┘                     └────────────────────┘              Suggest→Viz+HITL │
                                                                           └─────────────────┘
 ```
 
-- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter
-  mit `type: semantic|episodic|procedural`, `status: probation|active|tombstone`,
-  `sources:` protokolliert gemergte Duplikat-Ingests)
-- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `erweitert`, `kontradiktorisch`,
-  `supersedes`, `continues`, `same_as`; bi-temporal: `valid_from`/`valid_to` —
-  Invalidierung statt Löschung; Confidence + Provenance)
-- **vectors.jsonl** = Embedding-Cache (nur neue Nodes werden embeddet)
-- **INDEX.md** = generiertes Inhaltsverzeichnis
-- Jeder Ingest ist ein Commit — der Graph wächst als sichtbare Historie.
+- **Nodes** = one Markdown file per idea (`nodes/<id>.md`, YAML frontmatter
+  with `type: semantic|episodic|procedural`, `status: probation|active|tombstone`,
+  `sources:` logs merged duplicate ingests)
+- **Edges** = `edges.jsonl` (typed: `ähnlich`/similar, `erweitert`/extends,
+  `kontradiktorisch`/contradicts, `supersedes`, `continues`, `same_as`;
+  bi-temporal: `valid_from`/`valid_to` — invalidation instead of deletion;
+  confidence + provenance)
+- **vectors.jsonl** = embedding cache (only new nodes get embedded)
+- **INDEX.md** = generated table of contents
+- Every ingest is a commit — the graph grows as visible history.
 
-## Features (Roadmap V2, umgesetzt)
+## Features (Roadmap V2, implemented)
 
-- **Confidence + Auto-Accept-Band** — Similarity-Edges ≥ 0.95 werden direkt
-  akzeptiert, sonst pending (HITL); `IDEAGRAPH_AUTO_ACCEPT=1` erzwingt.
-- **Hybrid-Retrieval** — dense + BM25 via RRF-Fusion (`ig search`).
-- **Intent-Edges (V2#3)** — automatisch erkannte Intentionen `supersedes` /
-  `kontradiktorisch` / `continues` per Marker-Heuristik. Sicherheits-Schranke:
-  nur bei echtem ST-Kosinus ≥ 0.45 (verhindert Fehltreffer in homogenen
-  Korpora). Standard auto-akzeptiert; per `IDEAGRAPH_INTENT_PENDING=1` auf
-  pending (HITL-Review) umstellbar.
-- **Memory-Hygiene (V2#2)** — Dual-Buffer: neue Nodes starten in `probation`,
-  werden nach Dedup-Verifikation `active` oder `tombstone` (Graceful
-  Degradation, nie hart löschen); Weibull-Decay.
-- **Snapshot-Persistenz** — jeder Ingest ist ein git-Commit; bi-temporale
-  Edges + Provenance (`invalidated_by`).
+- **Confidence + auto-accept band** — similarity edges ≥ 0.95 are accepted
+  directly, otherwise pending (HITL); `IDEAGRAPH_AUTO_ACCEPT=1` forces it.
+- **Hybrid retrieval** — dense + BM25 via RRF fusion (`ig search`).
+- **Intent edges (V2#3)** — automatically detected intentions `supersedes` /
+  `continues` / `kontradiktorisch` via marker heuristic. Safety gate: only
+  when real ST cosine ≥ 0.45 (prevents false positives in homogeneous corpora).
+  Auto-accepted by default; switchable to pending (HITL) via
+  `IDEAGRAPH_INTENT_PENDING=1`.
+- **Memory hygiene (V2#2)** — dual buffer: new nodes start in `probation`,
+  promoted to `active` or `tombstone` after dedup verification (graceful
+  degradation, never hard-deleted); Weibull decay.
+- **Snapshot persistence** — every ingest is a git commit; bi-temporal edges
+  + provenance (`invalidated_by`).
 
 ## CLI
 
 ```bash
-ig ingest "Neue Idee ..."          # Ingest (Duplikate werden gemergt)
-cat notiz.md | ig ingest -         # aus Datei/Stdin
-ig pending                         # offene Edge-Vorschläge
-ig accept <edge_id>                # Vorschlag akzeptieren
-ig reject <edge_id>                # Vorschlag verwerfen
-ig link <node_a> <node_b>          # manuelle Edge (default: same_as)
-ig search "attention"              # Hybrid-Suche (dense + BM25)
+ig ingest "New idea ..."            # ingest (duplicates are merged)
+cat note.md | ig ingest -           # from file/stdin
+ig pending                          # open edge suggestions
+ig accept <edge_id>                 # accept a suggestion
+ig reject <edge_id>                 # reject a suggestion
+ig link <node_a> <node_b>           # manual edge (default: same_as)
+ig search "attention"               # hybrid search (dense + BM25)
 ```
 
-## Edge-Typen
+## Edge types
 
-| Typ | Entstehung | Bedeutung |
+| Type | Creation | Meaning |
 |---|---|---|
-| `ähnlich` | automatisch (sim ≥ 0.75) | im Wesentlichen dieselbe Idee |
-| `erweitert` | automatisch (0.45–0.75) | thematisch verwandt, baut auf |
-| `supersedes` | Intent (Marker + sim ≥ 0.45) | neu ersetzt/obsolet macht alt |
-| `continues` | Intent (Marker + sim ≥ 0.45) | führt fort / baut auf |
-| `kontradiktorisch` | Intent/manuell | widerspricht sich |
-| `same_as` | nur manuell (`ig link`) | Übersetzungs-/Alias-Paar |
+| `ähnlich` (similar) | automatic (sim ≥ 0.75) | essentially the same idea |
+| `erweitert` (extends) | automatic (0.45–0.75) | thematically related, builds on |
+| `supersedes` | intent (marker + sim ≥ 0.45) | new makes old obsolete |
+| `continues` | intent (marker + sim ≥ 0.45) | continues / builds on |
+| `kontradiktorisch` (contradicts) | intent / manual | contradicts |
+| `same_as` | manual only (`ig link`) | translation/alias pair |
 
 ## Dedupe
 
-Near-Duplicate-Ingests (Kosinus ≥ 0.92 auf normalisiertem Text) werden
-**gemergt statt neu angelegt**: die Quelle landet im Frontmatter unter
-`sources:`, der Commit sagt `ingest dup of …`. Opt-out: `allow_duplicates: true`.
+Near-duplicate ingests (cosine ≥ 0.92 on normalized text) are **merged
+instead of creating a new node**: the source is added under `sources:` in the
+frontmatter, the commit says `ingest dup of …`. Opt-out: `allow_duplicates: true`.
 
-## Node-Typen
+## Node types
 
-| Typ | Bedeutung | Beispiele |
+| Type | Meaning | Examples |
 |---|---|---|
-| `semantic` | Fakten, Ideen, Konzepte (Default) | Papers, Projekt-Notizen |
-| `episodic` | Ereignisse, Session-Logs | „Subagent X lief heute Y" |
-| `procedural` | Skills, wiederverwendbare Prozeduren | „So ingestiert man Research" |
+| `semantic` | facts, ideas, concepts (default) | papers, project notes |
+| `episodic` | events, session logs | "subagent X ran Y today" |
+| `procedural` | skills, reusable procedures | "how to ingest research" |
 
 ## Quickstart
 
 ```bash
-# 1) dein eigenes Brain-Repo einmalig klonen (Remote nur hier nötig):
-git clone <dein-brain-repo> ~/ideagraph-brain
+# 1) clone your own brain repo once (remote only needed here):
+git clone <your-brain-repo> ~/ideagraph-brain
 
-# 2) Engine einrichten (Python 3.10+)
+# 2) set up the engine (Python 3.10+)
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e ".[dev]"
 
-# 3) Server starten
-#   Demo ohne Modell-Download:  IDEAGRAPH_EMBEDDER=hash uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
-#   Echt (lädt all-MiniLM-L6-v2): uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
+# 3) start the server
+#   demo without model download:  IDEAGRAPH_EMBEDDER=hash uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
+#   real (loads all-MiniLM-L6-v2): uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
 
-# 4) CLI-Ingest
-.venv/bin/python -m ideagraph ingest "Neue Idee ..."
-# → http://localhost:8000 — Ingest/Graph/Review-Tabs
+# 4) CLI ingest
+ig ingest "New idea ..."
+# → http://localhost:8000 — Ingest/Graph/Review tabs
 ```
 
-### Env-Variablen
+### Environment variables
 
-| Variable | Default | Bedeutung |
+| Variable | Default | Meaning |
 |---|---|---|
-| `IG_BRAIN_PATH` | `~/ideagraph-brain` | Pfad zum Brain-Clone |
-| `IG_BRAIN_REMOTE` | *(keiner)* | nur für `git clone` beim ersten Einrichten; Bestandsklones nutzen ihr eigenes origin |
-| `IG_BRAIN_MODE` | `git` | `local` = nur FS (Tests) |
-| `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministischer Test-Embedder |
-| `IDEAGRAPH_AUTO_ACCEPT` | aus | `1` = Edges werden automatisch akzeptiert (kein HITL) |
-| `IDEAGRAPH_INTENT_PENDING` | aus | `1` = Intent-Edges (supersedes/continues/kontradiktorisch) werden pending (HITL-Review) statt auto-akzeptiert |
-| `IG_BOT_NAME` | `ideagraph-bot` | Git-Commit-Autor (Name) |
-| `IG_BOT_EMAIL` | `bot@ideagraph.local` | Git-Commit-Autor (E-Mail) |
+| `IG_BRAIN_PATH` | `~/ideagraph-brain` | path to the brain clone |
+| `IG_BRAIN_REMOTE` | *(none)* | only needed for `git clone` on first setup; existing clones use their own origin |
+| `IG_BRAIN_MODE` | `git` | `local` = filesystem only (tests) |
+| `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministic test embedder |
+| `IDEAGRAPH_AUTO_ACCEPT` | off | `1` = edges accepted automatically (no HITL) |
+| `IDEAGRAPH_INTENT_PENDING` | off | `1` = intent edges (supersedes/continues/contradicts) become pending (HITL review) instead of auto-accepted |
+| `IG_BOT_NAME` | `ideagraph-bot` | git commit author (name) |
+| `IG_BOT_EMAIL` | `bot@ideagraph.local` | git commit author (email) |
 
 ## Tests
 
@@ -137,27 +138,23 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests/ -q
 ```
 
-81 Tests — Similarity, Edge-Vorschlag, Intent, Dedupe, Memory-Hygiene,
-Markdown-Roundtrip, Brain-FS, Retrieval, Evals (Golden-Set).
+82 tests — similarity, edge suggestion, intent, dedupe, memory hygiene,
+Markdown round-trip, brain FS, retrieval, evals (golden set).
 
-## Open Source / Datenschutz
+## Open source / privacy
 
-- Die **Engine ist generisch** (öffentliches Repo) — der **Brain ist dein
-  privates Repo** mit deinen Daten. Die Engine enthält keine Brain-Daten.
-- Der Server bindet standardmäßig auf `127.0.0.1`; für Fernzugriff einen
-  SSH-Tunnel nutzen, damit dein Wissensgraph nicht öffentlich exponiert wird.
-- Keine hardcoded persönlichen Remote/Identitäten im Code; alle über Env
-  konfigurierbar.
+- The **engine is generic** (public repo) — the **brain is your private repo**
+  with your data. The engine contains no brain data.
+- The server binds to `127.0.0.1` by default; for remote access use an SSH
+  tunnel so your knowledge graph is not exposed publicly.
+- No hardcoded personal remotes/identities in the code; all configurable via
+  environment.
 
 ## Status
 
-In Entwicklung. Kern-Features (UI, V2, OSS-Readiness) sind umgesetzt;
-Release `v0.2.0` ist veröffentlicht.
+In development. Core features (UI, V2, OSS readiness) are implemented;
+release `v0.2.0` is published.
 
-## Pre-Release-Überlegungen
+## License
 
-- ✅ **Intent-Edges als Config-Option** — gelöst: `IDEAGRAPH_INTENT_PENDING`
-  macht Intent-Edges optional pending (HITL), Default bleibt auto-akzeptiert.
-- ✅ **Packaging + CI** — gelöst: `pyproject.toml` (pip-installierbar, `ig`-
-  Console-Script), GitHub-Actions-CI.
-- **Offen:** Versions-Tag `v0.2.0` + GitHub-Release, ggf. CHANGELOG.
+MIT — see `LICENSE`.
