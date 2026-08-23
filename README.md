@@ -2,46 +2,61 @@
 
 **Selbstwachsender Ideen-Graph: Ingest → Embed → Suggest → Visualize**
 
-v0.0.1 — von scratch, lernorientiert. Keine Graph-DB, keine Viz-Lib außer d3-force.
+v0.1.0 — das Gedächtnis ist jetzt ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
 
-## Idee
+## Architektur
 
-Ideen als Nodes, Beziehungen als getypte Edges (`ähnlich`, `kontradiktorisch`, `erweitert`).
-Neue Ideen werden reingegeben (Ingest), lokal embedded, mit dem besten Nachbarn
-verglichen — der Graph schlägt selbst Edges vor, du entscheidest (Human-in-the-loop).
+```
+┌──────────────┐   git commit+push   ┌────────────────────┐   git pull   ┌─────────────────┐
+│ Hermes Agent │ ──────────────────▶ │ ideagraph-brain    │ ◀──────────▶ │ Live Engine     │
+│ (Discord/CLI)│    (Wissen, gelerntes) │ (privat, Markdown)│  (sync)      │ Ingest→Embed→   │
+└──────────────┘                     └────────────────────┘              Suggest→Viz+HITL │
+                                                                          └─────────────────┘
+```
+
+- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter)
+- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `kontradiktorisch`, `erweitert`; pending bis akzeptiert)
+- **INDEX.md** = generiertes Inhaltsverzeichnis
+- Jeder Ingest ist ein Commit — der Graph wächst als sichtbare Historie.
 
 ## Wachstums-Loop
 
 ```
-Text ──▶ Embedding ──▶ k-NN Suche ──┬─▶ Edge-Vorschlag (pending)
-                                    └─▶ Node im Graph (WebSocket Live-Update)
+Text ──▶ git pull ──▶ Node als .md ──▶ Embedding ──▶ k-NN ──┬─▶ Edge-Vorschlag (pending)
+                                                            └─▶ commit + push + WebSocket-Live
 ```
 
 ## Quickstart
 
 ```bash
+git clone git@github.com:your-brain-repo.git ~/ideagraph-brain
 python3 -m venv --without-pip .venv && .venv/bin/pip install -r requirements.txt
-echo "Emergenz entsteht aus einfachen Regeln" | python -m ideagraph ingest -
-uvicorn ideagraph.server:app --reload
-# → http://localhost:8000
+
+# Demo-Modus (HashEmbedder, kein Modell-Download):
+IDEAGRAPH_EMBEDDER=hash uvicorn ideagraph.server:app --reload
+# Echt: sentence-transformers lädt all-MiniLM-L6-v2 beim ersten Embedding
+
+echo "Neue Idee" | python -m ideagraph ingest -   # CLI-Ingest
+# → http://localhost:8000 — pending Edges per Klick akzeptieren/verwerfen
 ```
 
-Im Web-UI: pending Edges per Klick akzeptieren oder verwerfen.
+### Env-Variablen
 
-## Struktur
+| Variable | Default | Bedeutung |
+|---|---|---|
+| `IG_BRAIN_PATH` | `~/ideagraph-brain` | Pfad zum Brain-Clone |
+| `IG_BRAIN_REMOTE` | `git@github.com:your-brain-repo.git` | Remote-URL |
+| `IG_BRAIN_MODE` | `git` | `local` = nur FS (Tests) |
+| `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministischer Test-Embedder |
 
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests/ -q
 ```
-ideagraph/       Kern: Modell, Store (JSONL), Embedder, Suggester, Server
-tests/           Similarity + Edge-Vorschlag
-docs/            Frontend (GitHub Pages): d3-force Graph, ohne lokalen Server lesbar
-data.jsonl       Deine Daten — wird nicht committet (*.jsonl ignoriert)
-```
 
-## Embeddings
-
-Lokal via `sentence-transformers` (Default: `all-MiniLM-L6-v2`, läuft auf CPU).
-Kein Ollama nötig — alles Python, keine externen Dienste.
+24 Tests — Similarity, Edge-Vorschlag, Markdown-Roundtrip, Brain-FS, Engine-Loop.
 
 ## Status
 
-Still in the making.
+Still in the making. Nächster Schritt: Discord-Agent schreibt automatisch ins Brain.

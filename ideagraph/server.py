@@ -1,32 +1,40 @@
-"""FastAPI-Server: REST + WebSocket-Live-Update, kein Build-Step."""
+"""FastAPI-Server auf Brain-Basis (privates Git-Repo als Speicher).
+
+Env-Steuerung:
+  IG_BRAIN_PATH   — Pfad zum Brain-Clone (default: ~/ideagraph-brain)
+  IG_BRAIN_REMOTE — SSH/GitHub-URL (default: git@github.com:your-brain-repo.git)
+  IG_BRAIN_MODE   — "git" (echtes Repo) oder "local" (nur FS, für Tests)
+  IDEAGRAPH_EMBEDDER — "st" (sentence-transformers) oder "hash" (Demo/Tests)
+"""
 
 from __future__ import annotations
 
-import asyncio
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from .store import Store
-from .embedder import get_embedder, HashEmbedder
-from .engine import Engine
+from .brain import Brain
+from .brain_engine import BrainEngine
+from .embedder import get_embedder
 
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 app = FastAPI(title="IdeaGraph Live Engine")
-store = Store()
-_embedder: HashEmbedder | None = None
 
 
-def _get_embedder():
-    global _embedder
-    if _embedder is None:
-        # Env-Steuerung: IDEAGRAPH_EMBEDDER=hash für den Test-/Demo-Modus
-        import os
-        _embedder = get_embedder(os.environ.get("IDEAGRAPH_EMBEDDER", "st"))
-    return _embedder
+def make_brain() -> Brain:
+    return Brain(
+        path=os.environ.get("IG_BRAIN_PATH", str(Path.home() / "ideagraph-brain")),
+        remote=os.environ.get("IG_BRAIN_REMOTE", "git@github.com:your-brain-repo.git"),
+        mode=os.environ.get("IG_BRAIN_MODE", "git"),
+    )
+
+
+def make_engine() -> BrainEngine:
+    return BrainEngine(make_brain(), get_embedder(os.environ.get("IDEAGRAPH_EMBEDDER", "st")))
 
 
 class ConnectionManager:
@@ -64,17 +72,19 @@ def app_js():
 
 @app.get("/api/graph")
 def graph():
-    return JSONResponse(store.graph_state())
+    return JSONResponse(make_brain().graph_state())
 
 
 class IngestBody(BaseModel):
     text: str
+    source: str = "human"
+    tags: list[str] = []
 
 
 @app.post("/api/ingest")
 async def ingest(body: IngestBody):
-    engine = Engine(store, _get_embedder())
-    node, edges = engine.ingest(body.text)
+    engine = make_engine()
+    node, edges = engine.ingest(body.text, body.source, body.tags)
     await manager.broadcast({
         "type": "ingested",
         "node": node.to_dict(),
@@ -85,7 +95,7 @@ async def ingest(body: IngestBody):
 
 @app.post("/api/edge/{edge_id}/accept")
 async def accept_edge(edge_id: str):
-    edge = store.resolve_edge(edge_id, accept=True)
+    edge = make_engine().resolve(edge_id, accept=True)
     if edge is None:
         return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": True})
@@ -94,7 +104,7 @@ async def accept_edge(edge_id: str):
 
 @app.post("/api/edge/{edge_id}/reject")
 async def reject_edge(edge_id: str):
-    edge = store.resolve_edge(edge_id, accept=False)
+    edge = make_engine().resolve(edge_id, accept=False)
     if edge is None:
         return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": False})
