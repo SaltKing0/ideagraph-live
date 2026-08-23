@@ -70,6 +70,16 @@ def app_js():
     return FileResponse(DOCS_DIR / "app.js")
 
 
+@app.get("/review")
+def review():
+    return FileResponse(DOCS_DIR / "review.html")
+
+
+@app.get("/review.js")
+def review_js():
+    return FileResponse(DOCS_DIR / "review.js")
+
+
 @app.get("/api/graph")
 def graph():
     return JSONResponse(make_brain().graph_state())
