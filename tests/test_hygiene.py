@@ -138,6 +138,20 @@ def test_ingest_supersedes_edge(tmp_path):
     assert any(e.kind == "supersedes" for e in edges)
 
 
+def test_intent_pending_config(tmp_path, monkeypatch):
+    # Default (Env ungesetzt): Intent-Edges sind auto-akzeptiert (nicht pending).
+    eng = make_engine(tmp_path)
+    eng.ingest("Die Erde ist eine Scheibe")
+    _, edges, _ = eng.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
+    assert any(e.kind == "kontradiktorisch" and not e.pending for e in edges)
+    # Mit IDEAGRAPH_INTENT_PENDING=1: Intent-Edges werden pending (HITL).
+    monkeypatch.setenv("IDEAGRAPH_INTENT_PENDING", "1")
+    eng2 = make_engine(tmp_path / "b2")  # frischer Brain, sonst Dedupe gegen eng
+    eng2.ingest("Die Erde ist eine Scheibe")
+    _, edges2, _ = eng2.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
+    assert any(e.kind == "kontradiktorisch" and e.pending for e in edges2)
+
+
 def test_admit_rule_declared_relations(tmp_path):
     eng = make_engine(tmp_path)
     base, _, _ = eng.ingest("Grundlagen der Quantenmechanik")

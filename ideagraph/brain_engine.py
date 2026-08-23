@@ -22,10 +22,18 @@ DEDUPE_THRESHOLD = 0.92
 # Brain (geteilte Domänenvokabeln) sogar gegen fast alle.
 INTENT_SIM_THRESHOLD = 0.45
 AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
+# "1"/"true" → Intent-Edges (supersedes/continues/kontradiktorisch) werden
+# pending (HITL-Review) statt auto-akzeptiert. Lässt Nutzer frei entscheiden,
+# ob automatisch erkannte Intentionen direkt in den Graph sollen.
+INTENT_PENDING_ENV = "IDEAGRAPH_INTENT_PENDING"
 
 
 def auto_accept_from_env() -> bool:
     return os.environ.get(AUTO_ACCEPT_ENV, "").lower() in ("1", "true", "yes")
+
+
+def intent_pending_from_env() -> bool:
+    return os.environ.get(INTENT_PENDING_ENV, "").lower() in ("1", "true", "yes")
 
 
 def _normalize(text: str) -> str:
@@ -107,6 +115,7 @@ class BrainEngine:
         """
         if auto_accept is None:
             auto_accept = auto_accept_from_env()
+        intent_pending = intent_pending_from_env()
         text = text.strip()
         if not text:
             raise ValueError("Leerer Text kann nicht ingestiert werden.")
@@ -139,7 +148,7 @@ class BrainEngine:
             ex_vec = candidates.get(ex.id)
             if ex_vec is None or cosine(vec, ex_vec) < INTENT_SIM_THRESHOLD:
                 continue
-            intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=False))
+            intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=intent_pending))
         # Admit-Rule: explizit deklarierte Relationen (target_text|id, kind).
         if relations:
             for ref, kind in relations:
