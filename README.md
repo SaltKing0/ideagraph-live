@@ -143,12 +143,8 @@ Markdown round-trip, brain FS, retrieval, evals (golden set).
 
 ## Open source / privacy
 
-- The **engine is generic** (public repo) — the **brain is your private repo**
-  with your data. The engine contains no brain data.
-- The server binds to `127.0.0.1` by default; for remote access use an SSH
-  tunnel so your knowledge graph is not exposed publicly.
-- All behavior — brain path, remote, bot identity, embedder, auto-accept —
-  is configurable via environment variables (see table above).
+The **engine is generic** (public repo) — the **brain is your private repo**
+with your data. The engine contains no brain data.
 
 ## Status
 
