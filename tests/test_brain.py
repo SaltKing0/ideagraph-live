@@ -235,3 +235,48 @@ def test_default_still_pending(monkeypatch, tmp_path):
     engine.ingest("katze hund tier futter")
     _, edges2, _ = engine.ingest("katze hund tier spiel")
     assert all(e.pending for e in edges2)
+
+
+def test_edge_bi_temporal_fields(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    _, edges, _ = engine.ingest("katze hund tier futter")
+    _, edges2, _ = engine.ingest("katze hund tier spiel")
+    e = engine.brain.read_edges()[0]
+    assert e.valid_from  # gesetzt
+    assert e.valid_to is None
+    # Invalidieren statt löschen
+    invalidated = engine.brain.invalidate_edge(e.id)
+    assert invalidated is not None and invalidated.valid_to is not None
+    assert any(x.id == e.id and x.valid_to for x in engine.brain.read_edges())
+
+
+def test_node_type_taxonomy_roundtrip(tmp_path):
+    brain = make_brain(tmp_path)
+    emb = HashEmbedder()
+    engine = BrainEngine(brain, emb)
+    node, _, _ = engine.ingest("Wie ingestiere ich Research-Results: ig ingest ...",
+                               ntype="procedural")
+    stored = next(n for n in brain.read_nodes() if n.id == node.id)
+    assert stored.ntype == "procedural"
+    assert "type: procedural" in (brain.node_path(node.id)).read_text()
+
+
+def test_memory_evolution_appends_crossref(monkeypatch, tmp_path):
+    monkeypatch.setenv("IDEAGRAPH_AUTO_ACCEPT", "1")
+    emb = HashEmbedder()
+    brain = make_brain(tmp_path)
+    engine = BrainEngine(brain, emb)
+    engine.ingest("katze hund tier futter")
+    engine.ingest("katze hund tier spiel")  # starke Ähnlichkeit → evolution
+    texts = [n.text for n in brain.read_nodes()]
+    assert any("evolved" in t for t in texts)
+    monkeypatch.delenv("IDEAGRAPH_AUTO_ACCEPT")
+
+
+def test_no_evolution_without_auto_accept(monkeypatch, tmp_path):
+    monkeypatch.delenv("IDEAGRAPH_AUTO_ACCEPT", raising=False)
+    engine = BrainEngine(make_brain(tmp_path), HashEmbedder())
+    engine.ingest("katze hund tier futter")
+    engine.ingest("katze hund tier spiel")
+    assert not any("evolved" in n.text for n in engine.brain.read_nodes())

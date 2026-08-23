@@ -46,7 +46,7 @@ class BrainEngine:
         return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
-               allow_duplicates: bool = False,
+               allow_duplicates: bool = False, ntype: str = "semantic",
                auto_accept: bool | None = None) -> tuple[Node, list[Edge], bool]:
         """Ingest mit Dedupe. Rückgabe: (node, edges, is_duplicate).
 
@@ -71,7 +71,7 @@ class BrainEngine:
                 self.brain.commit_and_push(
                     f"ingest dup of {dup.id[:8]}: {_normalize(text)[:50]}…")
                 return dup, [], True
-        node = Node(text=text, source=source, tags=tags)
+        node = Node(text=text, source=source, tags=tags, ntype=ntype)
         self.brain.write_node(node)
         # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
         others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
@@ -87,10 +87,34 @@ class BrainEngine:
         cached = self.brain.read_vectors()
         cached[node.id] = vec
         self.brain.write_vectors(cached)
+        # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (ähnlich,
+        # auto-akzeptiert) → verwandte Alt-Nodes mit Querverweis anreichern.
+        evolved = 0
+        if auto_accept:
+            for e in new_edges:
+                if e.kind == "ähnlich":
+                    target_node = next((n for n in self.brain.read_nodes()
+                                        if n.id == e.target), None)
+                    if target_node is not None:
+                        ref = f"[evolved {self._now_short()}: vernetzt mit {node.id[:8]} „{_normalize(text)[:40]}…“]"
+                        if "evolved" not in target_node.text or node.id[:8] not in target_node.text:
+                            self.brain.write_node(Node(
+                                text=target_node.text + "\n\n" + ref,
+                                id=target_node.id, created=target_node.created,
+                                source=target_node.source, tags=target_node.tags,
+                                sources=getattr(target_node, 'sources', []),
+                                ntype=target_node.ntype))
+                            evolved += 1
         self.brain.rebuild_index()
+        suffix = f", {evolved} Nodes evolviert" if evolved else ""
         self.brain.commit_and_push(
-            f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} Vorschläge)")
+            f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} Vorschläge{suffix})")
         return node, new_edges, False
+
+    @staticmethod
+    def _now_short() -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def resolve(self, edge_id: str, accept: bool) -> Edge | None:
         self.brain.pull()

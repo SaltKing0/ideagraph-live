@@ -26,18 +26,20 @@ def _now_iso() -> str:
 class Node:
     def __init__(self, text: str, id: str | None = None, created: str | None = None,
                  source: str = "human", tags: list[str] | None = None,
-                 sources: list[str] | None = None):
+                 sources: list[str] | None = None, ntype: str = "semantic"):
         self.text = text
         self.id = id or uuid.uuid4().hex[:12]
         self.created = created or _now_iso()
         self.source = source
         self.tags = tags or []
         self.sources = sources or []
+        # Taxonomie (LangGraph/Survey-Lektion): semantic | episodic | procedural
+        self.ntype = ntype if ntype in ("semantic", "episodic", "procedural") else "semantic"
 
     def to_markdown(self) -> str:
         tags = "[" + ", ".join(self.tags) + "]" if self.tags else "[]"
         lines = [f"id: {self.id}", f"created: {self.created}",
-                 f"source: {self.source}"]
+                 f"source: {self.source}", f"type: {self.ntype}"]
         if self.sources:
             lines.append("sources: [" + ", ".join(self.sources) + "]")
         lines.append(f"tags: {tags}")
@@ -57,25 +59,33 @@ class Node:
         tags = [t.strip() for t in meta.get("tags", "[]").strip("[]").split(",") if t.strip()]
         sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
-                   source=meta.get("source", "human"), tags=tags, sources=sources)
+                   source=meta.get("source", "human"), tags=tags, sources=sources,
+                   ntype=meta.get("type", "semantic"))
 
     def to_dict(self) -> dict:
         return {"id": self.id, "text": self.text, "created": self.created,
-                "source": self.source, "tags": self.tags, "sources": self.sources}
+                "source": self.source, "tags": self.tags, "sources": self.sources,
+                "type": self.ntype}
 
 
 class Edge:
     def __init__(self, source: str, target: str, kind: str,
-                 pending: bool = True, id: str | None = None):
+                 pending: bool = True, id: str | None = None,
+                 valid_from: str | None = None, valid_to: str | None = None):
         self.source = source
         self.target = target
         self.kind = kind
         self.pending = pending
         self.id = id or uuid.uuid4().hex[:12]
+        # Bi-Temporalität (Zep/Graphiti-Lektion): Fakt-Gültigkeit getrennt
+        # von der Commit-Zeit (die liefert die Git-Historie gratis).
+        self.valid_from = valid_from or _now_iso()
+        self.valid_to = valid_to  # None = aktuell gültig; gesetzt = invalidiert
 
     def to_dict(self) -> dict:
         return {"id": self.id, "source": self.source, "target": self.target,
-                "kind": self.kind, "pending": self.pending}
+                "kind": self.kind, "pending": self.pending,
+                "valid_from": self.valid_from, "valid_to": self.valid_to}
 
 
 class Brain:
@@ -203,7 +213,9 @@ class Brain:
             if line.strip():
                 d = json.loads(line)
                 edges.append(Edge(d["source"], d["target"], d["kind"],
-                                  d.get("pending", False), d["id"]))
+                                  d.get("pending", False), d["id"],
+                                  valid_from=d.get("valid_from"),
+                                  valid_to=d.get("valid_to")))
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:
@@ -216,6 +228,17 @@ class Brain:
         edges = self.read_edges()
         edges.append(edge)
         self.write_edges(edges)
+
+    def invalidate_edge(self, edge_id: str, reason: str | None = None) -> Edge | None:
+        """Kante invalidieren statt löschen (Zep-Lektion): valid_to wird gesetzt,
+        die Kante bleibt mit voller Historie in der Datei."""
+        edges = self.read_edges()
+        edge = next((e for e in edges if e.id == edge_id), None)
+        if edge is None or edge.valid_to is not None:
+            return None
+        edge.valid_to = _now_iso()
+        self.write_edges(edges)
+        return edge
 
     def resolve_edge(self, edge_id: str, accept: bool) -> Edge | None:
         edges = self.read_edges()

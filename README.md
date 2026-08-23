@@ -14,8 +14,8 @@ v0.1.4 — Autonomie-Modus (IDEAGRAPH_AUTO_ACCEPT), Review-UI (/review). Das Ged
                                                                           └─────────────────┘
 ```
 
-- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter, `sources:` protokolliert gemergte Duplikat-Ingests)
-- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `kontradiktorisch`, `erweitert`; pending bis akzeptiert; keine Doppel-Vorschläge)
+- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter mit `type: semantic|episodic|procedural`, `sources:` protokolliert gemergte Duplikat-Ingests)
+- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `kontradiktorisch`, `erweitert`; bi-temporal: `valid_from`/`valid_to` — Invalidierung statt Löschung; keine Doppel-Vorschläge)
 - **vectors.jsonl** = Embedding-Cache (pro Node ein Vektor — nur neue Nodes werden embeddet)
 - **INDEX.md** = generiertes Inhaltsverzeichnis
 - Jeder Ingest ist ein Commit — der Graph wächst als sichtbare Historie.
@@ -48,6 +48,21 @@ ig search "attention"              # Volltext über alle Nodes
 Near-Duplicate-Ingests (Kosinus ≥ 0.92 auf normalisiertem Text) werden **gemergt statt neu angelegt**:
 die Quelle landet im Frontmatter unter `sources:`, der Commit sagt `ingest dup of …`.
 Opt-out pro Ingest: `allow_duplicates: true` (Body-Feld in `/api/ingest`).
+
+## Autonomie-Modus
+
+`IDEAGRAPH_AUTO_ACCEPT=1` akzeptiert Edge-Vorschläge direkt (kein HITL).
+Dabei gilt zusätzlich **Memory Evolution** (A-Mem-Muster): starke neue
+`ähnlich`-Verbindungen reichern die verwandten Alt-Nodes mit einem
+datierten Querverweis an — das Netz verfeinert sich retroaktiv selbst.
+
+## Node-Typen
+
+| Typ | Bedeutung | Beispiele |
+|---|---|---|
+| `semantic` | Fakten, Ideen, Konzepte (Default) | Papers, Projekt-Notizen |
+| `episodic` | Ereignisse, Session-Logs | „Subagent X lief heute Y" |
+| `procedural` | Skills, wiederverwendbare Prozeduren | „So ingestiert man Research" |
 
 ## Wachstums-Loop
 
