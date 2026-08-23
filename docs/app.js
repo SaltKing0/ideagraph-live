@@ -128,7 +128,14 @@ async function ingest() {
   });
   el.value = ""; el.blur();
   if (!r.ok) return flash("Ingest fehlgeschlagen", false);
-  flash("Ingestiert — Graph wächst");
+  const data = await r.json();
+  if (data.duplicate) {
+    flash(`Duplikat — gemergt in „${short(data.node.id, 40)}"`, true);
+    const n = nodes.find(x => x.id === data.node.id);
+    if (n) { n.dupPulse = Date.now(); }
+  } else {
+    flash("Ingestiert — Graph wächst");
+  }
   await refresh();
 }
 
@@ -158,7 +165,10 @@ function hideDetail() {
 const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
 ws.onmessage = ev => {
   const m = JSON.parse(ev.data);
-  if (m.type === "ingested") refresh();
+  if (m.type === "ingested") {
+    if (m.duplicate) flash("Duplikat erkannt — in bestehende Idee gemergt");
+    refresh();
+  }
 };
 
 // ---------- Keyboard ----------

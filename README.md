@@ -2,7 +2,7 @@
 
 **Selbstwachsender Ideen-Graph: Ingest → Embed → Suggest → Visualize**
 
-v0.1.0 — das Gedächtnis ist jetzt ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
+v0.1.2 — Dedupe + Embedding-Cache. Das Gedächtnis ist ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
 
 ## Architektur
 
@@ -14,10 +14,17 @@ v0.1.0 — das Gedächtnis ist jetzt ein privates Git-Repo: [ideagraph-brain](ht
                                                                           └─────────────────┘
 ```
 
-- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter)
-- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `kontradiktorisch`, `erweitert`; pending bis akzeptiert)
+- **Nodes** = eine Markdown-Datei pro Idee (`nodes/<id>.md`, YAML-Frontmatter, `sources:` protokolliert gemergte Duplikat-Ingests)
+- **Edges** = `edges.jsonl` (getypt: `ähnlich`, `kontradiktorisch`, `erweitert`; pending bis akzeptiert; keine Doppel-Vorschläge)
+- **vectors.jsonl** = Embedding-Cache (pro Node ein Vektor — nur neue Nodes werden embeddet)
 - **INDEX.md** = generiertes Inhaltsverzeichnis
 - Jeder Ingest ist ein Commit — der Graph wächst als sichtbare Historie.
+
+## Dedupe
+
+Near-Duplicate-Ingests (Kosinus ≥ 0.92 auf normalisiertem Text) werden **gemergt statt neu angelegt**:
+die Quelle landet im Frontmatter unter `sources:`, der Commit sagt `ingest dup of …`.
+Opt-out pro Ingest: `allow_duplicates: true` (Body-Feld in `/api/ingest`).
 
 ## Wachstums-Loop
 
@@ -55,7 +62,7 @@ echo "Neue Idee" | python -m ideagraph ingest -   # CLI-Ingest
 .venv/bin/python -m pytest tests/ -q
 ```
 
-24 Tests — Similarity, Edge-Vorschlag, Markdown-Roundtrip, Brain-FS, Engine-Loop.
+24 Tests — Similarity, Edge-Vorschlag, Markdown-Roundtrip, Brain-FS, Engine-Loop, Dedupe.
 
 ## Status
 

@@ -152,6 +152,43 @@ class Brain:
                 continue  # kaputte Datei überspringen statt crashen
         return out
 
+    # ---------- Embedding-Cache ----------
+
+    @property
+    def vectors_file(self) -> Path:
+        return self.path / "vectors.jsonl"
+
+    def read_vectors(self) -> dict[str, list[float]]:
+        if not self.vectors_file.exists():
+            return {}
+        out: dict[str, list[float]] = {}
+        for line in self.vectors_file.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                d = json.loads(line)
+                out[d["id"]] = d["vec"]
+        return out
+
+    def write_vectors(self, vectors: dict[str, list[float]]) -> None:
+        self.path.mkdir(parents=True, exist_ok=True)
+        with self.vectors_file.open("w", encoding="utf-8") as f:
+            for nid, vec in sorted(vectors.items()):
+                f.write(json.dumps({"id": nid, "vec": vec}) + "\n")
+
+    def vectors_for(self, node_ids: set[str], embed_fn) -> dict[str, list[float]]:
+        """Vektoren aus dem Cache, fehlende werden via embed_fn berechnet und gespeichert."""
+        cached = self.read_vectors()
+        dirty = False
+        for nid in node_ids:
+            if nid not in cached:
+                node = next((n for n in self.read_nodes() if n.id == nid), None)
+                if node is None:
+                    continue
+                cached[nid] = embed_fn(node.text)
+                dirty = True
+        if dirty:
+            self.write_vectors(cached)
+        return {nid: v for nid, v in cached.items() if nid in node_ids}
+
     # ---------- Edges ----------
 
     @property

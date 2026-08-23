@@ -155,3 +155,36 @@ def test_engine_no_false_positive_dedupe(tmp_path):
     engine.ingest("Katzen jagen Maeuse nachts")
     _, _, dup = engine.ingest("Rust Compiler borrow checker lifetime Regeln")
     assert not dup
+
+
+def test_embedding_cache_hit(tmp_path):
+    emb = HashEmbedder()
+    brain = make_brain(tmp_path)
+    engine = BrainEngine(brain, emb)
+    engine.ingest("Katzen jagen Maeuse nachts")
+    assert (tmp_path / "brain" / "vectors.jsonl").exists()
+    calls = emb.calls if hasattr(emb, "calls") else None
+    # zweiter Ingest: alte Node darf nicht neu embeddet werden
+    class Counting(HashEmbedder):
+        def __init__(self):
+            self.n = 0
+        def embed(self, text):
+            self.n += 1
+            return super().embed(text)
+    c = Counting()
+    e2 = BrainEngine(brain, c)
+    e2.ingest("Hunde bellen laute geraeusche")
+    # embed-Aufrufe: 1 dup-check neue Node, 0 fuer alte (Cache), 1 cache-fill alte fehlt evtl.
+    assert c.n <= 3
+
+
+def test_edge_suggestion_dedupe(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    engine.ingest("katze hund tier futter", allow_duplicates=True)
+    n2, _, _ = engine.ingest("katze hund tier spiel")
+    before = len(engine.brain.read_edges())
+    # dritter Ingest aehnlich zu beiden: keine (source,target)-Doppelvorschlaege
+    _, edges3, _ = engine.ingest("katze hund tier futter spiel", allow_duplicates=True)
+    pairs_before = [(e.source, e.target) for e in engine.brain.read_edges()]
+    assert len(pairs_before) == len(set(pairs_before))

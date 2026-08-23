@@ -26,15 +26,17 @@ class BrainEngine:
         self.dedupe_threshold = dedupe_threshold
 
     def _find_duplicate(self, vec: list[float], exclude_id: str | None = None) -> Node | None:
-        """Nächster Node über dem Dedupe-Threshold — oder None."""
-        best: tuple[float, Node] | None = None
-        for n in self.brain.read_nodes():
-            if n.id == exclude_id:
-                continue
-            sim = cosine(vec, self.embedder.embed(n.text))
+        """Nächster Node über dem Dedupe-Threshold — oder None. Nutzt den Vektor-Cache."""
+        node_ids = {n.id for n in self.brain.read_nodes() if n.id != exclude_id}
+        vectors = self.brain.vectors_for(node_ids, lambda t: self.embedder.embed(_normalize(t)))
+        best: tuple[float, str] | None = None
+        for nid, v in vectors.items():
+            sim = cosine(vec, v)
             if sim >= self.dedupe_threshold and (best is None or sim > best[0]):
-                best = (sim, n)
-        return best[1] if best else None
+                best = (sim, nid)
+        if best is None:
+            return None
+        return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
                allow_duplicates: bool = False) -> tuple[Node, list[Edge], bool]:
@@ -59,16 +61,23 @@ class BrainEngine:
                 return dup, [], True
         node = Node(text=text, source=source, tags=tags)
         self.brain.write_node(node)
-        candidates = {n.id: self.embedder.embed(_normalize(n.text))
-                      for n in self.brain.read_nodes() if n.id != node.id}
+        # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
+        others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
+        candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
         edges = [Edge(source=s.source, target=s.target, kind=s.kind, pending=True)
                  for s in suggest(node.id, vec, candidates)]
-        for e in edges:
+        existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
+        new_edges = [e for e in edges if (e.source, e.target) not in existing_pairs]
+        for e in new_edges:
             self.brain.add_edge(e)
+        # Vektor der neuen Node cachen
+        cached = self.brain.read_vectors()
+        cached[node.id] = vec
+        self.brain.write_vectors(cached)
         self.brain.rebuild_index()
         self.brain.commit_and_push(
-            f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(edges)} Vorschläge)")
-        return node, edges, False
+            f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} Vorschläge)")
+        return node, new_edges, False
 
     def resolve(self, edge_id: str, accept: bool) -> Edge | None:
         self.brain.pull()
