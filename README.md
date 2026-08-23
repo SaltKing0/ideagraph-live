@@ -147,8 +147,8 @@ Markdown round-trip, brain FS, retrieval, evals (golden set).
   with your data. The engine contains no brain data.
 - The server binds to `127.0.0.1` by default; for remote access use an SSH
   tunnel so your knowledge graph is not exposed publicly.
-- No hardcoded personal remotes/identities in the code; all configurable via
-  environment.
+- All behavior — brain path, remote, bot identity, embedder, auto-accept —
+  is configurable via environment variables (see table above).
 
 ## Status
 
