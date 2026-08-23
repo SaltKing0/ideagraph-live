@@ -52,8 +52,8 @@ uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localho
 - **Intent-Edges (V2#3)** — automatisch erkannte Intentionen `supersedes` /
   `kontradiktorisch` / `continues` per Marker-Heuristik. Sicherheits-Schranke:
   nur bei echtem ST-Kosinus ≥ 0.45 (verhindert Fehltreffer in homogenen
-  Korpora). ⚠️ Intent-Edges sind aktuell auto-akzeptiert (nicht pending) —
-  siehe „Pre-Release-Überlegungen".
+  Korpora). Standard auto-akzeptiert; per `IDEAGRAPH_INTENT_PENDING=1` auf
+  pending (HITL-Review) umstellbar.
 - **Memory-Hygiene (V2#2)** — Dual-Buffer: neue Nodes starten in `probation`,
   werden nach Dedup-Verifikation `active` oder `tombstone` (Graceful
   Degradation, nie hart löschen); Weibull-Decay.
@@ -125,6 +125,7 @@ python3 -m venv .venv
 | `IG_BRAIN_MODE` | `git` | `local` = nur FS (Tests) |
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministischer Test-Embedder |
 | `IDEAGRAPH_AUTO_ACCEPT` | aus | `1` = Edges werden automatisch akzeptiert (kein HITL) |
+| `IDEAGRAPH_INTENT_PENDING` | aus | `1` = Intent-Edges (supersedes/continues/kontradiktorisch) werden pending (HITL-Review) statt auto-akzeptiert |
 | `IG_BOT_NAME` | `ideagraph-bot` | Git-Commit-Autor (Name) |
 | `IG_BOT_EMAIL` | `bot@ideagraph.local` | Git-Commit-Autor (E-Mail) |
 
@@ -152,10 +153,8 @@ In Entwicklung. Nächster Schritt: Discord-Agent schreibt automatisch ins Brain.
 
 ## Pre-Release-Überlegungen
 
-- **Intent-Edges als Config-Option (HITL):** Aktuell auto-akzeptiert (nicht
-  pending), aber durch die Ähnlichkeits-Schranke (ST-Kosinus ≥ 0.45) eingegrenzt.
-  Vor dem Release prüfen, ob Intent-Edges optional auf `pending` (HITL-Review)
-  umstellbar sein sollen. Entscheidung offen.
-- **Packaging:** `pyproject.toml` + `ig`-Console-Script + CI fehlen noch (siehe
-  Release-Checkliste) — dann ist das Projekt sauber pip-installierbar und
-  CI-geprüft.
+- ✅ **Intent-Edges als Config-Option** — gelöst: `IDEAGRAPH_INTENT_PENDING`
+  macht Intent-Edges optional pending (HITL), Default bleibt auto-akzeptiert.
+- ✅ **Packaging + CI** — gelöst: `pyproject.toml` (pip-installierbar, `ig`-
+  Console-Script), GitHub-Actions-CI.
+- **Offen:** Versions-Tag `v0.2.0` + GitHub-Release, ggf. CHANGELOG.
