@@ -24,12 +24,14 @@ Tastatur: `1/2/3` Tabs · `i` Ingest · `Space` Node-Text · `Esc` schließen ·
 uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localhost:8000
 ```
 
+![IdeaGraph Cockpit — Graph-Tab](docs/screenshot.png)
+
 ## Architektur
 
 ```
 ┌──────────────┐   git commit+push   ┌────────────────────┐   git pull   ┌─────────────────┐
-│ Hermes Agent │ ──────────────────▶ │ dein Brain-Repo    │ ◀──────────▶ │ Live Engine     │
-│ (Discord/CLI)│    (Wissen, gelerntes) │ (privat, Markdown)│  (sync)      │ Ingest→Embed→   │
+│ dein Agent   │ ──────────────────▶ │ dein Brain-Repo    │ ◀──────────▶ │ Live Engine     │
+│ (CLI/API)    │    (Wissen, gelerntes) │ (privat, Markdown)│  (sync)      │ Ingest→Embed→   │
 └──────────────┘                     └────────────────────┘              Suggest→Viz+HITL │
                                                                           └─────────────────┘
 ```
@@ -149,7 +151,8 @@ Markdown-Roundtrip, Brain-FS, Retrieval, Evals (Golden-Set).
 
 ## Status
 
-In Entwicklung. Nächster Schritt: Discord-Agent schreibt automatisch ins Brain.
+In Entwicklung. Kern-Features (UI, V2, OSS-Readiness) sind umgesetzt;
+Release `v0.2.0` ist veröffentlicht.
 
 ## Pre-Release-Überlegungen
 
