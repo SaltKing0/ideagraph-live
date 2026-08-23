@@ -2,7 +2,7 @@
 
 **Selbstwachsender Ideen-Graph: Ingest → Embed → Suggest → Visualize**
 
-v0.1.2 — Dedupe + Embedding-Cache. Das Gedächtnis ist ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
+v0.1.4 — Autonomie-Modus (IDEAGRAPH_AUTO_ACCEPT), Review-UI (/review). Das Gedächtnis ist ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
 
 ## Architektur
 
@@ -75,6 +75,7 @@ echo "Neue Idee" | python -m ideagraph ingest -   # CLI-Ingest
 | Variable | Default | Bedeutung |
 |---|---|---|
 | `IG_BRAIN_PATH` | `~/ideagraph-brain` | Pfad zum Brain-Clone |
+| `IDEAGRAPH_AUTO_ACCEPT` | aus | `1` = Edge-Vorschläge werden automatisch akzeptiert (Autonomie-Modus, kein HITL) |
 | `IG_BRAIN_REMOTE` | `git@github.com:your-brain-repo.git` | Remote-URL |
 | `IG_BRAIN_MODE` | `git` | `local` = nur FS (Tests) |
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministischer Test-Embedder |

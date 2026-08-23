@@ -6,12 +6,19 @@ als sichtbare Commit-Historie.
 
 from __future__ import annotations
 
+import os
+
 from .brain import Brain, Node, Edge
 from .embedder import get_embedder
 from .similarity import cosine
 from .suggester import suggest
 
 DEDUPE_THRESHOLD = 0.92
+AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
+
+
+def auto_accept_from_env() -> bool:
+    return os.environ.get(AUTO_ACCEPT_ENV, "").lower() in ("1", "true", "yes")
 
 
 def _normalize(text: str) -> str:
@@ -39,13 +46,18 @@ class BrainEngine:
         return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
-               allow_duplicates: bool = False) -> tuple[Node, list[Edge], bool]:
+               allow_duplicates: bool = False,
+               auto_accept: bool | None = None) -> tuple[Node, list[Edge], bool]:
         """Ingest mit Dedupe. Rückgabe: (node, edges, is_duplicate).
 
         Bei Near-Duplicate (cosine >= threshold gegen normalisierten Text)
         wird kein neuer Node angelegt, sondern der bestehende gemergt:
         Quelle wird an der Node protokolliert, Commit-Meldung sagt "dup".
+        auto_accept (default: Env IDEAGRAPH_AUTO_ACCEPT) akzeptiert
+        Edge-Vorschläge direkt statt sie pending zu lassen.
         """
+        if auto_accept is None:
+            auto_accept = auto_accept_from_env()
         text = text.strip()
         if not text:
             raise ValueError("Leerer Text kann nicht ingestiert werden.")
@@ -64,7 +76,8 @@ class BrainEngine:
         # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
         others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
         candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
-        edges = [Edge(source=s.source, target=s.target, kind=s.kind, pending=True)
+        edges = [Edge(source=s.source, target=s.target, kind=s.kind,
+                      pending=not auto_accept)
                  for s in suggest(node.id, vec, candidates)]
         existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
         new_edges = [e for e in edges if (e.source, e.target) not in existing_pairs]

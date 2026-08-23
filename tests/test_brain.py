@@ -216,3 +216,22 @@ def test_engine_link_rejects_duplicate_edge(tmp_path):
     engine.link(n1.id, n2.id, "same_as")
     with pytest.raises(ValueError):
         engine.link(n1.id, n2.id, "same_as")
+
+
+def test_auto_accept_edges(monkeypatch, tmp_path):
+    monkeypatch.setenv("IDEAGRAPH_AUTO_ACCEPT", "1")
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    _, edges, _ = engine.ingest("katze hund tier futter")
+    _, edges2, _ = engine.ingest("katze hund tier spiel")
+    assert all(not e.pending for e in edges2)
+    assert not any(e.pending for e in engine.brain.read_edges())
+    monkeypatch.delenv("IDEAGRAPH_AUTO_ACCEPT")
+
+
+def test_default_still_pending(monkeypatch, tmp_path):
+    monkeypatch.delenv("IDEAGRAPH_AUTO_ACCEPT", raising=False)
+    engine = BrainEngine(make_brain(tmp_path), HashEmbedder())
+    engine.ingest("katze hund tier futter")
+    _, edges2, _ = engine.ingest("katze hund tier spiel")
+    assert all(e.pending for e in edges2)
