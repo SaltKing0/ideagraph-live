@@ -62,24 +62,27 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+NO_CACHE = {"Cache-Control": "no-store"}
+
+
 @app.get("/")
 def index():
-    return FileResponse(DOCS_DIR / "index.html")
+    return FileResponse(DOCS_DIR / "index.html", headers=NO_CACHE)
 
 
 @app.get("/app.js")
 def app_js():
-    return FileResponse(DOCS_DIR / "app.js")
+    return FileResponse(DOCS_DIR / "app.js", headers=NO_CACHE)
 
 
 @app.get("/review")
 def review():
-    return FileResponse(DOCS_DIR / "review.html")
+    return FileResponse(DOCS_DIR / "review.html", headers=NO_CACHE)
 
 
 @app.get("/review.js")
 def review_js():
-    return FileResponse(DOCS_DIR / "review.js")
+    return FileResponse(DOCS_DIR / "review.js", headers=NO_CACHE)
 
 
 @app.get("/api/graph")
