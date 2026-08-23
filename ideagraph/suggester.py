@@ -5,6 +5,9 @@ Regeln (bewusst simpel, lernorientiert):
 - 0.45 <= sim < 0.75   → "erweitert" (thematisch verwandt)
 - darunter             → kein Vorschlag
 
+"same_as" wird nie automatisch vorgeschlagen — er entsteht manuell
+(CLI `link`, Cockpit) für Übersetzungs-/Alias-Paare.
+
 Liefert schlichte Suggestion-Objekte — der Aufrufer entscheidet,
 welche Edge-Klasse daraus wird (Store vs. Brain).
 """

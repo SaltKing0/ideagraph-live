@@ -86,3 +86,19 @@ class BrainEngine:
             action = "accept" if accept else "reject"
             self.brain.commit_and_push(f"edge {action}: {edge_id[:8]} [{edge.kind}]")
         return edge
+
+    def link(self, source_id: str, target_id: str,
+             kind: str = "same_as") -> Edge:
+        """Manuelle Edge anlegen (z.B. same_as für Übersetzungs-/Alias-Paare)."""
+        self.brain.pull()
+        ids = {n.id for n in self.brain.read_nodes()}
+        missing = [nid for nid in (source_id, target_id) if nid not in ids]
+        if missing:
+            raise ValueError(f"Node(s) nicht gefunden: {', '.join(missing)}")
+        existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
+        if (source_id, target_id) in existing_pairs:
+            raise ValueError("Diese Edge existiert bereits.")
+        edge = Edge(source=source_id, target=target_id, kind=kind, pending=False)
+        self.brain.add_edge(edge)
+        self.brain.commit_and_push(f"edge link: {source_id[:8]} --[{kind}]--> {target_id[:8]}")
+        return edge

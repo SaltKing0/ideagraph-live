@@ -20,6 +20,29 @@ v0.1.2 — Dedupe + Embedding-Cache. Das Gedächtnis ist ein privates Git-Repo: 
 - **INDEX.md** = generiertes Inhaltsverzeichnis
 - Jeder Ingest ist ein Commit — der Graph wächst als sichtbare Historie.
 
+## CLI
+
+```bash
+alias ig="(cd ~/ideagraph-live && .venv/bin/python -m ideagraph)"
+
+ig ingest "Neue Idee ..."          # Ingest (Duplikate werden gemergt)
+cat notiz.md | ig ingest -         # aus Datei/Stdin
+ig pending                         # offene Edge-Vorschläge
+ig accept <edge_id>                # Vorschlag akzeptieren
+ig reject <edge_id>                # Vorschlag verwerfen
+ig link <node_a> <node_b>          # manuelle Edge (default: same_as)
+ig search "attention"              # Volltext über alle Nodes
+```
+
+## Edge-Typen
+
+| Typ | Entstehung | Bedeutung |
+|---|---|---|
+| `ähnlich` | automatisch (sim ≥ 0.75) | im Wesentlichen dieselbe Idee |
+| `erweitert` | automatisch (0.45–0.75) | thematisch verwandt, baut auf |
+| `kontradiktorisch` | geplant/manuell | widerspricht sich |
+| `same_as` | nur manuell (`ig link`) | Übersetzungs-/Alias-Paar, keine Duplikate |
+
 ## Dedupe
 
 Near-Duplicate-Ingests (Kosinus ≥ 0.92 auf normalisiertem Text) werden **gemergt statt neu angelegt**:

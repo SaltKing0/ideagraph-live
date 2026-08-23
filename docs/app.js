@@ -21,7 +21,7 @@ function seedPosition(d, i) {
 }
 
 const linkG = svg.append("g"), nodeG = svg.append("g");
-const KIND_COLOR = { "ähnlich": "#3fb950", "kontradiktorisch": "#f85149", "erweitert": "#58a6ff" };
+const KIND_COLOR = { "ähnlich": "#3fb950", "kontradiktorisch": "#f85149", "erweitert": "#58a6ff", "same_as": "#bc8cff" };
 
 function tick() {
   nodes.forEach(seedPosition);

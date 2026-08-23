@@ -115,6 +115,22 @@ async def reject_edge(edge_id: str):
     return {"rejected": edge_id}
 
 
+class LinkBody(BaseModel):
+    source: str
+    target: str
+    kind: str = "same_as"
+
+
+@app.post("/api/edge")
+async def link_edge(body: LinkBody):
+    try:
+        edge = make_engine().link(body.source, body.target, body.kind)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await manager.broadcast({"type": "edge_linked", "edge": edge.to_dict()})
+    return edge.to_dict()
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)

@@ -188,3 +188,31 @@ def test_edge_suggestion_dedupe(tmp_path):
     _, edges3, _ = engine.ingest("katze hund tier futter spiel", allow_duplicates=True)
     pairs_before = [(e.source, e.target) for e in engine.brain.read_edges()]
     assert len(pairs_before) == len(set(pairs_before))
+
+
+def test_engine_link_same_as(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    n1, _, _ = engine.ingest("Katzen jagen Maeuse")
+    n2, _, _ = engine.ingest("Cats hunt mice", allow_duplicates=True)
+    edge = engine.link(n1.id, n2.id, "same_as")
+    assert edge.kind == "same_as" and not edge.pending
+    assert (edge.source, edge.target) in {(e.source, e.target) for e in engine.brain.read_edges()}
+
+
+def test_engine_link_rejects_unknown_node(tmp_path):
+    import pytest
+    engine = BrainEngine(make_brain(tmp_path), HashEmbedder())
+    n1, _, _ = engine.ingest("Katzen jagen Maeuse")
+    with pytest.raises(ValueError):
+        engine.link(n1.id, "gibtsnicht", "same_as")
+
+
+def test_engine_link_rejects_duplicate_edge(tmp_path):
+    import pytest
+    engine = BrainEngine(make_brain(tmp_path), HashEmbedder())
+    n1, _, _ = engine.ingest("Katzen jagen Maeuse")
+    n2, _, _ = engine.ingest("Cats hunt mice", allow_duplicates=True)
+    engine.link(n1.id, n2.id, "same_as")
+    with pytest.raises(ValueError):
+        engine.link(n1.id, n2.id, "same_as")
