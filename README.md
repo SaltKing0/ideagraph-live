@@ -109,3 +109,11 @@ echo "Neue Idee" | python -m ideagraph ingest -   # CLI-Ingest
 ## Status
 
 Still in the making. Nächster Schritt: Discord-Agent schreibt automatisch ins Brain.
+
+## Pre-Release-Überlegungen
+
+- **Intent-Edges als Config-Option (HITL):** Aktuell sind Intent-Edges
+  auto-akzeptiert (nicht pending), aber durch die Ähnlichkeits-Schranke
+  (ST-Kosinus ≥ 0.45) thematisch eingegrenzt. Vor dem Release prüfen, ob
+  Intent-Edges optional auf `pending` (HITL-Review) umstellbar sein sollen —
+  analog zu den Similarity-Edges. Entscheidung bewusst offengelassen.
