@@ -92,8 +92,8 @@ def test_index_rebuild(tmp_path):
 def test_engine_ingest_creates_files(tmp_path):
     brain = make_brain(tmp_path)
     engine = BrainEngine(brain, HashEmbedder())
-    node1, e1 = engine.ingest("Katzen jagen Maeuse nachts", source="agent/test")
-    node2, e2 = engine.ingest("Katzen schlafen am Tag", source="human")
+    node1, e1, _ = engine.ingest("Katzen jagen Maeuse nachts", source="agent/test")
+    node2, e2, _ = engine.ingest("Katzen schlafen am Tag", source="human")
     assert (brain.path / "nodes" / f"{node1.id}.md").exists()
     assert (brain.path / "nodes" / f"{node2.id}.md").exists()
     for edge in e1 + e2:
@@ -112,7 +112,46 @@ def test_engine_suggests_similar_kind(tmp_path):
     emb = HashEmbedder()
     brain = make_brain(tmp_path)
     engine = BrainEngine(brain, emb)
-    _, _ = engine.ingest("katze hund tier futter")
-    _, edges = engine.ingest("katze hund tier spiel")
+    _, _, _ = engine.ingest("katze hund tier futter")
+    _, edges, _ = engine.ingest("katze hund tier spiel")
     kinds = {e.kind for e in edges}
     assert kinds <= {"ähnlich", "erweitert"}
+
+
+def test_engine_dedupes_exact_duplicate(tmp_path):
+    emb = HashEmbedder()
+    brain = make_brain(tmp_path)
+    engine = BrainEngine(brain, emb)
+    node1, _, dup1 = engine.ingest("Katzen jagen Maeuse nachts", source="agent/test")
+    node2, edges, dup2 = engine.ingest("Katzen jagen Maeuse nachts", source="human")
+    assert not dup1 and dup2
+    assert node2.id == node1.id
+    assert edges == []
+    nodes = brain.read_nodes()
+    assert len(nodes) == 1
+    assert "human" in nodes[0].sources
+    assert "agent/test" in nodes[0].sources
+
+
+def test_engine_dedupe_ignores_case_and_whitespace(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    node1, _, _ = engine.ingest("Katzen jagen Maeuse nachts")
+    node2, _, dup = engine.ingest("  katzen JAGEN maeuse   NACHTS ")
+    assert dup and node2.id == node1.id
+
+
+def test_engine_dedupe_can_be_disabled(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    n1, _, _ = engine.ingest("Katzen jagen Maeuse nachts")
+    n2, _, dup = engine.ingest("Katzen jagen Maeuse nachts", allow_duplicates=True)
+    assert not dup and n2.id != n1.id
+
+
+def test_engine_no_false_positive_dedupe(tmp_path):
+    emb = HashEmbedder()
+    engine = BrainEngine(make_brain(tmp_path), emb)
+    engine.ingest("Katzen jagen Maeuse nachts")
+    _, _, dup = engine.ingest("Rust Compiler borrow checker lifetime Regeln")
+    assert not dup

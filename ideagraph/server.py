@@ -79,18 +79,22 @@ class IngestBody(BaseModel):
     text: str
     source: str = "human"
     tags: list[str] = []
+    allow_duplicates: bool = False
 
 
 @app.post("/api/ingest")
 async def ingest(body: IngestBody):
     engine = make_engine()
-    node, edges = engine.ingest(body.text, body.source, body.tags)
+    node, edges, is_dup = engine.ingest(body.text, body.source, body.tags,
+                                        allow_duplicates=body.allow_duplicates)
     await manager.broadcast({
         "type": "ingested",
         "node": node.to_dict(),
         "edges": [e.to_dict() for e in edges],
+        "duplicate": is_dup,
     })
-    return {"node": node.to_dict(), "suggested": [e.to_dict() for e in edges]}
+    return {"node": node.to_dict(), "suggested": [e.to_dict() for e in edges],
+            "duplicate": is_dup}
 
 
 @app.post("/api/edge/{edge_id}/accept")

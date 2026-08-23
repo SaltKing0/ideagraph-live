@@ -25,17 +25,23 @@ def _now_iso() -> str:
 
 class Node:
     def __init__(self, text: str, id: str | None = None, created: str | None = None,
-                 source: str = "human", tags: list[str] | None = None):
+                 source: str = "human", tags: list[str] | None = None,
+                 sources: list[str] | None = None):
         self.text = text
         self.id = id or uuid.uuid4().hex[:12]
         self.created = created or _now_iso()
         self.source = source
         self.tags = tags or []
+        self.sources = sources or []
 
     def to_markdown(self) -> str:
         tags = "[" + ", ".join(self.tags) + "]" if self.tags else "[]"
-        return (f"---\nid: {self.id}\ncreated: {self.created}\n"
-                f"source: {self.source}\ntags: {tags}\n---\n\n{self.text}\n")
+        lines = [f"id: {self.id}", f"created: {self.created}",
+                 f"source: {self.source}"]
+        if self.sources:
+            lines.append("sources: [" + ", ".join(self.sources) + "]")
+        lines.append(f"tags: {tags}")
+        return "---\n" + "\n".join(lines) + "\n---\n\n" + f"{self.text}\n"
 
     @classmethod
     def from_markdown(cls, raw: str) -> "Node":
@@ -49,12 +55,13 @@ class Node:
                 key, _, val = line.partition(":")
                 meta[key.strip()] = val.strip()
         tags = [t.strip() for t in meta.get("tags", "[]").strip("[]").split(",") if t.strip()]
+        sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
-                   source=meta.get("source", "human"), tags=tags)
+                   source=meta.get("source", "human"), tags=tags, sources=sources)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "text": self.text, "created": self.created,
-                "source": self.source, "tags": self.tags}
+                "source": self.source, "tags": self.tags, "sources": self.sources}
 
 
 class Edge:
@@ -113,6 +120,20 @@ class Brain:
 
     def node_path(self, node_id: str) -> Path:
         return self.path / "nodes" / f"{node_id}.md"
+
+    def merge_node(self, node: Node, source: str | None = None) -> None:
+        """Duplikat-Ingest: bestehende Node behalten, Quelle protokollieren.
+
+        tags/created bleiben unberührt; die neue source wird ins Frontmatter
+        als `sources:`-Liste aufgenommen (ohne Duplikate).
+        """
+        sources = list(getattr(node, "sources", []) or [])
+        if node.source not in sources:
+            sources.insert(0, node.source)
+        if source and source not in sources:
+            sources.append(source)
+        node.sources = sources
+        self.write_node(node)
 
     def write_node(self, node: Node) -> None:
         nodes_dir = self.path / "nodes"
