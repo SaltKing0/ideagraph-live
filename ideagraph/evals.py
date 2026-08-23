@@ -25,6 +25,7 @@ from typing import Callable
 from .brain import Brain, Node
 from .brain_engine import BrainEngine
 from .retrieval import retrieve
+from .reranker import ReverseReranker
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,10 @@ class EvalTask:
     # Optionale Aktionen NACH den Ingests (z. B. manuelle same_as-Links,
     # Consolidation, Demotion). Rückgabewerte werden ignoriert.
     actions: list[Callable[[BrainEngine], object]] = field(default_factory=list)
+    # Optionaler Reranker (V2#1): wird nach dem Engine-Bau gesetzt, damit
+    # Retrieval-Evals den Cross-Encoder-Rerank-Pass mit einem deterministischen
+    # Stand-in messen können. None = Engine-Default (kein Rerank).
+    reranker: object | None = None
 
 
 @dataclass
@@ -217,6 +222,8 @@ def run_eval(task: EvalTask, engine_factory: EngineFactory, k: int = 1) -> EvalR
     """Führt die Aufgabe k-mal gegen eine frische Brain aus; alle Läufe müssen grün sein."""
     for run in range(1, k + 1):
         engine = engine_factory()
+        if task.reranker is not None:
+            engine.reranker = task.reranker
         for text, kwargs in task.ingests:
             engine.ingest(text, **kwargs)
         for action in task.actions:
@@ -352,6 +359,27 @@ GOLDEN_SET: list[EvalTask] = [
         ),
     ),
     EvalTask(
+        id="retrieval-rerank-honored",
+        name="V2: Rerank-Pass bestimmt die finale Rangfolge (Cross-Encoder-Pipeline)",
+        ingests=[
+            ("aaa bbb ccc", {}),
+            ("ddd eee fff", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            retrieval=[RetrievalExpectation(
+                query="ddd eee fff",
+                top=1,
+                includes=["aaa bbb ccc"],
+                excludes=["ddd eee fff"],
+            )],
+        ),
+        # ReverseReranker ist der deterministische Stand-in für einen Cross-Encoder:
+        # Hybrid würde "ddd eee fff" auf Rang 1 setzen; der Rerank-Pass kehrt das um.
+        # Grün nur, wenn retrieve() den Reranker tatsächlich berücksichtigt.
+        reranker=ReverseReranker(),
+    ),
+    EvalTask(
         id="taxonomy-procedural",
         name="prozeduraler Node trägt type=procedural",
         ingests=[
@@ -441,9 +469,29 @@ GOLDEN_SET: list[EvalTask] = [
 # ---------------------------------------------------------------------------
 
 ROADMAP_CASES: list[EvalTask] = [
-    # Alle konkret umgesetzten V2-Features (Confidence, Hybrid-Retrieval,
-    # Memory-Hygiene, Intent-Edges) sind im GOLDEN_SET. Hier kommen nur noch
-    # NICHT implementierte Zukunfts-Features hin (z. B. Cross-Encoder-Reranking,
-    # Late Chunking), damit sie als messbare Spezifikation getrackt werden.
+    # Admit-Rule-Enforcement (V2#3): mit `consolidate(admit_required=True)`
+    # soll eine Node ohne Relationen (keine Edges) in probation bleiben statt
+    # promoted zu werden. Das Flag wird von consolidate() bereits akzeptiert,
+    # aber noch nicht umgesetzt → dieser Fall ist ROT (Spezifikation).
+    EvalTask(
+        id="roadmap-admit-rule-enforce",
+        name="V2: Admit-Rule — Node ohne Relationen bleibt probation (admit_required)",
+        ingests=[
+            ("xyzvw abcdefgh ijklmnop", {}),
+        ],
+        actions=[lambda e: e.consolidate(admit_required=True)],
+        oracle=EvalOracle(
+            node_count=1,
+            node_status={"xyzvw abcdefgh ijklmnop": "probation"},
+        ),
+    ),
+    # Late Chunking (V2#1) ist bewusst KEIN Eval-Case: solange es keine echte
+    # Chunking-Schicht gibt (die Engine embeddet den ganzen Node-Text), lässt es
+    # sich nicht als End-State-Oracle spezifizieren — ein Case würde entweder
+    # spurious grün (Ganz-Text-Embedding erfüllt ihn trivial) oder aus falschen
+    # Gründen rot. Deshalb als dokumentierte Roadmap-Notiz, nicht als Fall.
+    #
+    # Cross-Encoder-Reranking (V2#1) ist UMGEsetzt → GOLDEN_SET
+    # (`retrieval-rerank-honored`), siehe dort.
 ]
 

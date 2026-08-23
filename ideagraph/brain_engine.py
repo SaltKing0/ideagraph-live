@@ -13,6 +13,7 @@ from .embedder import get_embedder
 from .similarity import cosine
 from .suggester import suggest, is_auto_accept
 from .intent import detect_intent
+from .reranker import get_reranker
 
 DEDUPE_THRESHOLD = 0.92
 # Intent-Edges dürfen nur für Paare feuern, die auch wirklich thematisch
@@ -42,10 +43,13 @@ def _normalize(text: str) -> str:
 
 
 class BrainEngine:
-    def __init__(self, brain: Brain, embedder=None, dedupe_threshold: float = DEDUPE_THRESHOLD):
+    def __init__(self, brain: Brain, embedder=None, dedupe_threshold: float = DEDUPE_THRESHOLD,
+                 reranker=None):
         self.brain = brain
         self.embedder = embedder if embedder is not None else get_embedder()
         self.dedupe_threshold = dedupe_threshold
+        # V2#1: optionaler Cross-Encoder-Rerank-Pass; None/Default → kein Rerank.
+        self.reranker = reranker if reranker is not None else get_reranker()
 
     def _find_duplicate(self, vec: list[float], exclude_id: str | None = None) -> Node | None:
         """Nächster Node über dem Dedupe-Threshold — oder None. Nutzt den Vektor-Cache."""
@@ -60,7 +64,7 @@ class BrainEngine:
             return None
         return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
-    def consolidate(self) -> dict:
+    def consolidate(self, admit_required: bool = False) -> dict:
         """Dedup-basierte Consolidation (V2#2): Dual-Buffer-Promotion.
 
         Prüft alle Probation-Nodes GEGENEINANDER und gegen active (schließt den
@@ -68,6 +72,13 @@ class BrainEngine:
         nie verglichen). Near-Duplicates werden GEMERGT (Dedupe, niemals
         summarize) und der überflüssige Probation-Node getombstoned; alle
         übrigen werden nach active promoted.
+
+        `admit_required` (V2#3 Admit-Rule, opt-in): wenn True, tritt eine Node
+        nur in den aktiven Graph ein, wenn sie Relationen (Edges) hat — sonst
+        bleibt sie in probation. Default False = bestehendes Verhalten
+        (promote alle). ENFORCEMENT ist getrackt als ROADMAP_CASE
+        `roadmap-admit-rule-enforce`; das Flag wird hier bereits akzeptiert,
+        damit die Spezifikation ausführbar ist, aber noch nicht umgesetzt.
         """
         promoted, merged = 0, 0
         for pn in self.brain.read_nodes():

@@ -129,6 +129,7 @@ ig ingest "New idea ..."
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministic test embedder |
 | `IDEAGRAPH_AUTO_ACCEPT` | off | `1` = edges accepted automatically (no HITL) |
 | `IDEAGRAPH_INTENT_PENDING` | off | `1` = intent edges (supersedes/continues/contradicts) become pending (HITL review) instead of auto-accepted |
+| `IDEAGRAPH_RERANKER` | none | optional cross-encoder rerank pass (V2#1): `st` = sentence-transformers CrossEncoder, or a model name/path; off by default |
 | `IG_BOT_NAME` | `ideagraph-bot` | git commit author (name) |
 | `IG_BOT_EMAIL` | `bot@ideagraph.local` | git commit author (email) |
 

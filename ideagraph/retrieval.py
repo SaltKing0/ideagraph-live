@@ -72,12 +72,15 @@ def rrf_fuse(ranked_lists: list[list[tuple[str, float]]], k: int = 60) -> list[t
     return sorted(fused.items(), key=lambda x: x[1], reverse=True)
 
 
-def retrieve(engine: BrainEngine, query: str, k: int = 5) -> list[tuple[str, float]]:
+def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30) -> list[tuple[str, float]]:
     """Hybrid-Retrieval über den Brain. Liefert top-k (node_id, rrf_score).
 
     Dense: Kosinus der Query-Embedding gegen die gecachten Node-Vektoren.
     BM25: lexikalische Überlappung gegen die Node-Texte.
     Fusion: RRF über die beiden Rangfolgen.
+    Rerank (V2#1, optional): Hybrid liefert top-`rerank_k` Kandidaten; ein auf
+    dem Engine gesetzter `reranker` (Cross-Encoder o. Stub) sortiert sie neu auf
+    top-`k`. Ohne Reranker (Default) bleibt das Verhalten identisch.
     """
     nodes = engine.brain.read_nodes()
     if not nodes:
@@ -92,4 +95,13 @@ def retrieve(engine: BrainEngine, query: str, k: int = 5) -> list[tuple[str, flo
     bm_scores = bm.scores(tokenize(query))
     bm_rank = [(nid, s) for nid, s in zip(node_ids, bm_scores)]
 
-    return rrf_fuse([dense, bm_rank], k=60)[:k]
+    candidates = rrf_fuse([dense, bm_rank], k=60)[:rerank_k]
+
+    reranker = getattr(engine, "reranker", None)
+    if reranker is None:
+        return candidates[:k]
+
+    text_by_id = {n.id: n.text for n in nodes}
+    with_text = [(nid, text_by_id[nid], score) for nid, score in candidates]
+    reranked = reranker.rerank(query, with_text, k)
+    return [(nid, score) for nid, _, score in reranked]
