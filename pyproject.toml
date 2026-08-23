@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ideagraph-live"
+version = "0.2.0"
+description = "Self-growing idea graph: Ingest → Embed → Suggest → Visualize. A generic engine for a persistent knowledge graph backed by your own private git repo (the 'brain')."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "SaltKing0" }]
+keywords = ["knowledge-graph", "memory", "agent", "embeddings", "rag", "zettelkasten"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Environment :: Web Environment",
+]
+dependencies = [
+  "fastapi==0.116.0",
+  "uvicorn[standard]==0.35.0",
+  "httpx==0.28.1",
+  "sentence-transformers==5.0.0",
+  "numpy==2.3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.0"]
+
+[project.scripts]
+ig = "ideagraph.__main__:main"
+
+[tool.setuptools]
+packages = ["ideagraph"]

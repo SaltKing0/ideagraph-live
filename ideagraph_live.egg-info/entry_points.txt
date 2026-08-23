@@ -1,0 +1,2 @@
+[console_scripts]
+ig = ideagraph.__main__:main
