@@ -74,11 +74,9 @@ class BrainEngine:
         übrigen werden nach active promoted.
 
         `admit_required` (V2#3 Admit-Rule, opt-in): wenn True, tritt eine Node
-        nur in den aktiven Graph ein, wenn sie Relationen (Edges) hat — sonst
-        bleibt sie in probation. Default False = bestehendes Verhalten
-        (promote alle). ENFORCEMENT ist getrackt als ROADMAP_CASE
-        `roadmap-admit-rule-enforce`; das Flag wird hier bereits akzeptiert,
-        damit die Spezifikation ausführbar ist, aber noch nicht umgesetzt.
+        nur in den aktiven Graph ein, wenn sie Relationen (aktive Edges) hat —
+        sonst bleibt sie in probation. Default False = bestehendes Verhalten
+        (promote alle).
         """
         promoted, merged = 0, 0
         for pn in self.brain.read_nodes():
@@ -92,12 +90,21 @@ class BrainEngine:
                 self.brain.merge_node(dup, source=pn.source)
                 self.brain.tombstone_node(pn.id)
                 merged += 1
-            else:
-                self.brain.promote_node(pn.id)
-                promoted += 1
+                continue
+            # V2#3 Admit-Rule (opt-in): ohne Relationen (aktive Edges) tritt die
+            # Node nicht in den aktiven Graph ein — sie bleibt in probation.
+            if admit_required and not self._has_relation(pn.id):
+                continue
+            self.brain.promote_node(pn.id)
+            promoted += 1
         if promoted or merged:
             self.brain.rebuild_index()
         return {"promoted": promoted, "merged": merged}
+
+    def _has_relation(self, node_id: str) -> bool:
+        """V2#3 Admit-Rule: hat die Node eine aktive Edge (ein-/ausgehend)?"""
+        return any(e.source == node_id or e.target == node_id
+                   for e in self.brain.read_edges() if e.valid_to is None)
 
     def demote_forgotten(self, level_fn) -> int:
         """Graceful Degradation (V2#2): aktive Nodes, deren level_fn=='tombstone'

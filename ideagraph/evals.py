@@ -461,20 +461,8 @@ GOLDEN_SET: list[EvalTask] = [
             edges=[EdgeExpectation("API v1 wird verwendet", "API v2 ersetzt v1", "supersedes")],
         ),
     ),
-]
-
-
-# ---------------------------------------------------------------------------
-# Roadmap-Fälle — gewünschtes Zukunfts-Verhalten (wird grün, sobald implementiert)
-# ---------------------------------------------------------------------------
-
-ROADMAP_CASES: list[EvalTask] = [
-    # Admit-Rule-Enforcement (V2#3): mit `consolidate(admit_required=True)`
-    # soll eine Node ohne Relationen (keine Edges) in probation bleiben statt
-    # promoted zu werden. Das Flag wird von consolidate() bereits akzeptiert,
-    # aber noch nicht umgesetzt → dieser Fall ist ROT (Spezifikation).
     EvalTask(
-        id="roadmap-admit-rule-enforce",
+        id="admit-rule-no-relations",
         name="V2: Admit-Rule — Node ohne Relationen bleibt probation (admit_required)",
         ingests=[
             ("xyzvw abcdefgh ijklmnop", {}),
@@ -485,13 +473,40 @@ ROADMAP_CASES: list[EvalTask] = [
             node_status={"xyzvw abcdefgh ijklmnop": "probation"},
         ),
     ),
-    # Late Chunking (V2#1) ist bewusst KEIN Eval-Case: solange es keine echte
+    EvalTask(
+        id="admit-rule-with-relations",
+        name="V2: Admit-Rule — Node MIT deklarierten Relationen wird aktiv",
+        ingests=[
+            ("aaa bbb ccc", {}),
+            ("aaa bbb ccc ddd", {"allow_duplicates": True,
+                                 "relations": [("aaa bbb ccc", "erweitert")]}),
+        ],
+        actions=[lambda e: e.consolidate(admit_required=True)],
+        oracle=EvalOracle(
+            node_count=2,
+            node_status={
+                "aaa bbb ccc": "active",
+                "aaa bbb ccc ddd": "active",
+            },
+        ),
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Roadmap-Fälle — gewünschtes Zukunfts-Verhalten (wird grün, sobald implementiert)
+# ---------------------------------------------------------------------------
+
+ROADMAP_CASES: list[EvalTask] = [
+    # Admit-Rule-Enforcement (V2#3) ist umgesetzt → GOLDEN_SET
+    # (`admit-rule-no-relations`, `admit-rule-with-relations`).
+    # Late Chunking (V2#1) bleibt bewusst KEIN Eval-Case: solange es keine echte
     # Chunking-Schicht gibt (die Engine embeddet den ganzen Node-Text), lässt es
     # sich nicht als End-State-Oracle spezifizieren — ein Case würde entweder
     # spurious grün (Ganz-Text-Embedding erfüllt ihn trivial) oder aus falschen
     # Gründen rot. Deshalb als dokumentierte Roadmap-Notiz, nicht als Fall.
     #
-    # Cross-Encoder-Reranking (V2#1) ist UMGEsetzt → GOLDEN_SET
-    # (`retrieval-rerank-honored`), siehe dort.
+    # Cross-Encoder-Reranking (V2#1) ist umgesetzt → GOLDEN_SET
+    # (`retrieval-rerank-honored`).
 ]
 
