@@ -57,7 +57,7 @@ when an individual is officially representing the community in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-`tenjin-harness@proton.me` (bitte vor Release durch die echte Adresse ersetzen).
+`tenjin-harness@proton.me`.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
