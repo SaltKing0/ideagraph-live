@@ -2,7 +2,7 @@
 
 **Selbstwachsender Ideen-Graph: Ingest → Embed → Suggest → Visualize**
 
-v0.1.4 — Autonomie-Modus (IDEAGRAPH_AUTO_ACCEPT), Review-UI (/review). Das Gedächtnis ist ein privates Git-Repo: [ideagraph-brain](https://github.com/your-brain-repo).
+v0.1.4 — Autonomie-Modus (IDEAGRAPH_AUTO_ACCEPT), Review-UI (/review). Das Gedächtnis ist dein eigenes privates Git-Repo (z.B. `~/ideagraph-brain`) — die Engine ist generisch und zeigt per `IG_BRAIN_PATH` auf deinen Brain.
 
 ## Architektur
 
@@ -74,7 +74,8 @@ Text ──▶ git pull ──▶ Node als .md ──▶ Embedding ──▶ k-N
 ## Quickstart
 
 ```bash
-git clone git@github.com:your-brain-repo.git ~/ideagraph-brain
+# dein eigenes Brain-Repo einmalig klonen (Remote nur hier nötig):
+git clone <dein-brain-repo> ~/ideagraph-brain
 python3 -m venv --without-pip .venv && .venv/bin/pip install -r requirements.txt
 
 # Demo-Modus (HashEmbedder, kein Modell-Download):
@@ -91,9 +92,11 @@ echo "Neue Idee" | python -m ideagraph ingest -   # CLI-Ingest
 |---|---|---|
 | `IG_BRAIN_PATH` | `~/ideagraph-brain` | Pfad zum Brain-Clone |
 | `IDEAGRAPH_AUTO_ACCEPT` | aus | `1` = Edge-Vorschläge werden automatisch akzeptiert (Autonomie-Modus, kein HITL) |
-| `IG_BRAIN_REMOTE` | `git@github.com:your-brain-repo.git` | Remote-URL |
+| `IG_BRAIN_REMOTE` | *(keiner)* | nur für `git clone` beim ersten Einrichten nötig; Bestandsklones nutzen ihr eigenes origin |
 | `IG_BRAIN_MODE` | `git` | `local` = nur FS (Tests) |
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministischer Test-Embedder |
+| `IG_BOT_NAME` | `ideagraph-bot` | Git-Commit-Autor (Name) |
+| `IG_BOT_EMAIL` | `bot@ideagraph.local` | Git-Commit-Autor (E-Mail) |
 
 ## Tests
 

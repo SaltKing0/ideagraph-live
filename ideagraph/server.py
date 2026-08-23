@@ -2,7 +2,9 @@
 
 Env-Steuerung:
   IG_BRAIN_PATH   — Pfad zum Brain-Clone (default: ~/ideagraph-brain)
-  IG_BRAIN_REMOTE — SSH/GitHub-URL (default: git@github.com:your-brain-repo.git)
+  IG_BRAIN_REMOTE — SSH/GitHub-URL (nur für `git clone` beim ersten
+                    Einrichten; kein persönlicher Default, Bestandsklones
+                    nutzen ihr eigenes origin)
   IG_BRAIN_MODE   — "git" (echtes Repo) oder "local" (nur FS, für Tests)
   IDEAGRAPH_EMBEDDER — "st" (sentence-transformers) oder "hash" (Demo/Tests)
 """
@@ -28,7 +30,7 @@ app = FastAPI(title="IdeaGraph Live Engine")
 def make_brain() -> Brain:
     return Brain(
         path=os.environ.get("IG_BRAIN_PATH", str(Path.home() / "ideagraph-brain")),
-        remote=os.environ.get("IG_BRAIN_REMOTE", "git@github.com:your-brain-repo.git"),
+        remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
         mode=os.environ.get("IG_BRAIN_MODE", "git"),
     )
 

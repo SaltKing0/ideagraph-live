@@ -12,6 +12,7 @@ Für Tests: mode="local" arbeitet ohne git in einem temp dir.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import uuid
@@ -131,7 +132,11 @@ class Brain:
     def commit_and_push(self, message: str) -> None:
         if self.mode != "git":
             return
-        env_user = ["-c", "user.name=ideagraph-bot", "-c", "user.email=bot@ideagraph.local"]
+        # Bot-Identität ist konfigurierbar (IG_BOT_NAME/IG_BOT_EMAIL); keine
+        # fest verdrahtete persönliche Identität mehr.
+        bot_name = os.environ.get("IG_BOT_NAME", "ideagraph-bot")
+        bot_email = os.environ.get("IG_BOT_EMAIL", "bot@ideagraph.local")
+        env_user = ["-c", f"user.name={bot_name}", "-c", f"user.email={bot_email}"]
         subprocess.run(["git", "-C", str(self.path), *env_user, "add", "-A"], check=True)
         diff = subprocess.run(["git", "-C", str(self.path), *env_user,
                                "diff", "--cached", "--quiet"], capture_output=True)

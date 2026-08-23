@@ -27,7 +27,10 @@ from .retrieval import retrieve
 def make_engine() -> BrainEngine:
     brain = Brain(
         path=os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")),
-        remote=os.environ.get("IG_BRAIN_REMOTE", "git@github.com:your-brain-repo.git"),
+        # Kein privater/persönlicher Default-Remote mehr: nur für `git clone`
+        # beim ersten Einrichten nötig. Bestehende Clones nutzen ihr eigenes
+        # origin-Repo (pull/push funktionieren ohne Remote-Angabe).
+        remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
         mode=os.environ.get("IG_BRAIN_MODE", "git"),
     )
     return BrainEngine(brain, get_embedder(os.environ.get("IDEAGRAPH_EMBEDDER", "st")))
