@@ -45,6 +45,47 @@ class BrainEngine:
             return None
         return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
+    def consolidate(self) -> dict:
+        """Dedup-basierte Consolidation (V2#2): Dual-Buffer-Promotion.
+
+        Prüft alle Probation-Nodes GEGENEINANDER und gegen active (schließt den
+        Streaming-Blindfleck: im selben Commit ingestierte Nodes wurden bisher
+        nie verglichen). Near-Duplicates werden GEMERGT (Dedupe, niemals
+        summarize) und der überflüssige Probation-Node getombstoned; alle
+        übrigen werden nach active promoted.
+        """
+        promoted, merged = 0, 0
+        for pn in self.brain.read_nodes():
+            if pn.status != "probation":
+                continue
+            pvec = self.brain.vectors_for(
+                {pn.id}, lambda t: self.embedder.embed(_normalize(t))
+            ).get(pn.id)
+            dup = self._find_duplicate(pvec, exclude_id=pn.id) if pvec else None
+            if dup is not None and dup.status != "tombstone":
+                self.brain.merge_node(dup, source=pn.source)
+                self.brain.tombstone_node(pn.id)
+                merged += 1
+            else:
+                self.brain.promote_node(pn.id)
+                promoted += 1
+        if promoted or merged:
+            self.brain.rebuild_index()
+        return {"promoted": promoted, "merged": merged}
+
+    def demote_forgotten(self, level_fn) -> int:
+        """Graceful Degradation (V2#2): aktive Nodes, deren level_fn=='tombstone'
+        ist, werden getombstoned (nie hart gelöscht). level_fn(node)->str liefert
+        die Decay-Stufe (z. B. aus decay.decay_level mit Retrieval-Zählern)."""
+        count = 0
+        for n in self.brain.read_nodes():
+            if n.status == "active" and level_fn(n) == "tombstone":
+                self.brain.tombstone_node(n.id)
+                count += 1
+        if count:
+            self.brain.rebuild_index()
+        return count
+
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
                allow_duplicates: bool = False, ntype: str = "semantic",
                auto_accept: bool | None = None) -> tuple[Node, list[Edge], bool]:

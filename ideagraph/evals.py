@@ -66,6 +66,8 @@ class EvalOracle:
     edges: list[EdgeExpectation] = field(default_factory=list)
     no_edge: list[EdgeExpectation] = field(default_factory=list)
     retrieval: list[RetrievalExpectation] = field(default_factory=list)
+    # text -> erwarteter Node-Status (V2#2 Memory-Hygiene)
+    node_status: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -74,8 +76,9 @@ class EvalTask:
     name: str
     ingests: list[tuple[str, dict]]  # (text, kwargs) — Reihenfolge ist Teil des Szenarios
     oracle: EvalOracle
-    # Optionale Aktionen NACH den Ingests (z. B. manuelle same_as-Links).
-    actions: list[Callable[[BrainEngine], None]] = field(default_factory=list)
+    # Optionale Aktionen NACH den Ingests (z. B. manuelle same_as-Links,
+    # Consolidation, Demotion). Rückgabewerte werden ignoriert.
+    actions: list[Callable[[BrainEngine], object]] = field(default_factory=list)
 
 
 @dataclass
@@ -134,6 +137,13 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
             for s in req_sources:
                 if s not in n.sources:
                     failures.append(f"node {text!r} missing source {s!r} (got {n.sources})")
+
+    for text, expected_status in oracle.node_status.items():
+        n = find_node_by_text(brain, text)
+        if n is None:
+            failures.append(f"status node missing: {text!r}")
+        elif n.status != expected_status:
+            failures.append(f"node {text!r}: expected status {expected_status!r}, got {n.status!r}")
 
     for eexp in oracle.edges:
         s = find_node_by_text(brain, eexp.source)
@@ -360,6 +370,43 @@ GOLDEN_SET: list[EvalTask] = [
         oracle=EvalOracle(
             node_count=2,
             edges=[EdgeExpectation("Katzen jagen Maeuse", "Cats hunt mice", "same_as")],
+        ),
+    ),
+    EvalTask(
+        id="hygiene-promote",
+        name="V2: Dual-Buffer — Consolidation promoted Probation-Nodes zu active",
+        ingests=[
+            ("katze hund tier futter", {}),
+            ("quantenmechanik wellenfunktion schroedinger", {}),
+        ],
+        actions=[lambda e: e.consolidate()],
+        oracle=EvalOracle(
+            node_count=2,
+            node_status={
+                "katze hund tier futter": "active",
+                "quantenmechanik wellenfunktion schroedinger": "active",
+            },
+        ),
+    ),
+    EvalTask(
+        id="hygiene-demote",
+        name="V2: Graceful Degradation — ungenutzte Node wird getombstoned",
+        ingests=[
+            ("katze hund tier futter", {}),
+            ("quantenmechanik wellenfunktion schroedinger", {}),
+        ],
+        actions=[
+            lambda e: e.consolidate(),
+            lambda e: e.demote_forgotten(
+                lambda n: "tombstone" if "katze" in n.text else "record"
+            ),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            node_status={
+                "katze hund tier futter": "tombstone",
+                "quantenmechanik wellenfunktion schroedinger": "active",
+            },
         ),
     ),
 ]

@@ -23,10 +23,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+VALID_STATUS = ("probation", "active", "tombstone")
+
+
 class Node:
     def __init__(self, text: str, id: str | None = None, created: str | None = None,
                  source: str = "human", tags: list[str] | None = None,
-                 sources: list[str] | None = None, ntype: str = "semantic"):
+                 sources: list[str] | None = None, ntype: str = "semantic",
+                 status: str = "probation"):
         self.text = text
         self.id = id or uuid.uuid4().hex[:12]
         self.created = created or _now_iso()
@@ -35,11 +39,15 @@ class Node:
         self.sources = sources or []
         # Taxonomie (LangGraph/Survey-Lektion): semantic | episodic | procedural
         self.ntype = ntype if ntype in ("semantic", "episodic", "procedural") else "semantic"
+        # V2#2 Memory-Hygiene: Dual-Buffer — neue Nodes starten in probation,
+        # werden nach Dedup/Verification promoted, oder landen als tombstone.
+        self.status = status if status in VALID_STATUS else "probation"
 
     def to_markdown(self) -> str:
         tags = "[" + ", ".join(self.tags) + "]" if self.tags else "[]"
         lines = [f"id: {self.id}", f"created: {self.created}",
-                 f"source: {self.source}", f"type: {self.ntype}"]
+                 f"source: {self.source}", f"type: {self.ntype}",
+                 f"status: {self.status}"]
         if self.sources:
             lines.append("sources: [" + ", ".join(self.sources) + "]")
         lines.append(f"tags: {tags}")
@@ -60,19 +68,20 @@ class Node:
         sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
                    source=meta.get("source", "human"), tags=tags, sources=sources,
-                   ntype=meta.get("type", "semantic"))
+                   ntype=meta.get("type", "semantic"), status=meta.get("status", "probation"))
 
     def to_dict(self) -> dict:
         return {"id": self.id, "text": self.text, "created": self.created,
                 "source": self.source, "tags": self.tags, "sources": self.sources,
-                "type": self.ntype}
+                "type": self.ntype, "status": self.status}
 
 
 class Edge:
     def __init__(self, source: str, target: str, kind: str,
                  pending: bool = True, id: str | None = None,
                  valid_from: str | None = None, valid_to: str | None = None,
-                 confidence: float | None = None):
+                 confidence: float | None = None,
+                 invalidated_by: str | None = None):
         self.source = source
         self.target = target
         self.kind = kind
@@ -84,12 +93,15 @@ class Edge:
         self.valid_to = valid_to  # None = aktuell gültig; gesetzt = invalidiert
         # V2#3: Confidence (Kosinus) der Auto-Vorschläge; None bei manuellen Links.
         self.confidence = confidence
+        # V1#1: Provenance — welche Kante/Event diese Kante invalidiert hat.
+        self.invalidated_by = invalidated_by
 
     def to_dict(self) -> dict:
         return {"id": self.id, "source": self.source, "target": self.target,
                 "kind": self.kind, "pending": self.pending,
                 "valid_from": self.valid_from, "valid_to": self.valid_to,
-                "confidence": self.confidence}
+                "confidence": self.confidence,
+                "invalidated_by": self.invalidated_by}
 
 
 class Brain:
@@ -153,6 +165,24 @@ class Brain:
         nodes_dir = self.path / "nodes"
         nodes_dir.mkdir(parents=True, exist_ok=True)
         self.node_path(node.id).write_text(node.to_markdown(), encoding="utf-8")
+
+    def promote_node(self, node_id: str) -> Node | None:
+        """Dual-Buffer (V2#2): probation -> active nach erfolgreicher Dedup-Prüfung."""
+        node = next((n for n in self.read_nodes() if n.id == node_id), None)
+        if node is None:
+            return None
+        node.status = "active"
+        self.write_node(node)
+        return node
+
+    def tombstone_node(self, node_id: str) -> Node | None:
+        """Graceful Degradation (V2#2): Node als vergessen markieren (nie hart löschen)."""
+        node = next((n for n in self.read_nodes() if n.id == node_id), None)
+        if node is None:
+            return None
+        node.status = "tombstone"
+        self.write_node(node)
+        return node
 
     def read_nodes(self) -> list[Node]:
         nodes_dir = self.path / "nodes"
@@ -220,7 +250,8 @@ class Brain:
                                   d.get("pending", False), d["id"],
                                   valid_from=d.get("valid_from"),
                                   valid_to=d.get("valid_to"),
-                                  confidence=d.get("confidence")))
+                                  confidence=d.get("confidence"),
+                                  invalidated_by=d.get("invalidated_by")))
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:
@@ -234,14 +265,18 @@ class Brain:
         edges.append(edge)
         self.write_edges(edges)
 
-    def invalidate_edge(self, edge_id: str, reason: str | None = None) -> Edge | None:
+    def invalidate_edge(self, edge_id: str, reason: str | None = None,
+                        by_edge_id: str | None = None) -> Edge | None:
         """Kante invalidieren statt löschen (Zep-Lektion): valid_to wird gesetzt,
-        die Kante bleibt mit voller Historie in der Datei."""
+        die Kante bleibt mit voller Historie in der Datei. `by_edge_id` hält die
+        Provenance, welche Kante/Event diese invalidiert hat (V1#1)."""
         edges = self.read_edges()
         edge = next((e for e in edges if e.id == edge_id), None)
         if edge is None or edge.valid_to is not None:
             return None
         edge.valid_to = _now_iso()
+        if by_edge_id:
+            edge.invalidated_by = by_edge_id
         self.write_edges(edges)
         return edge
 
