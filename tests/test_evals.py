@@ -136,7 +136,8 @@ def test_golden_set_all_pass(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_roadmap_cases_registered():
-    assert ROADMAP_CASES, "Roadmap-Fälle dürfen nicht leer sein"
+    # Leere ROADMAP_CASES = alle V2-Features sind umgesetzt (im GOLDEN_SET).
+    # Wenn Einträge existieren, brauchen sie eindeutige, roadmap-*-ids.
     ids = [t.id for t in ROADMAP_CASES]
     assert len(ids) == len(set(ids)), "Roadmap-Fälle müssen eindeutige ids haben"
     assert all(t.id.startswith("roadmap-") for t in ROADMAP_CASES)
@@ -146,10 +147,11 @@ def test_roadmap_cases_registered():
 def test_roadmap_cases_are_not_yet_green(tmp_path):
     """Solange ein Roadmap-Feature nicht implementiert ist, schlägt sein Fall fehl.
 
-    Sobald wir ein Feature umsetzen, wandert sein Fall ins GOLDEN_SET — das ist
-    der messbare Fortschritt. Hier prüfen wir nur, dass noch NICHT alles grün ist
-    (d. h. es gibt echte offene Arbeit), nicht welcher Fall konkret fehlschlägt.
+    Wenn ROADMAP_CASES leer ist, sind alle konkret geplanten V2-Features umgesetzt
+    (grün im GOLDEN_SET) — dann ist dieser Test trivial erfüllt.
     """
+    if not ROADMAP_CASES:
+        return  # alles implementiert
     counter = [0]
 
     def factory():

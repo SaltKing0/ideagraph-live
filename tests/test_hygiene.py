@@ -118,3 +118,32 @@ def test_invalidate_edge_records_provenance(tmp_path):
     # Roundtrip über die Datei
     reloaded = next(e for e in brain.read_edges() if e.id == e1.id)
     assert reloaded.invalidated_by == e2.id
+
+
+# ---------- Intent-Edges + Admit-Rule (V2#3) ----------
+
+def test_ingest_contradiction_edge(tmp_path):
+    eng = make_engine(tmp_path)
+    eng.ingest("Die Erde ist eine Scheibe")
+    _, edges, _ = eng.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
+    kinds = {e.kind for e in edges}
+    assert "kontradiktorisch" in kinds
+    assert all(not e.pending for e in edges if e.kind == "kontradiktorisch")
+
+
+def test_ingest_supersedes_edge(tmp_path):
+    eng = make_engine(tmp_path)
+    eng.ingest("API v1 wird verwendet")
+    _, edges, _ = eng.ingest("API v2 ersetzt v1")
+    assert any(e.kind == "supersedes" for e in edges)
+
+
+def test_admit_rule_declared_relations(tmp_path):
+    eng = make_engine(tmp_path)
+    base, _, _ = eng.ingest("Grundlagen der Quantenmechanik")
+    _, edges, _ = eng.ingest(
+        "Vertiefung zur Quantenmechanik",
+        relations=[(base.text, "continues")],
+    )
+    assert any(e.kind == "continues" for e in edges)
+    assert all(not e.pending for e in edges if e.kind == "continues")

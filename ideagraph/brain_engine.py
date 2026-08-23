@@ -12,6 +12,7 @@ from .brain import Brain, Node, Edge
 from .embedder import get_embedder
 from .similarity import cosine
 from .suggester import suggest, is_auto_accept
+from .intent import detect_intent
 
 DEDUPE_THRESHOLD = 0.92
 AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
@@ -88,7 +89,8 @@ class BrainEngine:
 
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
                allow_duplicates: bool = False, ntype: str = "semantic",
-               auto_accept: bool | None = None) -> tuple[Node, list[Edge], bool]:
+               auto_accept: bool | None = None,
+               relations: list[tuple[str, str]] | None = None) -> tuple[Node, list[Edge], bool]:
         """Ingest mit Dedupe. Rückgabe: (node, edges, is_duplicate).
 
         Bei Near-Duplicate (cosine >= threshold gegen normalisierten Text)
@@ -117,14 +119,37 @@ class BrainEngine:
         # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
         others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
         candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
-        # V2#3: pending nur, wenn weder das Confidence-Band (>=0.95) noch der
-        # Env-Override (IDEAGRAPH_AUTO_ACCEPT) die Edge auto-akzeptiert.
-        edges = [Edge(source=s.source, target=s.target, kind=s.kind,
-                      pending=not (is_auto_accept(s.confidence) or auto_accept),
-                      confidence=s.confidence)
-                 for s in suggest(node.id, vec, candidates)]
+        # V2#3 Intent-Edges + Admit-Rule: die neue Node tritt mit ihren Relationen ein.
+        intent_edges: list[Edge] = []
+        for ex in self.brain.read_nodes():
+            if ex.id == node.id:
+                continue
+            intent = detect_intent(node.text, ex.text)
+            if intent:
+                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=False))
+        # Admit-Rule: explizit deklarierte Relationen (target_text|id, kind).
+        if relations:
+            for ref, kind in relations:
+                target = next((n for n in self.brain.read_nodes()
+                               if n.id == ref or n.text.strip().lower() == ref.strip().lower()), None)
+                if target is not None and target.id != node.id:
+                    intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False))
+        # Similarity-Edges (V2#3): pending nur, wenn weder das Confidence-Band (>=0.95)
+        # noch der Env-Override (IDEAGRAPH_AUTO_ACCEPT) die Edge auto-akzeptiert.
+        sim_edges = [Edge(source=s.source, target=s.target, kind=s.kind,
+                          pending=not (is_auto_accept(s.confidence) or auto_accept),
+                          confidence=s.confidence)
+                     for s in suggest(node.id, vec, candidates)]
+        # Intent/Admit-Rule-Edges haben Vorrang; Similarity darf dieselbe Pair nicht duplizieren.
+        claimed = {(e.source, e.target) for e in intent_edges}
+        combined = list(intent_edges)
+        for e in sim_edges:
+            if (e.source, e.target) in claimed:
+                continue
+            claimed.add((e.source, e.target))
+            combined.append(e)
         existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
-        new_edges = [e for e in edges if (e.source, e.target) not in existing_pairs]
+        new_edges = [e for e in combined if (e.source, e.target) not in existing_pairs]
         for e in new_edges:
             self.brain.add_edge(e)
         # Vektor der neuen Node cachen

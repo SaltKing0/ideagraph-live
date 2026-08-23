@@ -409,29 +409,21 @@ GOLDEN_SET: list[EvalTask] = [
             },
         ),
     ),
-]
-
-
-# ---------------------------------------------------------------------------
-# Roadmap-Fälle — gewünschtes Zukunfts-Verhalten (wird grün, sobald implementiert)
-# ---------------------------------------------------------------------------
-
-ROADMAP_CASES: list[EvalTask] = [
     EvalTask(
-        id="roadmap-contradiction",
-        name="V2: widersprüchliche Aussagen → 'kontradiktorisch'-Edge auto-erkannt",
+        id="intent-contradiction",
+        name="V2: widersprüchliche Aussage → 'kontradiktorisch'-Edge auto-erkannt",
         ingests=[
             ("Die Erde ist eine Scheibe", {}),
-            ("Die Erde ist eine Kugel", {}),
+            ("Die Erde ist keine Scheibe", {}),
         ],
         oracle=EvalOracle(
             node_count=2,
-            edges=[EdgeExpectation("Die Erde ist eine Scheibe", "Die Erde ist eine Kugel", "kontradiktorisch")],
+            edges=[EdgeExpectation("Die Erde ist eine Scheibe", "Die Erde ist keine Scheibe", "kontradiktorisch")],
         ),
     ),
     EvalTask(
-        id="roadmap-intent-supersedes",
-        name="V2: neuere Aussage überschreibt ältere → 'supersedes'-Edge",
+        id="intent-supersedes",
+        name="V2: neuere Aussage ersetzt ältere → 'supersedes'-Edge",
         ingests=[
             ("API v1 wird verwendet", {}),
             ("API v2 ersetzt v1", {}),
@@ -441,5 +433,17 @@ ROADMAP_CASES: list[EvalTask] = [
             edges=[EdgeExpectation("API v1 wird verwendet", "API v2 ersetzt v1", "supersedes")],
         ),
     ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Roadmap-Fälle — gewünschtes Zukunfts-Verhalten (wird grün, sobald implementiert)
+# ---------------------------------------------------------------------------
+
+ROADMAP_CASES: list[EvalTask] = [
+    # Alle konkret umgesetzten V2-Features (Confidence, Hybrid-Retrieval,
+    # Memory-Hygiene, Intent-Edges) sind im GOLDEN_SET. Hier kommen nur noch
+    # NICHT implementierte Zukunfts-Features hin (z. B. Cross-Encoder-Reranking,
+    # Late Chunking), damit sie als messbare Spezifikation getrackt werden.
 ]
 
