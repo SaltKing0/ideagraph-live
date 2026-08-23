@@ -15,6 +15,12 @@ from .suggester import suggest, is_auto_accept
 from .intent import detect_intent
 
 DEDUPE_THRESHOLD = 0.92
+# Intent-Edges dürfen nur für Paare feuern, die auch wirklich thematisch
+# verwandt sind (gleiche Schwelle wie "erweitert"). Ohne diese Schranke würde
+# ein Marker-Wort im neuen Text ("ersetzt", "supersedes") eine Node gegen
+# JEDE bestehende Node als Intent nachordnen — in einem thematisch homogenen
+# Brain (geteilte Domänenvokabeln) sogar gegen fast alle.
+INTENT_SIM_THRESHOLD = 0.45
 AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
 
 
@@ -120,13 +126,20 @@ class BrainEngine:
         others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
         candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
         # V2#3 Intent-Edges + Admit-Rule: die neue Node tritt mit ihren Relationen ein.
+        # Intent-Edges sind pending=False (automatisch akzeptiert), deshalb müssen
+        # sie zusätzlich eine echte thematische Verwandtschaft nachweisen (ST-Kosinus
+        # >= INTENT_SIM_THRESHOLD), sonst spammt ein Marker-Wort alle Nodes voll.
         intent_edges: list[Edge] = []
         for ex in self.brain.read_nodes():
             if ex.id == node.id:
                 continue
             intent = detect_intent(node.text, ex.text)
-            if intent:
-                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=False))
+            if not intent:
+                continue
+            ex_vec = candidates.get(ex.id)
+            if ex_vec is None or cosine(vec, ex_vec) < INTENT_SIM_THRESHOLD:
+                continue
+            intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=False))
         # Admit-Rule: explizit deklarierte Relationen (target_text|id, kind).
         if relations:
             for ref, kind in relations:

@@ -12,6 +12,13 @@ def test_supersedes_replacement_marker():
     assert detect_intent("API v2 ersetzt v1", "API v1 wird verwendet") == "supersedes"
 
 
+def test_supersedes_requires_shared_subject():
+    # Marker vorhanden, aber über ein anderes Thema → kein supersedes.
+    # (Regression: ohne diese Prüfung markierte eine Node mit Marker-Wort
+    #  JEDE bestehende Node als supersedes.)
+    assert detect_intent("API v2 ersetzt v1", "Die Erde ist eine Scheibe") is None
+
+
 def test_contradiction_negation():
     assert (
         detect_intent(
