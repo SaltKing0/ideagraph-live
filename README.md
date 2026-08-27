@@ -60,6 +60,12 @@ uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localho
 - **Memory hygiene (V2#2)** — dual buffer: new nodes start in `probation`,
   promoted to `active` or `tombstone` after dedup verification (graceful
   degradation, never hard-deleted); Weibull decay.
+- **Cross-encoder rerank pass (V2#1)** — optional second retrieval stage over
+  the top-K candidates; enabled via `IDEAGRAPH_RERANKER` (off by default,
+  no new hard dependency).
+- **Admit-rule (V2#3)** — opt-in governance: with
+  `consolidate(admit_required=True)`, a node without relations stays in
+  `probation` instead of being promoted.
 - **Snapshot persistence** — every ingest is a git commit; bi-temporal edges
   + provenance (`invalidated_by`).
 
