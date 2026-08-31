@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ideagraph-live"
-version = "0.3.0"
+version = "0.3.1"
 description = "Self-growing idea graph: Ingest → Embed → Suggest → Visualize. A generic engine for a persistent knowledge graph backed by your own private git repo (the 'brain')."
 readme = "README.md"
 requires-python = ">=3.10"
