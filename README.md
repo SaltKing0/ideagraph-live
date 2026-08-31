@@ -72,13 +72,14 @@ uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localho
 ## CLI
 
 ```bash
-ig ingest "New idea ..."            # ingest (duplicates are merged)
-cat note.md | ig ingest -           # from file/stdin
-ig pending                          # open edge suggestions
-ig accept <edge_id>                 # accept a suggestion
-ig reject <edge_id>                 # reject a suggestion
-ig link <node_a> <node_b>           # manual edge (default: same_as)
-ig search "attention"               # hybrid search (dense + BM25)
+ig init [--remote <url>]         # create a new brain repo (git + structure)
+ig ingest "New idea ..."         # ingest (duplicates are merged)
+cat note.md | ig ingest -        # from file/stdin
+ig pending                       # open edge suggestions
+ig accept <edge_id>              # accept a suggestion
+ig reject <edge_id>              # reject a suggestion
+ig link <node_a> <node_b>        # manual edge (default: same_as)
+ig search "attention"            # hybrid search (dense + BM25)
 ```
 
 ## Edge types
@@ -108,21 +109,35 @@ frontmatter, the commit says `ingest dup of …`. Opt-out: `allow_duplicates: tr
 
 ## Quickstart
 
-```bash
-# 1) clone your own brain repo once (remote only needed here):
-git clone <your-brain-repo> ~/ideagraph-brain
+The fastest path — **zero manual git setup**:
 
-# 2) set up the engine (Python 3.10+)
+```bash
+# 1) set up the engine (Python 3.10+)
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 
-# 3) start the server
-#   demo without model download:  IDEAGRAPH_EMBEDDER=hash uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
-#   real (loads all-MiniLM-L6-v2): uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000
+# 2) create your brain repo — one command (git repo + structure + first commit)
+ig init
+#   → ~/ideagraph-brain  (nodes/ · edges.jsonl · vectors.jsonl · INDEX.md)
 
-# 4) CLI ingest
-ig ingest "New idea ..."
-# → http://localhost:8000 — Ingest/Graph/Review tabs
+# 3) start capturing ideas — the brain grows as visible git history
+ig ingest "First idea ..."
+
+# 4) see it grow in the cockpit
+uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000
+```
+
+**Want your brain in a private git remote** (so your agent can sync across
+machines)? Connect it right away:
+
+```bash
+ig init --remote <your-brain-repo>   # create + connect + push initial commit
+```
+
+Or use an existing remote brain — the engine clones it on first use:
+
+```bash
+IG_BRAIN_REMOTE=<your-brain-repo> ig ingest "First idea ..."
 ```
 
 ### Environment variables
@@ -130,7 +145,7 @@ ig ingest "New idea ..."
 | Variable | Default | Meaning |
 |---|---|---|
 | `IG_BRAIN_PATH` | `~/ideagraph-brain` | path to the brain clone |
-| `IG_BRAIN_REMOTE` | *(none)* | only needed for `git clone` on first setup; existing clones use their own origin |
+| `IG_BRAIN_REMOTE` | *(none)* | remote brain URL — auto-clones on first use (or `ig init --remote`) |
 | `IG_BRAIN_MODE` | `git` | `local` = filesystem only (tests) |
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministic test embedder |
 | `IDEAGRAPH_AUTO_ACCEPT` | off | `1` = edges accepted automatically (no HITL) |
@@ -145,8 +160,8 @@ ig ingest "New idea ..."
 .venv/bin/python -m pytest tests/ -q
 ```
 
-82 tests — similarity, edge suggestion, intent, dedupe, memory hygiene,
-Markdown round-trip, brain FS, retrieval, evals (golden set).
+85 tests — similarity, edge suggestion, intent, dedupe, memory hygiene,
+Markdown round-trip, brain FS, retrieval, evals (golden set), onboarding (`ig init`).
 
 ## Open source / privacy
 

@@ -1,6 +1,7 @@
-"""CLI für das Brain: ingest, pending, accept, reject, link, search.
+"""CLI für das Brain: init, ingest, pending, accept, reject, link, search.
 
 Beispiele:
+  python -m ideagraph init [--remote <brain-repo-url>]
   python -m ideagraph ingest "Neue Idee ..." [--source agent/bot] [--allow-dup]
   cat notiz.md | python -m ideagraph ingest -
   python -m ideagraph pending
@@ -109,6 +110,21 @@ def cmd_link(engine: BrainEngine, args: list[str]) -> None:
     print(f"verlinkt: {edge.source} --[{edge.kind}]--> {edge.target}")
 
 
+def cmd_init(engine: BrainEngine, args: list[str]) -> None:
+    remote = None
+    if "--remote" in args:
+        i = args.index("--remote")
+        remote = args[i + 1] if i + 1 < len(args) else None
+    brain = engine.brain
+    brain.init(remote=remote, commit=True)
+    print(f"✓ Brain-Repo initialisiert: {brain.path}")
+    print(f"  Modus: {brain.mode}" + (f" · Remote: {remote}" if remote else " (lokal, ohne Remote)"))
+    print("  Struktur: nodes/ · edges.jsonl · vectors.jsonl · INDEX.md")
+    print("Jetzt loslegen:")
+    print("  ig ingest \"Erste Idee ...\"            # CLI-Ingest")
+    print("  uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000")
+
+
 def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     if not args:
         print("Nutzung: ig search <begriff>")
@@ -124,6 +140,7 @@ def cmd_search(engine: BrainEngine, args: list[str]) -> None:
 
 
 COMMANDS = {
+    "init": cmd_init,
     "ingest": cmd_ingest,
     "pending": lambda e, a: cmd_pending(e, a),
     "accept": lambda e, a: _resolve_cmd(e, a[0], True),

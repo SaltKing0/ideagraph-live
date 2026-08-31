@@ -6,7 +6,17 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- _(nothing planned yet)_
+### Added
+- **`ig init` onboarding** — create a new brain repo with one command (git repo
+  + `nodes/`, `edges.jsonl`, `vectors.jsonl`, `INDEX.md` + first commit). Optional
+  `--remote <url>` connects and pushes an existing private brain remote.
+- **Auto-init on first use** — `ig ingest` (and `ig link`/`ig accept`) on a fresh
+  machine now creates the brain repo automatically instead of failing; `pull`/
+  `push` are no-ops when no remote is configured.
+
+### Changed
+- `Brain.init()` / `Brain.ensure_ready()` — idempotent brain bootstrap.
+- `commit_and_push(push=...)` — skips push when no `origin` exists.
 
 ## [0.3.0] - 2026-08-27
 

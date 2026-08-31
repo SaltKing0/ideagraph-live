@@ -3,6 +3,7 @@
 mode="local" — reines Dateisystem, kein Git, kein Netz.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -280,3 +281,39 @@ def test_no_evolution_without_auto_accept(monkeypatch, tmp_path):
     engine.ingest("katze hund tier futter")
     engine.ingest("katze hund tier spiel")
     assert not any("evolved" in n.text for n in engine.brain.read_nodes())
+
+
+# ---------- Onboarding: ig init / ensure_ready ----------
+
+def test_init_creates_brain_structure(tmp_path):
+    brain = Brain(str(tmp_path / "brain"), mode="local")
+    brain.init(remote=None, commit=False)
+    assert (brain.path / "nodes").is_dir()
+    assert brain.edges_file.exists()
+    assert brain.vectors_file.exists()
+    assert (brain.path / "INDEX.md").exists()
+    # idempotent: erneutes init überschreibt nichts
+    brain.init(remote=None, commit=False)
+    assert (brain.path / "nodes").is_dir()
+
+
+def test_init_git_sets_main_branch(tmp_path):
+    brain = Brain(str(tmp_path / "brain"), mode="git")
+    brain.init(remote=None, commit=True)
+    branch = subprocess.run(
+        ["git", "-C", str(brain.path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True).stdout.strip()
+    assert branch == "main"
+    # initialer Commit existiert
+    log = subprocess.run(["git", "-C", str(brain.path), "log", "--oneline"],
+                         capture_output=True, text=True).stdout
+    assert "init" in log
+
+
+def test_ingest_auto_inits_missing_brain(tmp_path):
+    """ensure_ready: `ig ingest` auf frischer Maschine legt das Brain an."""
+    brain = Brain(str(tmp_path / "brain"), mode="local")
+    engine = BrainEngine(brain, HashEmbedder())
+    node, _, _ = engine.ingest("Erste Idee fuer den Demo-Graph")
+    assert (brain.path / "nodes").is_dir()
+    assert any(n.id == node.id for n in brain.read_nodes())

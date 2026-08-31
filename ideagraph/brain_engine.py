@@ -137,6 +137,7 @@ class BrainEngine:
         text = text.strip()
         if not text:
             raise ValueError("Leerer Text kann nicht ingestiert werden.")
+        self.brain.ensure_ready()  # Onboarding: legt ein fehlendes Brain-Repo an
         self.brain.pull()
         vec = self.embedder.embed(_normalize(text))
         if not allow_duplicates:
@@ -226,6 +227,7 @@ class BrainEngine:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def resolve(self, edge_id: str, accept: bool) -> Edge | None:
+        self.brain.ensure_ready()
         self.brain.pull()
         edge = self.brain.resolve_edge(edge_id, accept)
         if edge is not None:
@@ -236,6 +238,7 @@ class BrainEngine:
     def link(self, source_id: str, target_id: str,
              kind: str = "same_as") -> Edge:
         """Manuelle Edge anlegen (z.B. same_as für Übersetzungs-/Alias-Paare)."""
+        self.brain.ensure_ready()
         self.brain.pull()
         ids = {n.id for n in self.brain.read_nodes()}
         missing = [nid for nid in (source_id, target_id) if nid not in ids]

@@ -123,13 +123,62 @@ class Brain:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "clone", "--quiet", self.remote, str(self.path)], check=True)
 
+    def init(self, remote: str | None = None, commit: bool = True) -> None:
+        """Erstellt ein frisches Brain-Repo am Pfad (Onboarding: `ig init`).
+
+        Legt die Struktur (nodes/, edges.jsonl, vectors.jsonl, INDEX.md) an,
+        `git init` + Branch main, optional ein origin-Remote, und committet den
+        Startzustand. Idempotent: ein bereits existierendes Repo wird nicht
+        überschrieben. Ohne Remote bleibt der erste Commit lokal (push=False).
+        """
+        self.path.mkdir(parents=True, exist_ok=True)
+        (self.path / "nodes").mkdir(parents=True, exist_ok=True)
+        if not self.edges_file.exists():
+            self.write_edges([])
+        if not self.vectors_file.exists():
+            self.write_vectors({})
+        self.rebuild_index()
+        if self.mode == "git" and not (self.path / ".git").exists():
+            subprocess.run(["git", "-C", str(self.path), "init", "--quiet"], check=True)
+            subprocess.run(["git", "-C", str(self.path), "symbolic-ref",
+                            "HEAD", "refs/heads/main"], check=True)
+            if remote:
+                self.remote = remote
+                subprocess.run(["git", "-C", str(self.path), "remote", "add",
+                                "origin", remote], check=True)
+        if commit:
+            # Mit Remote → initialen Commit pushen; ohne → nur lokal committen.
+            self.commit_and_push("init: Brain-Repo angelegt", push=bool(remote))
+
+    def ensure_ready(self) -> None:
+        """Stellt sicher, dass das Brain-Repo existiert (init oder clone).
+
+        Wird am Anfang jedes Schreibpfads aufgerufen, damit `ig ingest` auf
+        einer frischen Maschine ohne manuelles Setup sofort funktioniert.
+        """
+        if self.mode != "git":
+            self.path.mkdir(parents=True, exist_ok=True)
+            return
+        if (self.path / ".git").exists():
+            return
+        if self.remote:
+            self.clone_if_missing()
+        else:
+            self.init(remote=None, commit=False)
+
     def pull(self) -> None:
         if self.mode != "git":
+            return
+        # Ohne origin (frisch `ig init`-ed, lokal) ist pull ein No-op.
+        has_origin = subprocess.run(
+            ["git", "-C", str(self.path), "remote", "get-url", "origin"],
+            capture_output=True).returncode == 0
+        if not has_origin:
             return
         subprocess.run(["git", "-C", str(self.path), "pull", "--quiet",
                         "origin", "main"], check=True)
 
-    def commit_and_push(self, message: str) -> None:
+    def commit_and_push(self, message: str, push: bool = True) -> None:
         if self.mode != "git":
             return
         # Bot-Identität ist konfigurierbar (IG_BOT_NAME/IG_BOT_EMAIL); keine
@@ -144,8 +193,16 @@ class Brain:
             return  # nichts zu committen
         subprocess.run(["git", "-C", str(self.path), *env_user,
                         "commit", "--quiet", "-m", message], check=True)
-        subprocess.run(["git", "-C", str(self.path), "push", "--quiet",
-                        "origin", "main"], check=True)
+        if not push:
+            return
+        # Nur pushen, wenn ein origin existiert (frisch `ig init`-ed ohne Remote
+        # hat keinen — dann bleibt der erste Commit lokal).
+        has_origin = subprocess.run(
+            ["git", "-C", str(self.path), "remote", "get-url", "origin"],
+            capture_output=True).returncode == 0
+        if has_origin:
+            subprocess.run(["git", "-C", str(self.path), "push", "--quiet",
+                            "origin", "main"], check=True)
 
     # ---------- Nodes ----------
 
