@@ -4,6 +4,17 @@ All notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **3D Graph UI** — the cockpit's Graph tab now renders the idea network as a
+  3D force-directed graph (Three.js / WebGL via `3d-force-graph`): drag to
+  rotate, scroll to zoom, hover tooltip, click for node details, search to
+  center. Node size scales with degree (hubs stand out), edge color encodes
+  edge kind, pending edges are dimmed, and non-pending edges show a subtle
+  directional particle flow. Automatically falls back to the classic 2D d3
+  force graph when WebGL is unavailable.
+
 ## [0.3.1] - 2026-08-31
 
 ### Added

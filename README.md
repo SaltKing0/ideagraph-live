@@ -14,7 +14,7 @@ Start the server, open the URL, and you get a cockpit with three tabs:
 | Tab | Purpose |
 |---|---|
 | **Ingest** (start) | Capture new ideas/notes (selectable source), duplicate merge, status |
-| **Graph** | d3 force graph with zoom/pan (Obsidian-like): scroll = zoom, drag = pan, hover = tooltip, click = details, double-click = focus (highlight neighbors), search = center |
+| **Graph 3D** | 3D force-directed network (Three.js / WebGL, via `3d-force-graph`): drag = rotate, scroll = zoom, hover = tooltip, click = details, search = center; node size = degree, edge color = kind, pending edges dimmed. Falls back to the classic 2D d3 graph when WebGL is unavailable. |
 | **Review** | Accept/reject pending edge suggestions + `same_as` picker |
 
 Keyboard: `1/2/3` tabs · `i` ingest · `Space` node text · `Esc` close ·

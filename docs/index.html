@@ -51,17 +51,19 @@
     .iconbtn { background:var(--panel2); border:1px solid var(--border); color:var(--fg); font-family:inherit;
                font-size:13px; padding:5px 10px; border-radius:6px; cursor:pointer; }
     .iconbtn:hover { border-color:var(--blue); color:var(--blue); }
-    #graphwrap { flex:1; position:relative; min-height:0; cursor:grab; }
+    #graphwrap { flex:1; position:relative; min-height:0; overflow:hidden; }
+    #graph3d { position:absolute; inset:0; }
+    #graph { position:absolute; inset:0; width:100%; height:100%; }
     #graphwrap.dragging { cursor:grabbing; }
-    svg { display:block; width:100%; height:100%; }
+    .hidden { display:none !important; }
     #ghint { position:absolute; top:8px; right:12px; font-size:11px; color:var(--dim); pointer-events:none;
-             background:rgba(13,17,23,.6); padding:4px 8px; border-radius:6px; }
-    /* Hover-Tooltip */
+             background:rgba(13,17,23,.6); padding:4px 8px; border-radius:6px; z-index:2; }
+    /* Hover-Tooltip (2D) */
     #tip { position:absolute; max-width:320px; background:var(--panel2); border:1px solid var(--border);
            border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.5; pointer-events:none;
            opacity:0; transition:opacity .12s; z-index:5; box-shadow:0 4px 16px rgba(0,0,0,.4); }
     /* Node-Detail Overlay */
-    #detail { position:absolute; inset:0; background:rgba(13,17,23,.92); display:none; align-items:center; justify-content:center; }
+    #detail { position:absolute; inset:0; background:rgba(13,17,23,.92); display:none; align-items:center; justify-content:center; z-index:10; }
     #detail.show { display:flex; }
     #detailbox { width:min(560px, 90%); background:var(--panel); border:1px solid var(--border); border-radius:10px;
                  padding:20px; max-height:80vh; overflow-y:auto; }
@@ -124,7 +126,7 @@
     <div id="brand">IdeaGraph <b>Live</b></div>
     <nav>
       <button data-tab="ingest" class="active">Ingest</button>
-      <button data-tab="graph">Graph</button>
+      <button data-tab="graph">Graph 3D</button>
       <button data-tab="review">Review</button>
     </nav>
   </header>
@@ -148,7 +150,7 @@
       </div>
     </section>
 
-    <!-- GRAPH -->
+    <!-- GRAPH (3D) -->
     <section id="tab-graph" class="tab">
       <div class="gtoolbar">
         <input id="gnode" placeholder="Node suchen & zentrieren …">
@@ -159,8 +161,9 @@
         <span id="gcount" style="font-size:11px;color:var(--dim)"></span>
       </div>
       <div id="graphwrap">
-        <svg id="graph"></svg>
-        <div id="ghint">Scroll = Zoom · Ziehen (Hintergrund) = Pan · Klick = Details · Doppelklick = Fokus</div>
+        <div id="graph3d" class="hidden"></div>
+        <svg id="graph" class="hidden"></svg>
+        <div id="ghint">Ziehen = Rotieren · Scroll = Zoom · Klick = Details · Doppelklick = Fokus</div>
         <div id="tip"></div>
         <div id="detail"><div id="detailbox"></div></div>
       </div>
@@ -191,6 +194,7 @@
   <div class="flash" id="flash"></div>
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="https://unpkg.com/3d-force-graph@1.74.5/dist/3d-force-graph.min.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
