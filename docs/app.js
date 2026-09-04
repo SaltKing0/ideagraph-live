@@ -36,6 +36,37 @@ function hasWebGL() {
   } catch (e) { return false; }
 }
 
+// ---- Node-Objekte (Kugel + Label), damit einzelne Nodes sichtbar & identifizierbar sind ----
+const nodeObjs = {}; // id -> { mat, labelMat, r }
+function makeLabelSprite(text) {
+  const t = (text || "").length > 24 ? text.slice(0, 23) + "…" : text;
+  const canvas = document.createElement("canvas");
+  canvas.width = 512; canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  ctx.font = "bold 40px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#8b949e";
+  ctx.fillText(t, 256, 48);
+  const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(46, 8.6, 1);
+  return sprite;
+}
+function makeNodeObject(d) {
+  const deg = degreeMap()[d.id] || 1;
+  const r = 1 + 0.5 * Math.log2(deg + 1); // Hubs größer
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: d.id === focus ? 0xf0883e : 0xe6edf3 });
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 20), mat);
+  sphere.scale.setScalar(r);
+  g.add(sphere);
+  const label = makeLabelSprite(d.text);
+  label.position.set(0, r * 1.7, 0);
+  g.add(label);
+  nodeObjs[d.id] = { mat, r };
+  return g;
+}
+
 function initGraph3D() {
   if (typeof ForceGraph3D === "undefined" || !hasWebGL()) return false;
   const el = graph3dEl();
@@ -44,11 +75,9 @@ function initGraph3D() {
     el.classList.remove("hidden");
     graph = ForceGraph3D()(el)
       .backgroundColor("#0d1117")
-      .nodeRelSize(5)
+      .nodeRelSize(14)
       .nodeLabel(d => d.text)                       // eingebauter Hover-Tooltip
-      .nodeVal(d => (degreeMap()[d.id] || 1))       // Hubs größer
-      .nodeColor(d => (d.id === focus ? "#f0883e" : "#e6edf3"))
-      .nodeOpacity(d => dimNode(d.id))
+      .nodeThreeObject(d => makeNodeObject(d))
       .linkColor(l => (l.pending ? "#6b7280" : (KIND_COLOR[l.kind] || "#8b949e")))
       .linkWidth(l => (l.pending ? 0.8 : 1.8))
       .linkOpacity(l => dimLink(l))
@@ -86,8 +115,12 @@ function dimLink(l) {
 }
 function paint() {
   if (!graph) return;
-  graph.nodeColor(graph.nodeColor()).nodeOpacity(graph.nodeOpacity())
-       .linkColor(graph.linkColor()).linkOpacity(graph.linkOpacity());
+  graph.graphData().nodes.forEach(n => {
+    const o = nodeObjs[n.id];
+    if (!o) return;
+    o.mat.color.set(dimNode(n.id) < 0.4 ? 0x30363d : (n.id === focus ? 0xf0883e : 0xe6edf3));
+  });
+  graph.linkColor(graph.linkColor()).linkOpacity(graph.linkOpacity());
 }
 function graph3DData() {
   if (!graph) return;
