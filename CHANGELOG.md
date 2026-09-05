@@ -7,6 +7,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`ig merge <survivor> <deletee>` — Near-Duplikat-Konsolidierung.** Manually
+  consolidates two closely-related nodes into one: all edges of the deletee are
+  redirected to the survivor (deduped, self-loops dropped), the text is appended
+  for information preservation, and the deletee's node file + vector are removed.
+  `INDEX.md` is rebuilt and everything lands in a single commit. This is the
+  manual complement to the automatic ingest dedup (cos ≥ 0.92): near-duplicates
+  in the ~0.78–0.92 band stay under the auto threshold and need this.
 - **`ig gaps` — Coverage- & Gap-Analyse.** Classifies every node against a
   topic taxonomy (area → keywords), reports coverage per area with a visual
   bar, and flags under-covered areas as gaps to steer research. Read-only;

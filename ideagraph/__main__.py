@@ -10,6 +10,7 @@ Beispiele:
   python -m ideagraph link <node_a> <node_b> [--kind same_as]
   python -m ideagraph search "attention"
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
+  python -m ideagraph merge <survivor_id> <deletee_id>   # Near-Dup konsolidieren
 
 Env wie beim Server: IG_BRAIN_PATH, IG_BRAIN_REMOTE, IG_BRAIN_MODE,
 IDEAGRAPH_EMBEDDER (st|hash).
@@ -24,6 +25,7 @@ from .brain import Brain
 from .brain_engine import BrainEngine
 from .embedder import get_embedder
 from .gaps import analyze_coverage, find_gaps, render, load_taxonomy
+from .merge import merge_nodes
 from .retrieval import retrieve
 
 
@@ -157,6 +159,20 @@ def cmd_gaps(engine: BrainEngine, args: list[str]) -> None:
         print(render(cov, threshold))
 
 
+def cmd_merge(engine: BrainEngine, args: list[str]) -> None:
+    if len(args) != 2:
+        print("Nutzung: ig merge <survivor_id> <deletee_id>  (konsolidiert deletee in survivor)")
+        sys.exit(1)
+    survivor, deletee = args[0], args[1]
+    try:
+        r = merge_nodes(engine.brain, survivor, deletee)
+    except ValueError as exc:
+        print(f"Fehler: {exc}")
+        sys.exit(1)
+    print(f"merge: {r.deletee} konsolidiert in {r.survivor}")
+    print(f"  Kanten umgeleitet: {r.edges_redirected} · entfernt: {r.edges_removed}")
+
+
 def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     if not args:
         print("Nutzung: ig search <begriff>")
@@ -180,6 +196,7 @@ COMMANDS = {
     "link": cmd_link,
     "search": cmd_search,
     "gaps": cmd_gaps,
+    "merge": cmd_merge,
 }
 
 
