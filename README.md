@@ -80,6 +80,7 @@ ig accept <edge_id>              # accept a suggestion
 ig reject <edge_id>              # reject a suggestion
 ig link <node_a> <node_b>        # manual edge (default: same_as)
 ig search "attention"            # hybrid search (dense + BM25)
+ig gaps [--min 10] [--json]      # coverage report + under-covered areas (gaps)
 ```
 
 ## Edge types

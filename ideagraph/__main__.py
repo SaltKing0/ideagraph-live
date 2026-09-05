@@ -9,6 +9,7 @@ Beispiele:
   python -m ideagraph reject <edge_id>
   python -m ideagraph link <node_a> <node_b> [--kind same_as]
   python -m ideagraph search "attention"
+  python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
 
 Env wie beim Server: IG_BRAIN_PATH, IG_BRAIN_REMOTE, IG_BRAIN_MODE,
 IDEAGRAPH_EMBEDDER (st|hash).
@@ -22,6 +23,7 @@ import sys
 from .brain import Brain
 from .brain_engine import BrainEngine
 from .embedder import get_embedder
+from .gaps import analyze_coverage, find_gaps, render, load_taxonomy
 from .retrieval import retrieve
 
 
@@ -125,6 +127,36 @@ def cmd_init(engine: BrainEngine, args: list[str]) -> None:
     print("  uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000")
 
 
+def cmd_gaps(engine: BrainEngine, args: list[str]) -> None:
+    taxonomy = None
+    threshold = 10
+    as_json = False
+    i = 0
+    while i < len(args):
+        if args[i] == "--taxonomy" and i + 1 < len(args):
+            taxonomy = load_taxonomy(args[i + 1])
+            i += 2
+        elif args[i] == "--min" and i + 1 < len(args):
+            threshold = int(args[i + 1])
+            i += 2
+        elif args[i] == "--json":
+            as_json = True
+            i += 1
+        else:
+            i += 1
+    cov = analyze_coverage(engine.brain, taxonomy)
+    if as_json:
+        import json as _json
+        print(_json.dumps({
+            "total": cov.total,
+            "areas": [{"name": a.name, "count": a.count} for a in cov.areas],
+            "gaps": [a.name for a in find_gaps(cov, threshold)],
+            "unclassified": cov.unclassified,
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(render(cov, threshold))
+
+
 def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     if not args:
         print("Nutzung: ig search <begriff>")
@@ -147,6 +179,7 @@ COMMANDS = {
     "reject": lambda e, a: _resolve_cmd(e, a[0], False),
     "link": cmd_link,
     "search": cmd_search,
+    "gaps": cmd_gaps,
 }
 
 

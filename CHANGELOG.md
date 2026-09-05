@@ -7,6 +7,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`ig gaps` — Coverage- & Gap-Analyse.** Classifies every node against a
+  topic taxonomy (area → keywords), reports coverage per area with a visual
+  bar, and flags under-covered areas as gaps to steer research. Read-only;
+  taxonomy is configurable via `--taxonomy tax.json`, threshold via `--min N`,
+  machine-readable output via `--json`. Ships a sensible default LLM/agent
+  taxonomy (`ideagraph.gaps.DEFAULT_TAXONOMY`).
 - **3D Graph UI** — the cockpit's Graph tab now renders the idea network as a
   3D force-directed graph (Three.js / WebGL via `3d-force-graph`): drag to
   rotate, scroll to zoom, hover tooltip, click for node details, search to
