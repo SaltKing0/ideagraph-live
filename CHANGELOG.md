@@ -7,6 +7,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`ig status` — Konnektivitäts-/Hygiene-Report.** Reports node/edge counts,
+  degree stats, orphans (0 edges), islands (≤1), weak (==2), and the status
+  distribution (probation backlog). Read-only; `--json` for machine-readable.
+- **`ig near-dup` — Near-Duplikat-Erkennung.** Flags node pairs in the cosine
+  band [0.78, 0.92) — the near-duplicates below the auto-dedup threshold (0.92)
+  that need a manual `ig merge` decision. Read-only; `--lo/--hi/--max/--json`.
+  Complements `ig merge` by driving it with a report instead of manual digging.
 - **`ig merge <survivor> <deletee>` — Near-Duplikat-Konsolidierung.** Manually
   consolidates two closely-related nodes into one: all edges of the deletee are
   redirected to the survivor (deduped, self-loops dropped), the text is appended

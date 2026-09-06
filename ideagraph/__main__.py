@@ -11,6 +11,8 @@ Beispiele:
   python -m ideagraph search "attention"
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
   python -m ideagraph merge <survivor_id> <deletee_id>   # Near-Dup konsolidieren
+  python -m ideagraph near-dup [--lo 0.78] [--hi 0.92]   # Near-Dup-Paare melden
+  python -m ideagraph status [--json]                     # Konnektivität/Hygiene-Report
 
 Env wie beim Server: IG_BRAIN_PATH, IG_BRAIN_REMOTE, IG_BRAIN_MODE,
 IDEAGRAPH_EMBEDDER (st|hash).
@@ -25,6 +27,7 @@ from .brain import Brain
 from .brain_engine import BrainEngine
 from .embedder import get_embedder
 from .gaps import analyze_coverage, find_gaps, render, load_taxonomy
+from .hygiene import near_dup_pairs, connectivity, status_counts, render_near_dup, render_status
 from .merge import merge_nodes
 from .retrieval import retrieve
 
@@ -173,6 +176,45 @@ def cmd_merge(engine: BrainEngine, args: list[str]) -> None:
     print(f"  Kanten umgeleitet: {r.edges_redirected} · entfernt: {r.edges_removed}")
 
 
+def cmd_near_dup(engine: BrainEngine, args: list[str]) -> None:
+    lo, hi, max_pairs, as_json = 0.78, 0.92, None, False
+    i = 0
+    while i < len(args):
+        if args[i] == "--lo" and i + 1 < len(args):
+            lo = float(args[i + 1]); i += 2
+        elif args[i] == "--hi" and i + 1 < len(args):
+            hi = float(args[i + 1]); i += 2
+        elif args[i] == "--max" and i + 1 < len(args):
+            max_pairs = int(args[i + 1]); i += 2
+        elif args[i] == "--json":
+            as_json = True; i += 1
+        else:
+            i += 1
+    pairs = near_dup_pairs(engine.brain, lo=lo, hi=hi, max_pairs=max_pairs)
+    if as_json:
+        import json as _json
+        print(_json.dumps(
+            [{"score": p.score, "a": p.a, "b": p.b, "a_text": p.a_text, "b_text": p.b_text}
+             for p in pairs], ensure_ascii=False, indent=2))
+    else:
+        print(render_near_dup(pairs))
+
+
+def cmd_status(engine: BrainEngine, args: list[str]) -> None:
+    as_json = "--json" in args
+    if as_json:
+        import json as _json
+        c = connectivity(engine.brain)
+        print(_json.dumps({
+            "total": c.total, "edges": c.edges, "max_degree": c.max_degree,
+            "mean_degree": round(c.mean_degree, 2),
+            "orphans": len(c.orphans), "islands": len(c.islands), "weak": len(c.weak),
+            "status": dict(status_counts(engine.brain)),
+        }, ensure_ascii=False, indent=2))
+    else:
+        print(render_status(engine.brain))
+
+
 def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     if not args:
         print("Nutzung: ig search <begriff>")
@@ -197,6 +239,8 @@ COMMANDS = {
     "search": cmd_search,
     "gaps": cmd_gaps,
     "merge": cmd_merge,
+    "near-dup": cmd_near_dup,
+    "status": cmd_status,
 }
 
 

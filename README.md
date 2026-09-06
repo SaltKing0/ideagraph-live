@@ -82,6 +82,8 @@ ig link <node_a> <node_b>        # manual edge (default: same_as)
 ig search "attention"            # hybrid search (dense + BM25)
 ig gaps [--min 10] [--json]      # coverage report + under-covered areas (gaps)
 ig merge <survivor> <deletee>    # consolidate a near-duplicate pair
+ig near-dup [--max 10]           # report near-dup pairs (below auto-dedup band)
+ig status [--json]               # connectivity/hygiene report (islands, orphans, status)
 ```
 
 ## Edge types
