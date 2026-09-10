@@ -490,6 +490,32 @@ GOLDEN_SET: list[EvalTask] = [
             },
         ),
     ),
+    # GOLDEN (flip 2026-09-10, war `roadmap-confidence-floor`) — Tier-3 Self-Extension:
+    # konfigurierbarer Confidence-Floor für Auto-Edge-Vorschläge (per-Call env kwarg,
+    # IG_EDGE_CONF_FLOOR, Default 0.0 = kein Verhaltenswandel). Vorschläge unter dem
+    # Floor werden verworfen statt pending zu landen — schützt autonome Zyklen vor
+    # Low-Confidence-Edge-Flut. (HashEmbedder-Messung: die beiden Texte liegen bei
+    # cos≈0.653 → pending-Band 0.45–0.95, unter Floor 0.95.)
+    EvalTask(
+        id="roadmap-confidence-floor",
+        name="Confidence-Floor verwirft schwache Auto-Edge-Vorschlaege",
+        ingests=[
+            ("Agentenplanung zerlegt langfristige Aufgaben in hierarchische "
+             "Teilziele und prueft Zwischenergebnisse gegen den Zielzustand.", {}),
+            ("Agentenplanung in Multi-Agent-Systemen verteilt hierarchische "
+             "Teilziele und prueft Zwischenergebnisse gegenseitig.",
+             {"env": {"IG_EDGE_CONF_FLOOR": "0.95"}}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            # Mit Floor: der 0.653-Vorschlag ist verworfen (kein aehnlich-Edge).
+            edges=[],
+            no_edge=[EdgeExpectation(
+                source="Agentenplanung in Multi-Agent-Systemen verteilt",
+                target="Agentenplanung zerlegt langfristige Aufgaben",
+                kind="aehnlich")],
+        ),
+    ),
 ]
 
 
@@ -508,5 +534,6 @@ ROADMAP_CASES: list[EvalTask] = [
     #
     # Cross-Encoder-Reranking (V2#1) ist umgesetzt → GOLDEN_SET
     # (`retrieval-rerank-honored`).
+    #
 ]
 

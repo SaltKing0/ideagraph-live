@@ -122,7 +122,8 @@ class BrainEngine:
     def ingest(self, text: str, source: str = "human", tags: list[str] | None = None,
                allow_duplicates: bool = False, ntype: str = "semantic",
                auto_accept: bool | None = None,
-               relations: list[tuple[str, str]] | None = None) -> tuple[Node, list[Edge], bool]:
+               relations: list[tuple[str, str]] | None = None,
+               env: dict[str, str] | None = None) -> tuple[Node, list[Edge], bool]:
         """Ingest mit Dedupe. Rückgabe: (node, edges, is_duplicate).
 
         Bei Near-Duplicate (cosine >= threshold gegen normalisierten Text)
@@ -130,6 +131,9 @@ class BrainEngine:
         Quelle wird an der Node protokolliert, Commit-Meldung sagt "dup".
         auto_accept (default: Env IDEAGRAPH_AUTO_ACCEPT) akzeptiert
         Edge-Vorschläge direkt statt sie pending zu lassen.
+        env (Tier-3): per-Call-Env-Overrides für Eval-Cases. Der Confidence-Floor
+        (IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) verwirft schwache
+        Auto-Edge-Vorschläge — ROADMAP_CASE `roadmap-confidence-floor`.
         """
         if auto_accept is None:
             auto_accept = auto_accept_from_env()
@@ -177,10 +181,17 @@ class BrainEngine:
                     intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False))
         # Similarity-Edges (V2#3): pending nur, wenn weder das Confidence-Band (>=0.95)
         # noch der Env-Override (IDEAGRAPH_AUTO_ACCEPT) die Edge auto-akzeptiert.
+        # Tier-3 Confidence-Floor (roadmap-confidence-floor): Vorschlaege unter dem
+        # Floor (per-Call env IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) werden
+        # verworfen statt pending zu landen — schuetzt autonome Zyklen vor
+        # Low-Confidence-Edge-Flut.
+        floor = float((env or {}).get("IG_EDGE_CONF_FLOOR",
+                                      os.environ.get("IG_EDGE_CONF_FLOOR", "0.0")))
         sim_edges = [Edge(source=s.source, target=s.target, kind=s.kind,
                           pending=not (is_auto_accept(s.confidence) or auto_accept),
                           confidence=s.confidence)
-                     for s in suggest(node.id, vec, candidates)]
+                     for s in suggest(node.id, vec, candidates)
+                     if s.confidence >= floor]
         # Intent/Admit-Rule-Edges haben Vorrang; Similarity darf dieselbe Pair nicht duplizieren.
         claimed = {(e.source, e.target) for e in intent_edges}
         combined = list(intent_edges)
