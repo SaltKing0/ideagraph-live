@@ -95,7 +95,11 @@ def merge_nodes(
     # Kanten umleiten + deduplizieren
     edges = brain.read_edges()
     new_edges, removed, redirected = _redirect_edges(edges, survivor_id, deletee_id)
-    brain.write_edges(new_edges)
+    # Keep unrelated dismissed suggestions available for undo. Decisions about
+    # the deleted node cannot be restored after consolidation.
+    rejected = [e for e in brain.read_edges(include_rejected=True)
+                if e.rejected and deletee_id not in (e.source, e.target)]
+    brain.write_edges(new_edges + rejected)
 
     # Vektor entfernen
     _drop_vector(brain, deletee_id)

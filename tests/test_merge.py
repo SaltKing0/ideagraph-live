@@ -112,3 +112,18 @@ def test_merge_identical_raises(tmp_path):
         assert False, "sollte ValueError werfen"
     except ValueError:
         pass
+
+
+def test_merge_preserves_only_undo_records_with_surviving_nodes(tmp_path):
+    brain = _brain(tmp_path)
+    for id in ("survivor", "deletee", "other"):
+        brain.write_node(Node(id=id, text=id))
+    unrelated = Edge(source="survivor", target="other", kind="ähnlich")
+    deleted = Edge(source="deletee", target="other", kind="ähnlich")
+    for edge in (unrelated, deleted):
+        brain.add_edge(edge)
+        brain.resolve_edge(edge.id, accept=False)
+    merge_nodes(brain, "survivor", "deletee", commit=False)
+    assert brain.read_edges() == []
+    assert brain.restore_edge(unrelated.id).pending
+    assert brain.restore_edge(deleted.id) is None

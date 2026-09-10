@@ -2,200 +2,166 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>IdeaGraph Cockpit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="description" content="Ideen sammeln, Verbindungen entdecken und Vorschläge gemeinsam mit deinem Graph prüfen.">
+  <title>IdeaGraph · Deine Ideen verbinden</title>
   <style>
-    :root { --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --border:#30363d; --fg:#e6edf3; --dim:#8b949e;
-            --green:#3fb950; --red:#f85149; --blue:#58a6ff; --purple:#bc8cff; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,Menlo,monospace;
-           height:100vh; display:flex; flex-direction:column; overflow:hidden; }
-
-    /* Header + Tabs */
-    header { display:flex; align-items:center; gap:18px; padding:0 14px; border-bottom:1px solid var(--border); flex:none; }
-    #brand { font-size:12px; color:var(--dim); white-space:nowrap; }
-    #brand b { color:var(--fg); }
-    nav { display:flex; gap:2px; }
-    nav button { background:none; border:none; color:var(--dim); font-family:inherit; font-size:13px;
-                 padding:14px 16px; cursor:pointer; border-bottom:2px solid transparent; }
-    nav button:hover { color:var(--fg); }
-    nav button.active { color:var(--fg); border-bottom-color:var(--blue); }
-
-    main { flex:1; display:flex; min-height:0; }
-    .tab { display:none; flex:1; min-height:0; }
-    .tab.active { display:flex; }
-
-    /* --- Ingest-Tab --- */
-    #tab-ingest { flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:24px; }
-    #tab-ingest .wrap { width:min(720px, 96%); }
-    #tab-ingest h2 { font-size:15px; margin:0 0 4px; font-weight:normal; color:var(--dim); }
-    #ingestarea { width:100%; min-height:180px; background:var(--panel); border:1px solid var(--border);
-                  color:var(--fg); padding:14px; font-family:inherit; font-size:14px; line-height:1.5;
-                  border-radius:8px; outline:none; resize:vertical; }
-    #ingestarea:focus { border-color:var(--blue); }
-    .ingrow { display:flex; gap:8px; align-items:center; margin-top:10px; }
-    .ingrow select { background:var(--panel); border:1px solid var(--border); color:var(--fg);
-                     font-family:inherit; font-size:12px; padding:8px; border-radius:6px; }
-    #ingestbtn { background:#238636; border:none; color:#fff; padding:10px 22px; font-family:inherit;
-                 font-size:13px; border-radius:6px; cursor:pointer; }
-    #ingestbtn:hover { filter:brightness(1.1); }
-    .inghint { font-size:11px; color:var(--dim); margin-top:8px; }
-    #ingstatus { min-height:18px; font-size:12px; color:var(--dim); margin-top:10px; }
-
-    /* --- Graph-Tab --- */
-    #tab-graph { flex-direction:column; position:relative; }
-    .gtoolbar { display:flex; gap:8px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border); flex:none; }
-    .gtoolbar input { flex:1; max-width:320px; background:var(--panel); border:1px solid var(--border); color:var(--fg);
-                      padding:6px 10px; font-family:inherit; font-size:12px; border-radius:6px; outline:none; }
-    .gtoolbar input:focus { border-color:var(--blue); }
-    .gtoolbar .spacer { flex:1; }
-    .iconbtn { background:var(--panel2); border:1px solid var(--border); color:var(--fg); font-family:inherit;
-               font-size:13px; padding:5px 10px; border-radius:6px; cursor:pointer; }
-    .iconbtn:hover { border-color:var(--blue); color:var(--blue); }
-    #graphwrap { flex:1; position:relative; min-height:0; overflow:hidden; }
+    :root { color-scheme:dark; --bg:#0d1117; --panel:#151c25; --raised:#1c2633; --border:#2c3847; --fg:#eaf0f7; --dim:#a0afc1; --blue:#83b9ff; --green:#6ed5a0; --red:#ff9393; --amber:#edc27d; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+    button,input,textarea,select { font:inherit; }
+    button { cursor:pointer; color:var(--fg); background:var(--raised); border:1px solid var(--border); border-radius:8px; min-height:40px; padding:8px 13px; font-size:.875rem; }
+    button:hover { background:#27374b; border-color:#64758b; }
+    button:disabled { opacity:.5; cursor:wait; }
+    :focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+    input,textarea { min-width:0; background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:11px 13px; }
+    input::placeholder,textarea::placeholder { color:var(--dim); }
+    select { color:var(--fg); background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:11px; max-width:160px; }
+    .source { display:flex; flex-direction:column; gap:8px; font-size:.875rem; }
+    .review-link { color:var(--blue); font-size:.875rem; text-underline-offset:4px; }
     #graph3d { position:absolute; inset:0; }
-    #graph { position:absolute; inset:0; width:100%; height:100%; }
-    #graphwrap.dragging { cursor:grabbing; }
-    .hidden { display:none !important; }
-    #ghint { position:absolute; top:8px; right:12px; font-size:11px; color:var(--dim); pointer-events:none;
-             background:rgba(13,17,23,.6); padding:4px 8px; border-radius:6px; z-index:2; }
-    /* Hover-Tooltip (2D) */
-    #tip { position:absolute; max-width:320px; background:var(--panel2); border:1px solid var(--border);
-           border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.5; pointer-events:none;
-           opacity:0; transition:opacity .12s; z-index:5; box-shadow:0 4px 16px rgba(0,0,0,.4); }
-    /* Node-Detail Overlay */
-    #detail { position:absolute; inset:0; background:rgba(13,17,23,.92); display:none; align-items:center; justify-content:center; z-index:10; }
-    #detail.show { display:flex; }
-    #detailbox { width:min(560px, 90%); background:var(--panel); border:1px solid var(--border); border-radius:10px;
-                 padding:20px; max-height:80vh; overflow-y:auto; }
-    #detailbox h3 { margin:0 0 4px; font-size:14px; word-break:break-word; }
-    #detailbox .meta { font-size:11px; color:var(--dim); margin-bottom:12px; }
-    #detailbox p { font-size:13px; line-height:1.6; white-space:pre-wrap; }
-    #detailbox .rel { margin-top:14px; border-top:1px solid var(--border); padding-top:10px; font-size:12px; }
-    #detailbox .rel b { color:var(--dim); font-weight:normal; }
-
-    /* --- Review-Tab --- */
-    #tab-review { flex-direction:row; min-height:0; }
-    #side { width:380px; flex:none; border-right:1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
-    #side .pane { padding:14px; border-bottom:1px solid var(--border); }
-    #side h2 { margin:0 0 8px; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
-    #search { width:100%; background:var(--panel); border:1px solid var(--border); color:var(--fg);
-              padding:8px 12px; font-family:inherit; font-size:13px; border-radius:6px; outline:none; }
-    #search:focus { border-color:var(--blue); }
-    #hits { max-height:200px; overflow-y:auto; margin-top:6px; }
-    .hit { padding:6px 10px; font-size:12px; cursor:pointer; border-radius:6px; color:var(--dim); }
-    .hit:hover { background:var(--panel); color:var(--fg); }
-    .hit .id { color:var(--dim); font-size:10px; margin-right:6px; }
-    .hit.pickedA { background:#1c2128; color:var(--purple); }
-    .hit.pickedB { background:#1c2128; color:var(--green); }
-    #pickbar { display:flex; gap:8px; align-items:center; font-size:11px; color:var(--dim); margin-top:8px; }
-    #pickbar .slot { flex:1; background:var(--panel); border:1px dashed var(--border); border-radius:6px;
-                     padding:6px 8px; min-height:34px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    #pickbar .slot.filled { border-style:solid; }
-    #pickbar .slot.a.filled { color:var(--purple); border-color:var(--purple); }
-    #pickbar .slot.b.filled { color:var(--green); border-color:var(--green); }
-    #linkbtn { background:#6e40c9; border:none; color:#fff; padding:8px 12px; font-family:inherit;
-               font-size:11px; border-radius:6px; cursor:pointer; }
-    #linkbtn:disabled { opacity:.4; cursor:default; }
-    #inbox { flex:1; overflow-y:auto; padding:14px 16px; }
-    .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px;
-            margin-bottom:10px; font-size:13px; }
-    .card.active { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue); }
-    .kind { display:inline-block; font-size:11px; padding:1px 8px; border-radius:10px;
-            border:1px solid var(--border); color:var(--dim); margin-bottom:8px; }
-    .kind.ähnlich { color:var(--green); border-color:var(--green); }
-    .kind.erweitert { color:var(--blue); border-color:var(--blue); }
-    .kind.kontradiktorisch { color:var(--red); border-color:var(--red); }
-    .nodebox { background:var(--bg); border-radius:6px; padding:8px 10px; font-size:12px; max-height:88px; overflow-y:auto; }
-    .nodebox .id { color:var(--dim); font-size:10px; }
-    .nodebox.pickable { cursor:pointer; }
-    .nodebox.pickable:hover { outline:1px solid var(--purple); }
-    .actions { display:flex; gap:8px; margin-top:10px; }
-    .actions button { flex:1; border:none; padding:8px; font-family:inherit; font-size:12px; border-radius:6px; cursor:pointer; }
-    .actions .ok { background:#238636; color:#fff; }
-    .actions .no { background:#21262d; color:var(--fg); border:1px solid var(--border) !important; }
-
-    #help { flex:none; border-top:1px solid var(--border); padding:6px 14px; font-size:11px; color:var(--dim); }
-    kbd { background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:0 5px; margin-right:2px; }
-    .flash { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); background:var(--panel);
-             border:1px solid var(--green); color:var(--green); padding:8px 18px; border-radius:6px; font-size:13px;
-             opacity:0; transition:opacity .3s; pointer-events:none; z-index:20; }
+    #graph-mode[aria-pressed="true"] { color:var(--blue); border-color:var(--blue); }
+    .primary { background:#a9cdff; color:#102139; border-color:#a9cdff; font-weight:650; }
+    .primary:hover { background:#c5ddff; border-color:#c5ddff; }
+    .quiet { background:transparent; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    [hidden] { display:none !important; }
+    header { display:flex; align-items:center; gap:24px; padding:18px 24px; border-bottom:1px solid var(--border); flex:none; }
+    .brand { display:flex; align-items:center; gap:10px; font-size:1.15rem; font-weight:650; letter-spacing:-.03em; }
+    .brand svg { color:var(--blue); }
+    #stats { color:var(--dim); font-size:.875rem; }
+    #connection { margin-left:auto; font-size:.8125rem; color:var(--dim); }
+    #connection[data-state="live"] { color:var(--green); }
+    #connection[data-state="offline"] { color:var(--amber); }
+    #bar { display:flex; align-items:end; gap:12px; padding:16px 24px; background:var(--panel); border-bottom:1px solid var(--border); }
+    .compose { flex:1; min-width:0; }
+    .compose label { display:block; font-size:.875rem; font-weight:550; margin-bottom:8px; }
+    #text { display:block; width:100%; resize:vertical; min-height:46px; max-height:160px; line-height:1.4; }
+    #bar button { min-height:46px; }
+    #mobile-tabs { display:none; }
+    #main { flex:1; display:flex; min-height:0; }
+    #graphwrap { flex:1; min-width:0; display:flex; flex-direction:column; position:relative; }
+    .graph-toolbar { display:flex; align-items:center; gap:14px; padding:16px 24px; flex:none; }
+    .graph-toolbar h1 { font-size:1rem; font-weight:600; margin:0; white-space:nowrap; }
+    .search { position:relative; margin-left:auto; width:min(300px,65%); }
+    #search { width:100%; font-size:.875rem; padding:10px 12px; }
+    #search-results { position:absolute; top:calc(100% + 8px); right:0; width:min(360px,80vw); max-height:320px; overflow:auto; z-index:3; margin:0; padding:6px; list-style:none; background:var(--panel); border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 35px #0008; }
+    #search-results button { text-align:left; width:100%; background:transparent; border:0; line-height:1.5; overflow-wrap:anywhere; }
+    #search-results button:hover { background:var(--raised); }
+    #search-results .no-results { padding:12px; color:var(--dim); font-size:.875rem; }
+    #canvas { flex:1; min-height:0; position:relative; overflow:hidden; background-image:radial-gradient(#263241 1px,transparent 1px); background-size:24px 24px; }
+    #graph { display:block; width:100%; height:100%; touch-action:none; }
+    .node { cursor:pointer; outline:none; }
+    .node .halo { fill:transparent; stroke:transparent; stroke-width:2; }
+    .node .dot { fill:#adbbce; stroke:var(--bg); stroke-width:3; }
+    .node text { fill:#bbc8d9; font-family:inherit; font-size:14px; paint-order:stroke; stroke:var(--bg); stroke-width:5px; stroke-linejoin:round; pointer-events:none; }
+    .node.selected .halo,.node:focus-visible .halo,.node:hover .halo { fill:#83b9ff15; stroke:var(--blue); }
+    .node.selected .dot,.node:hover .dot { fill:var(--blue); }
+    .node.selected text,.node:hover text,.node:focus-visible text { fill:var(--fg); }
+    .node.dimmed { opacity:.18; }
+    .node:focus-visible,.node:hover { opacity:1; }
+    .graph-bottom { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 24px; border-top:1px solid var(--border); }
+    .legend { display:flex; flex-wrap:wrap; gap:8px 14px; color:var(--dim); font-size:.75rem; }
+    .legend span { display:flex; align-items:center; gap:6px; }
+    .line { display:inline-block; width:16px; border-top:2px solid currentColor; }
+    .line.similar { color:var(--green); } .line.contradiction { color:var(--red); } .line.extends { color:var(--blue); } .line.pending { border-top-style:dashed; }
+    .graph-controls { display:flex; gap:6px; }
+    .graph-controls button { min-width:40px; }
+    #graph-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:28px; pointer-events:none; }
+    #graph-empty h2 { font-size:1.35rem; font-weight:550; margin:0 0 10px; }
+    #graph-empty p { max-width:360px; color:var(--dim); line-height:1.6; margin:0 0 20px; }
+    #graph-empty button { pointer-events:auto; }
+    #tooltip { position:absolute; max-width:min(340px,85%); padding:12px 14px; background:var(--raised); border:1px solid var(--border); border-radius:8px; font-size:.875rem; line-height:1.5; overflow-wrap:anywhere; pointer-events:none; z-index:2; box-shadow:0 8px 25px #0005; }
+    #inbox { width:clamp(340px,31vw,440px); flex:none; border-left:1px solid var(--border); background:#10161e; display:flex; flex-direction:column; min-height:0; }
+    .inbox-heading { padding:19px 20px 16px; border-bottom:1px solid var(--border); }
+    .inbox-heading h2 { font-size:1rem; font-weight:600; margin:0 0 6px; display:flex; align-items:center; gap:9px; }
+    #pending-count { font-size:.75rem; border-radius:5px; padding:2px 7px; color:var(--amber); background:#edc27d16; }
+    .inbox-heading p { font-size:.875rem; color:var(--dim); line-height:1.5; margin:0; }
+    #cards { padding:16px; overflow-y:auto; flex:1; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px; }
+    .card.active { border-color:var(--blue); box-shadow:inset 3px 0 var(--blue); }
+    .card-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; }
+    .kind { display:inline-flex; align-items:center; gap:6px; font-size:.75rem; color:var(--dim); }
+    .kind[data-kind="ähnlich"] { color:var(--green); } .kind[data-kind="kontradiktorisch"] { color:var(--red); } .kind[data-kind="erweitert"] { color:var(--blue); }
+    .select-pair { min-height:32px; font-size:.75rem; padding:4px 8px; }
+    .idea-preview { display:block; width:100%; text-align:left; background:var(--bg); border:1px solid transparent; padding:12px; font-size:1rem; line-height:1.5; overflow-wrap:anywhere; }
+    .idea-preview + .idea-preview { margin-top:8px; }
+    .idea-preview .excerpt { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .idea-preview .read { display:block; font-size:.75rem; color:var(--dim); margin-top:5px; }
+    .actions { display:flex; gap:8px; margin-top:14px; }
+    .actions button { flex:1; }
+    .actions .ok { color:var(--green); background:#6ed5a013; border-color:#6ed5a050; font-weight:600; }
+    .actions .ok:hover { background:#6ed5a028; }
+    .empty-inbox { padding:26px 8px; }
+    .empty-inbox h3 { font-size:1rem; font-weight:550; margin:0 0 10px; }
+    .empty-inbox p { color:var(--dim); line-height:1.6; margin:0; }
+    #help { border-top:1px solid var(--border); padding:9px 24px; font-size:.75rem; color:var(--dim); display:flex; flex-wrap:wrap; gap:8px 18px; }
+    kbd { font:inherit; font-family:ui-monospace,monospace; color:var(--fg); }
+    dialog { width:min(620px,calc(100% - 32px)); max-height:85dvh; padding:24px; border:1px solid #52647c; border-radius:16px; background:var(--panel); color:var(--fg); box-shadow:0 24px 100px #0009; }
+    dialog::backdrop { background:#070c15bd; backdrop-filter:blur(4px); }
+    .detail-header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .detail-header h2 { font-size:1.1rem; margin:0; }
+    #detail-meta { color:var(--dim); font-size:.8125rem; margin-top:12px; overflow-wrap:anywhere; }
+    #detail-text { font-size:1rem; white-space:pre-wrap; line-height:1.75; overflow-wrap:anywhere; margin:24px 0; }
+    #detail-relations { border-top:1px solid var(--border); padding-top:18px; }
+    #detail-relations h3 { font-size:.875rem; margin:0 0 12px; }
+    .relation { display:block; width:100%; text-align:left; margin-top:8px; line-height:1.5; overflow-wrap:anywhere; }
+    .relation span { display:block; color:var(--dim); font-size:.75rem; margin-bottom:3px; }
+    #notice { position:fixed; bottom:54px; left:50%; transform:translateX(-50%); z-index:5; max-width:calc(100% - 32px); width:max-content; padding:12px 18px; background:var(--raised); border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 35px #0008; font-size:.875rem; }
+    #notice:empty { display:none; }
+    #notice.error { border-color:var(--red); }
+    #decision { display:flex; align-items:center; gap:12px; padding:10px 24px; background:#19283a; border-top:1px solid #3d5775; font-size:.875rem; }
+    #decision-message { flex:1; }
+    @media (max-width:1000px) { header { gap:16px; } .graph-toolbar { flex-wrap:wrap; padding:16px; } .search { width:100%; } .graph-bottom { padding:12px 16px; } #inbox { width:340px; } }
+    @media (max-width:720px) {
+      header { padding:14px 16px; gap:6px 16px; flex-wrap:wrap; } .brand { font-size:1.05rem; } #stats { order:3; width:100%; font-size:.8125rem; }
+      .source { flex-direction:row; align-items:center; width:100%; order:3; } .source select { flex:1; max-width:none; padding:6px; }
+      #connection { font-size:.75rem; } #bar { padding:12px 16px; gap:8px; flex-wrap:wrap; } #bar button { padding:10px; } .compose label { font-size:.8125rem; }
+      #mobile-tabs { display:flex; gap:4px; padding:8px 16px; border-bottom:1px solid var(--border); }
+      #mobile-tabs button { flex:1; background:transparent; border-color:transparent; }
+      #mobile-tabs button[aria-pressed="true"] { background:var(--raised); color:var(--blue); border-color:var(--border); }
+      #inbox { display:none; width:100%; border-left:0; }
+      body[data-view="inbox"] #inbox { display:flex; } body[data-view="inbox"] #graphwrap { display:none; }
+      .graph-toolbar { flex-wrap:nowrap; padding:12px 16px; } .search { width:60%; } .graph-toolbar h1 { font-size:.875rem; }
+      .graph-bottom { gap:10px; } .legend { flex:1; } .graph-controls { margin-left:auto; } #help { display:none; }
+      #decision { padding:10px 16px; gap:8px; flex-wrap:wrap; } #decision-message { min-width:120px; } #notice { bottom:16px; }
+    }
+    @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
   </style>
 </head>
-<body>
+<body data-view="graph">
   <header>
-    <div id="brand">IdeaGraph <b>Live</b></div>
-    <nav>
-      <button data-tab="ingest" class="active">Ingest</button>
-      <button data-tab="graph">Graph 3D</button>
-      <button data-tab="review">Review</button>
-    </nav>
+    <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M6 7L20 6L14 21Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="7" r="3" fill="currentColor"/><circle cx="20" cy="6" r="3" fill="currentColor"/><circle cx="14" cy="21" r="3" fill="currentColor"/></svg>IdeaGraph</div>
+    <div id="stats">Ideen werden geladen …</div>
+    <span id="connection" role="status" data-state="connecting">Verbindung wird hergestellt …</span>
   </header>
-
-  <main>
-    <!-- INGEST (Startseite) -->
-    <section id="tab-ingest" class="tab active">
-      <div class="wrap">
-        <h2>Neue Idee erfassen</h2>
-        <textarea id="ingestarea" placeholder="Schreibe hier eine neue Idee, Research-Notiz oder Erkenntnis … (Strg/Cmd + Enter ingestiert)"></textarea>
-        <div class="ingrow">
-          <select id="ingsrc">
-            <option value="human">Quelle: human</option>
-            <option value="agent">Quelle: agent</option>
-            <option value="research/subagent">Quelle: research/subagent</option>
-          </select>
-          <button id="ingestbtn">Ingest</button>
-        </div>
-        <div class="inghint">Duplikate werden automatisch gemergt; verwandte Ideen landen als pending-Vorschläge im Review-Tab.</div>
-        <div id="ingstatus"></div>
+  <form id="bar">
+    <div class="compose"><label for="text">Eine neue Idee festhalten</label><textarea id="text" rows="1" placeholder="Was beschäftigt dich gerade?" aria-description="Enter speichert die Idee. Umschalt und Enter fügt eine neue Zeile ein." required></textarea></div>
+    <div class="source"><label for="source">Quelle</label><select id="source"><option value="human">Mensch</option><option value="agent">Agent</option><option value="research/subagent">Recherche</option></select></div>
+    <button id="ingest-button" class="primary" type="submit">Idee hinzufügen</button>
+  </form>
+  <nav id="mobile-tabs" aria-label="Ansicht"><button type="button" data-view="graph" aria-pressed="true">Graph</button><button type="button" data-view="inbox" aria-pressed="false">Vorschläge <span id="mobile-count"></span></button></nav>
+  <main id="main">
+    <section id="graphwrap" aria-label="Ideengraph">
+      <div class="graph-toolbar"><h1>Dein Ideennetz</h1><div class="search"><label for="search" class="sr-only">Ideen durchsuchen</label><input id="search" type="search" placeholder="Ideen suchen …" autocomplete="off" aria-controls="search-results" aria-expanded="false"><ul id="search-results" aria-label="Suchergebnisse" hidden></ul></div></div>
+      <div id="canvas">
+        <div id="graph3d" hidden></div>
+        <svg id="graph" aria-label="Verbindungen zwischen deinen Ideen"></svg>
+        <div id="graph-empty"><h2>Dein Graph wird geladen …</h2><p>Einen Moment bitte.</p><button id="empty-action" hidden>Erste Idee hinzufügen</button></div>
+        <div id="tooltip" hidden></div>
       </div>
+      <div class="graph-bottom"><div class="legend" aria-label="Verbindungstypen"><span><i class="line similar"></i>Ähnlich</span><span><i class="line contradiction"></i>Widerspruch</span><span><i class="line extends"></i>Erweiterung</span><span><i class="line pending"></i>Vorschlag</span></div><div class="graph-controls"><button id="graph-mode" aria-pressed="false" title="3D-Ansicht umschalten">3D</button><button id="zoom-out" aria-label="Verkleinern">−</button><button id="zoom-in" aria-label="Vergrößern">+</button><button id="fit">Alles zeigen</button></div></div>
     </section>
-
-    <!-- GRAPH (3D) -->
-    <section id="tab-graph" class="tab">
-      <div class="gtoolbar">
-        <input id="gnode" placeholder="Node suchen & zentrieren …">
-        <button class="iconbtn" id="zoomIn" title="Hineinzoomen">＋</button>
-        <button class="iconbtn" id="zoomOut" title="Herauszoomen">－</button>
-        <button class="iconbtn" id="zoomReset" title="Zurücksetzen">⤾</button>
-        <div class="spacer"></div>
-        <span id="gcount" style="font-size:11px;color:var(--dim)"></span>
-      </div>
-      <div id="graphwrap">
-        <div id="graph3d" class="hidden"></div>
-        <svg id="graph" class="hidden"></svg>
-        <div id="ghint">Ziehen = Rotieren · Scroll = Zoom · Klick = Details · Doppelklick = Fokus</div>
-        <div id="tip"></div>
-        <div id="detail"><div id="detailbox"></div></div>
-      </div>
-    </section>
-
-    <!-- REVIEW -->
-    <section id="tab-review" class="tab">
-      <div id="side">
-        <div class="pane">
-          <h2>same_as verlinken</h2>
-          <input id="search" placeholder="Node suchen …">
-          <div id="hits"></div>
-          <div id="pickbar">
-            <div class="slot a" id="slotA">A: leer</div>
-            <div class="slot b" id="slotB">B: leer</div>
-            <button id="linkbtn" disabled>verlinken ⏎</button>
-          </div>
-        </div>
-      </div>
-      <div id="inbox"><h2 style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Pending Edges</h2><div id="cards"></div></div>
-    </section>
+    <aside id="inbox" aria-labelledby="inbox-title"><div class="inbox-heading"><h2 id="inbox-title">Verbindungen prüfen <span id="pending-count">0</span></h2><p>Welche Ideen gehören zusammen? Du entscheidest.</p><a class="review-link" href="/review">Aliases manuell verknüpfen ↗</a></div><div id="cards" aria-busy="true"></div></aside>
   </main>
-
-  <div id="help">
-    <kbd>1/2/3</kbd> Tabs &nbsp; <kbd>i</kbd> Ingest-Feld &nbsp; <kbd>Space</kbd> Node-Text &nbsp;
-    <kbd>Esc</kbd> schließen &nbsp; <kbd>j/k</kbd> Review-Karte &nbsp; <kbd>Enter</kbd> akzeptieren
-  </div>
-  <div class="flash" id="flash"></div>
-
+  <div id="decision" hidden><span id="decision-message" role="status"></span><button id="undo" class="quiet">Rückgängig</button><button id="dismiss-decision" class="quiet" aria-label="Hinweis schließen">×</button></div>
+  <footer id="help"><span><kbd>I</kbd> Neue Idee</span><span><kbd>/</kbd> Suchen</span><span><kbd>J</kbd> / <kbd>K</kbd> Vorschlag wählen</span><span><kbd>↵</kbd> Akzeptieren</span><span><kbd>Leertaste</kbd> Idee lesen</span><span><kbd>Esc</kbd> Schließen / Auswahl aufheben</span></footer>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="detail-header"><h2 id="detail-title">Idee</h2><button id="close-detail" class="quiet" aria-label="Ideendetails schließen" autofocus>Schließen ×</button></div><div id="detail-meta"></div><p id="detail-text"></p><div id="detail-relations"></div></dialog>
+  <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
   <script src="https://unpkg.com/3d-force-graph@1.74.5/dist/3d-force-graph.min.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js"></script>
 </body>
 </html>

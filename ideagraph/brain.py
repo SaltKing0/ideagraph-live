@@ -82,7 +82,7 @@ class Edge:
                  pending: bool = True, id: str | None = None,
                  valid_from: str | None = None, valid_to: str | None = None,
                  confidence: float | None = None,
-                 invalidated_by: str | None = None):
+                 invalidated_by: str | None = None, rejected: bool = False):
         self.source = source
         self.target = target
         self.kind = kind
@@ -96,13 +96,17 @@ class Edge:
         self.confidence = confidence
         # V1#1: Provenance — welche Kante/Event diese Kante invalidiert hat.
         self.invalidated_by = invalidated_by
+        self.rejected = rejected
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "source": self.source, "target": self.target,
+        result = {"id": self.id, "source": self.source, "target": self.target,
                 "kind": self.kind, "pending": self.pending,
                 "valid_from": self.valid_from, "valid_to": self.valid_to,
                 "confidence": self.confidence,
                 "invalidated_by": self.invalidated_by}
+        if self.rejected:
+            result["rejected"] = True
+        return result
 
 
 class Brain:
@@ -301,19 +305,22 @@ class Brain:
     def edges_file(self) -> Path:
         return self.path / "edges.jsonl"
 
-    def read_edges(self) -> list[Edge]:
+    def read_edges(self, include_rejected: bool = False) -> list[Edge]:
         if not self.edges_file.exists():
             return []
         edges = []
         for line in self.edges_file.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 d = json.loads(line)
+                if d.get("rejected", False) and not include_rejected:
+                    continue
                 edges.append(Edge(d["source"], d["target"], d["kind"],
                                   d.get("pending", False), d["id"],
                                   valid_from=d.get("valid_from"),
                                   valid_to=d.get("valid_to"),
                                   confidence=d.get("confidence"),
-                                  invalidated_by=d.get("invalidated_by")))
+                                  invalidated_by=d.get("invalidated_by"),
+                                  rejected=d.get("rejected", False)))
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:
@@ -323,7 +330,7 @@ class Brain:
 
     def add_edge(self, edge: Edge) -> None:
         self.path.mkdir(parents=True, exist_ok=True)
-        edges = self.read_edges()
+        edges = self.read_edges(include_rejected=True)
         edges.append(edge)
         self.write_edges(edges)
 
@@ -332,8 +339,8 @@ class Brain:
         """Kante invalidieren statt löschen (Zep-Lektion): valid_to wird gesetzt,
         die Kante bleibt mit voller Historie in der Datei. `by_edge_id` hält die
         Provenance, welche Kante/Event diese invalidiert hat (V1#1)."""
-        edges = self.read_edges()
-        edge = next((e for e in edges if e.id == edge_id), None)
+        edges = self.read_edges(include_rejected=True)
+        edge = next((e for e in edges if e.id == edge_id and not e.rejected), None)
         if edge is None or edge.valid_to is not None:
             return None
         edge.valid_to = _now_iso()
@@ -343,15 +350,25 @@ class Brain:
         return edge
 
     def resolve_edge(self, edge_id: str, accept: bool) -> Edge | None:
-        edges = self.read_edges()
-        edge = next((e for e in edges if e.id == edge_id and e.pending), None)
+        edges = self.read_edges(include_rejected=True)
+        edge = next((e for e in edges if e.id == edge_id and e.pending and not e.rejected
+                     and e.valid_to is None), None)
         if edge is None:
             return None
-        if accept:
-            edge.pending = False
-            self.write_edges(edges)
-            return edge
-        edges.remove(edge)
+        edge.pending = False
+        edge.rejected = not accept
+        self.write_edges(edges)
+        return edge
+
+    def restore_edge(self, edge_id: str) -> Edge | None:
+        """Return a saved decision to the inbox without reviving invalidated facts."""
+        edges = self.read_edges(include_rejected=True)
+        edge = next((e for e in edges if e.id == edge_id and not e.pending
+                     and e.valid_to is None), None)
+        if edge is None:
+            return None
+        edge.pending = True
+        edge.rejected = False
         self.write_edges(edges)
         return edge
 

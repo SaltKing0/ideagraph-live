@@ -1,449 +1,520 @@
-// IdeaGraph Cockpit — Tabs: Ingest / Graph 3D / Review.
-// Graph: 3d-force-graph (Three.js/WebGL) with 2D d3-force fallback when WebGL is unavailable.
-// Both renderers share the same data + interactions (search/center, focus, detail, pending styling).
+// IdeaGraph: explore ideas, review connections, and undo saved decisions.
+(() => {
+  "use strict";
+  const $ = selector => document.querySelector(selector);
+  const colors = { "ähnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
+  const labels = { "ähnlich": "Ähnlich", "kontradiktorisch": "Widerspruch", "erweitert": "Erweiterung", "same_as": "Gleiche Idee", "supersedes": "Ersetzt", "continues": "Führt fort" };
+  const esc = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const short = (text, length = 36) => text.length > length ? `${text.slice(0, length - 1)}…` : text;
+  const idOf = value => typeof value === "object" ? value.id : value;
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let nodes = [], edges = [], links = [], pending = [];
+  let selectedEdge = null, selectedNode = null, detailId = null, undoId = null;
+  let loaded = false, saving = false, resolving = false, refreshVersion = 0;
+  let noticeTimer, reconnectTimer, socket, width = 1, height = 1;
+  let initialFit = true, graph3D = null, use3D = false;
+  const sprites = new Map();
+  const nodeById = id => nodes.find(node => node.id === id);
+  const textOf = id => nodeById(id)?.text || "Idee nicht verfügbar";
 
-// ================= Shared State / Daten =================
-const nodes = [], links = [];
-let texts = {}, pending = [], sel = 0;
-let activeTab = "ingest";
-let focus = null; // Node-ID im Fokus (Obsidian-artig)
-
-const KIND_COLOR = { "ähnlich": "#3fb950", "kontradiktorisch": "#f85149", "erweitert": "#58a6ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
-const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const short = (id, n = 60) => { const t = texts[id] || id; return t.length > n ? t.slice(0, n - 1) + "…" : t; };
-const nodeId = l => l.source.id || l.source;
-
-// Knotengrad (Hub-Größe) + Nachbarschaft
-function degreeMap() {
-  const m = {};
-  links.forEach(l => { const a = nodeId(l), b = l.target.id || l.target; m[a] = (m[a] || 0) + 1; m[b] = (m[b] || 0) + 1; });
-  return m;
-}
-function neighbors(id) {
-  const s = new Set([id]);
-  links.forEach(l => { const a = nodeId(l), b = l.target.id || l.target; if (a === id) s.add(b); if (b === id) s.add(a); });
-  return s;
-}
-
-// ================= 3D-Renderer (3d-force-graph / WebGL) =================
-let graph = null;
-const graph3dEl = () => document.getElementById("graph3d");
-
-function hasWebGL() {
-  try {
-    const c = document.createElement("canvas");
-    return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl")));
-  } catch (e) { return false; }
-}
-
-// ---- Node-Objekte (Kugel + Label), damit einzelne Nodes sichtbar & identifizierbar sind ----
-const nodeObjs = {}; // id -> { mat, labelMat, r }
-function makeLabelSprite(text) {
-  const t = (text || "").length > 24 ? text.slice(0, 23) + "…" : text;
-  const canvas = document.createElement("canvas");
-  canvas.width = 512; canvas.height = 96;
-  const ctx = canvas.getContext("2d");
-  ctx.font = "bold 40px ui-monospace, Menlo, monospace";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = "#8b949e";
-  ctx.fillText(t, 256, 48);
-  const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(46, 8.6, 1);
-  return sprite;
-}
-function makeNodeObject(d) {
-  const deg = degreeMap()[d.id] || 1;
-  const r = 1 + 0.5 * Math.log2(deg + 1); // Hubs größer
-  const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: d.id === focus ? 0xf0883e : 0xe6edf3 });
-  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 20), mat);
-  sphere.scale.setScalar(r);
-  g.add(sphere);
-  const label = makeLabelSprite(d.text);
-  label.position.set(0, r * 1.7, 0);
-  g.add(label);
-  nodeObjs[d.id] = { mat, r };
-  return g;
-}
-
-function initGraph3D() {
-  if (typeof ForceGraph3D === "undefined" || !hasWebGL()) return false;
-  const el = graph3dEl();
-  if (!el) return false;
-  try {
-    el.classList.remove("hidden");
-    graph = ForceGraph3D()(el)
-      .backgroundColor("#0d1117")
-      .nodeRelSize(14)
-      .nodeLabel(d => d.text)                       // eingebauter Hover-Tooltip
-      .nodeThreeObject(d => makeNodeObject(d))
-      .linkColor(l => (l.pending ? "#6b7280" : (KIND_COLOR[l.kind] || "#8b949e")))
-      .linkWidth(l => (l.pending ? 0.8 : 1.8))
-      .linkOpacity(l => dimLink(l))
-      .linkDirectionalParticles(l => (l.pending ? 0 : 1))   // subtiler Fluss
-      .linkDirectionalParticleWidth(2)
-      .linkDirectionalParticleColor(() => "#8b949e")
-      .onNodeClick((d, ev) => { if (ev) ev.stopPropagation(); showDetail(d.id); })
-      .onNodeHover(d => { nodeHover = d; paint(); })
-      .onBackgroundClick(() => { nodeHover = null; focus = null; updateCount(); paint(); })
-      .cooldownTime(2500)
-      .warmupTicks(60);
-    document.getElementById("graph").classList.add("hidden");
-    return true;
-  } catch (err) {
-    window.__ig3derr = String(err && err.message ? err.message : err);
-    console.error("3D-Init fehlgeschlagen, Fallback auf 2D:", err);
-    el.classList.add("hidden");
-    graph = null;
-    return false;
+  function notify(message, error = false) {
+    clearTimeout(noticeTimer);
+    $("#notice").textContent = message;
+    $("#notice").classList.toggle("error", error);
+    noticeTimer = setTimeout(() => { $("#notice").textContent = ""; }, error ? 8000 : 4000);
   }
-}
 
-// ---- 3D Hover/Fokus-Dimming ----
-let nodeHover = null;
-function dimNode(id) {
-  if (nodeHover && id !== nodeHover.id && !neighbors(nodeHover.id).has(id)) return 0.18;
-  if (focus && id !== focus && !neighbors(focus).has(id)) return 0.35;
-  return 1;
-}
-function dimLink(l) {
-  const a = nodeId(l), b = l.target.id || l.target;
-  if (nodeHover && a !== nodeHover.id && b !== nodeHover.id) return 0.08;
-  if (focus && a !== focus && b !== focus) return 0.15;
-  return l.pending ? 0.45 : 0.9;
-}
-function paint() {
-  if (!graph) return;
-  graph.graphData().nodes.forEach(n => {
-    const o = nodeObjs[n.id];
-    if (!o) return;
-    o.mat.color.set(dimNode(n.id) < 0.4 ? 0x30363d : (n.id === focus ? 0xf0883e : 0xe6edf3));
-  });
-  graph.linkColor(graph.linkColor()).linkOpacity(graph.linkOpacity());
-}
-function graph3DData() {
-  if (!graph) return;
-  graph.graphData({ nodes, links });
-  graph.nodeVal(graph.nodeVal()); // degreeMap neu auswerten
-}
-function center3D(id) {
-  const n = nodes.find(x => x.id === id);
-  if (!n || !graph) return;
-  const z = graph.camera().position.z || 700;
-  graph.cameraPosition({ x: n.x || 0, y: n.y || 0, z }, { x: n.x || 0, y: n.y || 0, z: 0 }, 600);
-}
-function zoomCam(f) {
-  if (!graph) return;
-  const p = graph.camera().position;
-  graph.cameraPosition({ x: p.x, y: p.y, z: p.z * f }, null, 300);
-}
-
-// ================= 2D-Renderer (d3-force, Fallback) =================
-const svg = d3.select("#graph");
-const viewport = svg.append("g");
-const linkG = viewport.append("g"), nodeG = viewport.append("g");
-let W = 1200, H = 800;
-let sim = null; // 2D-d3-Sim, lazy erzeugt (nur im 2D-Fallback aktiv)
-let use2D = false;
-function ensureSim() {
-  if (sim) return sim;
-  sim = d3.forceSimulation([])
-    .force("link", d3.forceLink([]).id(d => d.id).distance(140))
-    .force("charge", d3.forceManyBody().strength(-350))
-    .force("center", d3.forceCenter(0, 0))
-    .alphaDecay(0.02)
-    .on("tick", tick)
-    .stop(); // erst nach Konfiguration starten (sonst vx-Fehler auf unaufgelösten Links)
-  return sim;
-}
-
-function size2D() {
-  const el = document.getElementById("graphwrap");
-  if (!el) return;
-  const w = el.clientWidth, h = el.clientHeight;
-  if (w && h) { W = w; H = h; }
-  svg.attr("viewBox", `0 0 ${W} ${H}`);
-  const s = ensureSim();
-  s.force("center", d3.forceCenter(W / 2, H / 2));
-  if (!nodes.length) s.alpha(0.3).restart();
-}
-const zoom = d3.zoom().scaleExtent([0.12, 6])
-  .on("start", () => d3.select("#graphwrap").classed("dragging", true))
-  .on("end", () => d3.select("#graphwrap").classed("dragging", false))
-  .on("zoom", ev => viewport.attr("transform", ev.transform));
-svg.call(zoom);
-document.getElementById("zoomIn").onclick = () => use2D ? svg.transition().call(zoom.scaleBy, 1.4) : zoomCam(1 / 1.4);
-document.getElementById("zoomOut").onclick = () => use2D ? svg.transition().call(zoom.scaleBy, 1 / 1.4) : zoomCam(1.4);
-document.getElementById("zoomReset").onclick = () => use2D ? svg.transition().call(zoom.transform, d3.zoomIdentity) : graph.zoomToFit(400, 60);
-
-function seedPosition(d, i) {
-  if (d.x == null) {
-    const a = (i / Math.max(nodes.length, 1)) * 2 * Math.PI;
-    d.x = W / 2 + 120 * Math.cos(a) + (Math.random() - 0.5) * 40;
-    d.y = H / 2 + 120 * Math.sin(a) + (Math.random() - 0.5) * 40;
-  }
-}
-const tip = d3.select("#tip");
-function moveTip(ev) {
-  const r = document.getElementById("graphwrap").getBoundingClientRect();
-  tip.style("left", (ev.clientX - r.left + 14) + "px").style("top", (ev.clientY - r.top + 14) + "px");
-}
-function showTip(ev, d) { tip.html(esc(d.text.length > 280 ? d.text.slice(0, 279) + "…" : d.text)).style("opacity", 1); moveTip(ev); }
-function hideTip() { tip.style("opacity", 0); }
-
-function focusSet() {
-  if (!focus) return null;
-  return neighbors(focus);
-}
-function tick() {
-  nodes.forEach(seedPosition);
-  const fs = focusSet();
-  const ll = linkG.selectAll("line").data(links, d => key(d));
-  ll.exit().remove();
-  ll.enter().append("line").merge(ll)
-    .attr("stroke", d => KIND_COLOR[d.kind] || "#8b949e")
-    .attr("stroke-width", 1.5)
-    .attr("stroke-dasharray", d => d.pending ? "4 4" : null)
-    .attr("opacity", d => {
-      if (fs) { const a = nodeId(d), b = d.target.id || d.target; return (fs.has(a) && fs.has(b)) ? 0.9 : 0.08; }
-      return d.pending ? 0.5 : 0.9;
-    })
-    .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
-    .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-  const nn = nodeG.selectAll("circle").data(nodes, d => d.id);
-  nn.exit().remove();
-  nn.enter().append("circle").attr("r", 9).call(drag(ensureSim()))
-    .on("click", (ev, d) => { ev.stopPropagation(); showDetail(d.id); })
-    .on("dblclick", (ev, d) => { ev.stopPropagation(); toggleFocus(d.id); })
-    .on("mouseover", (ev, d) => showTip(ev, d)).on("mousemove", moveTip).on("mouseout", hideTip)
-    .merge(nn)
-    .attr("fill", d => (fs && !fs.has(d.id)) ? "#30363d" : (d.id === focus ? "#f0883e" : "#e6edf3"))
-    .attr("cx", d => d.x).attr("cy", d => d.y)
-    .attr("opacity", d => (fs && !fs.has(d.id)) ? 0.35 : 1);
-  const tl = nodeG.selectAll("text").data(nodes, d => d.id);
-  tl.exit().remove();
-  tl.enter().append("text").attr("dy", -15).attr("text-anchor", "middle")
-    .attr("fill", "#8b949e").attr("font-size", 10).merge(tl)
-    .attr("opacity", d => (fs && !fs.has(d.id)) ? 0.25 : 1)
-    .attr("x", d => d.x).attr("y", d => d.y)
-    .text(d => d.text.length > 26 ? d.text.slice(0, 25) + "…" : d.text);
-}
-const key = d => nodeId(d) + "|" + (d.target.id || d.target) + "|" + d.kind;
-function drag(s) {
-  return d3.drag()
-    .on("start", (ev, d) => { ev.sourceEvent.stopPropagation(); if (!ev.active) s.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-    .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
-    .on("end", (ev, d) => { if (!ev.active) s.alphaTarget(0); d.fx = null; d.fy = null; });
-}
-svg.on("dblclick.zoom", null).on("dblclick", () => { if (focus) { focus = null; ensureSim().alpha(0.3).restart(); updateCount(); } });
-
-function toggleFocus(id) {
-  focus = (focus === id) ? null : id;
-  updateCount();
-  if (use2D) ensureSim().alpha(0.3).restart(); else paint();
-}
-
-function updateCount() {
-  const f = document.getElementById("gcount");
-  if (!f) return;
-  f.textContent = focus ? `Fokus: ${short(focus, 30)} · Doppelklick/Reset zum Lösen` : `${nodes.length} Nodes · ${links.length} Edges`;
-}
-
-// ================= Daten-Laden (beide Renderer) =================
-async function refresh() {
-  const g = await (await fetch("/api/graph")).json();
-  g.nodes.forEach(n => { texts[n.id] = n.text; if (!nodes.find(x => x.id === n.id)) nodes.push(n); });
-  links.length = 0;
-  g.edges.forEach(e => links.push({ source: e.source, target: e.target, kind: e.kind, pending: e.pending, id: e.id }));
-  pending = g.edges.filter(e => e.pending);
-  if (sel >= pending.length) sel = Math.max(0, pending.length - 1);
-  renderCards(); renderHits(); updateCount();
-  if (graph) graph3DData();
-  else if (use2D) { const s = ensureSim(); s.nodes(nodes); s.force("link").links(links).id(d => d.id); s.alpha(1).restart(); tick(); }
-}
-
-// ================= Tabs =================
-function showTab(name) {
-  activeTab = name;
-  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
-  if (name === "graph") {
-    if (!graph && !use2D) {
-      if (initGraph3D()) { graph3DData(); graph.zoomToFit(400, 60); }
-      else { use2D = true; document.getElementById("graph").classList.remove("hidden"); const s = ensureSim(); s.nodes(nodes); s.force("link").links(links).id(d => d.id); size2D(); s.alpha(0.4).restart(); }
-    } else if (graph) {
-      graph.width(document.getElementById("graphwrap").clientWidth || W)
-           .height(document.getElementById("graphwrap").clientHeight || H);
-    } else { const s = ensureSim(); s.nodes(nodes); s.force("link").links(links).id(d => d.id); size2D(); s.alpha(0.4).restart(); }
-  }
-  if (name === "ingest") setTimeout(() => document.getElementById("ingestarea").focus(), 50);
-}
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
-window.addEventListener("resize", () => {
-  if (activeTab === "graph") {
-    if (graph) { const el = document.getElementById("graphwrap"); graph.width(el.clientWidth).height(el.clientHeight); }
-    else { size2D(); ensureSim().alpha(0.3).restart(); }
-  }
-});
-
-// ================= Ingest =================
-function ingest() {
-  const el = document.getElementById("ingestarea");
-  const text = el.value.trim();
-  if (!text) return;
-  const source = document.getElementById("ingsrc").value;
-  const status = document.getElementById("ingstatus");
-  status.textContent = "Ingestiere …";
-  fetch("/api/ingest", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, source }),
-  }).then(async r => {
-    if (!r.ok) { status.textContent = "Ingest fehlgeschlagen"; return flash("Ingest fehlgeschlagen", false); }
-    const data = await r.json();
-    el.value = "";
-    if (data.duplicate) {
-      status.textContent = `Duplikat — in bestehende Idee „${short(data.node.id, 50)}“ gemergt`;
-      flash("Duplikat gemergt", true);
-    } else {
-      const n = data.suggested ? data.suggested.length : 0;
-      status.textContent = `Node erstellt (${data.node.id.slice(0, 8)}) · ${n} Vorschlag/Vorschläge → Review-Tab`;
-      flash("Ingestiert — Graph wächst", true);
-    }
-    await refresh();
-  }).catch(() => status.textContent = "Netzwerkfehler");
-}
-document.getElementById("ingestbtn").onclick = ingest;
-document.getElementById("ingestarea").addEventListener("keydown", e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); ingest(); }
-});
-
-// ================= Graph: Suche & Zentrieren =================
-const gnode = document.getElementById("gnode");
-let gHits = [];
-gnode.addEventListener("input", () => {
-  const q = gnode.value.trim().toLowerCase();
-  gHits = q ? nodes.filter(n => n.text.toLowerCase().includes(q)).slice(0, 12) : [];
-});
-gnode.addEventListener("keydown", e => {
-  if (e.key !== "Enter" || !gHits.length) return;
-  const n = nodes.find(x => x.id === gHits[0].id);
-  if (!n) return;
-  focus = n.id; updateCount();
-  if (graph) center3D(n.id); else {
-    const k = 1.5;
-    const t = d3.zoomIdentity.translate(W / 2 - n.x * k, H / 2 - n.y * k).scale(k);
-    svg.transition().duration(500).call(zoom.transform, t);
-  }
-  flash(`→ ${short(n.id, 40)}`);
-});
-
-// ================= Node-Detail =================
-function showDetail(id) {
-  const t = texts[id]; if (!t) return;
-  fetch("/api/graph").then(r => r.json()).then(g => {
-    const rels = g.edges.filter(e => e.source === id || e.target === id);
-    document.getElementById("detailbox").innerHTML = `
-      <h3>${esc(t)}</h3>
-      <div class="meta">${id}</div>
-      <p>${esc(t)}</p>
-      <div class="rel"><b>Verbindungen:</b><br>${rels.map(e =>
-        `${KIND_COLOR[e.kind] ? "●" : "○"} ${e.kind} → ${short(e.target === id ? e.source : e.target, 40)} ${e.pending ? "(pending)" : ""}`).join("<br>") || "keine"}</div>`;
-    document.getElementById("detail").classList.add("show");
-  });
-}
-function hideDetail() { document.getElementById("detail").classList.remove("show"); }
-document.getElementById("detail").addEventListener("click", e => { if (e.target.id === "detail") hideDetail(); });
-
-// ================= Review: Pending-Cards =================
-function renderCards() {
-  const box = document.getElementById("cards");
-  if (!pending.length) {
-    box.innerHTML = `<div style="color:var(--dim);font-size:12px;line-height:1.7;">Keine offenen Vorschläge.<br><br>
-      Ingestiere Ideen im Ingest-Tab — verwandte Ideen erscheinen hier zur Entscheidung.</div>`;
+  // Keep the rest of the page understandable if the graph library cannot load.
+  if (!window.d3) {
+    $("#graph-empty h2").textContent = "Der Graph konnte nicht geladen werden";
+    $("#graph-empty p").textContent = "Bitte prüfe deine Verbindung und lade die Seite erneut.";
+    $("#stats").textContent = "Graph nicht verfügbar";
+    $("#connection").textContent = "Laden fehlgeschlagen";
+    $("#empty-action").hidden = false;
+    $("#empty-action").textContent = "Erneut laden";
+    $("#empty-action").onclick = () => location.reload();
+    $("#ingest-button").disabled = true;
+    $("#bar").addEventListener("submit", event => event.preventDefault());
     return;
   }
-  box.innerHTML = pending.map((e, i) => `
-    <div class="card ${i === sel ? "active" : ""}" data-i="${i}">
-      <span class="kind ${esc(e.kind)}">${esc(e.kind)}</span>
-      <div class="nodebox"><div class="id">${e.source.slice(0, 8)}</div>${esc(short(e.source))}</div>
-      <div class="nodebox"><div class="id">${e.target.slice(0, 8)}</div>${esc(short(e.target))}</div>
-      <div class="actions">
-        <button class="ok" onclick="resolveEdge('${e.id}',true)">✓ akzeptieren</button>
-        <button class="no" onclick="resolveEdge('${e.id}',false)">✗ verwerfen</button>
-      </div>
-    </div>`).join("");
-  box.querySelectorAll(".card").forEach(c => c.addEventListener("click", () => { sel = +c.dataset.i; renderCards(); }));
-}
-async function resolveEdge(id, accept) {
-  const r = await fetch(`/api/edge/${id}/${accept ? "accept" : "reject"}`, { method: "POST" });
-  if (!r.ok) return flash("Fehler beim Auflösen", false);
-  flash(accept ? "Edge akzeptiert" : "Edge verworfen");
-  await refresh();
-}
 
-// ================= Review: same_as-Picker =================
-let pickA = null, pickB = null;
-function renderHits() {
-  const box = document.getElementById("hits");
-  const q = (document.getElementById("search").value || "").trim().toLowerCase();
-  const hits = q ? nodes.filter(n => n.text.toLowerCase().includes(q)).slice(0, 20) : [];
-  box.innerHTML = hits.map(n => `<div class="hit ${n.id === pickA ? "pickedA" : ""} ${n.id === pickB ? "pickedB" : ""}" data-id="${n.id}">${esc(short(n.id, 34))}</div>`).join("")
-    || (q ? `<div class="hit">keine Treffer</div>` : "");
-  box.querySelectorAll(".hit").forEach(h => h.onclick = () => pick(h.dataset.id));
-  document.getElementById("slotA").textContent = pickA ? "A: " + short(pickA, 30) : "A: leer";
-  document.getElementById("slotB").textContent = pickB ? "B: " + short(pickB, 30) : "B: leer";
-  document.getElementById("slotA").classList.toggle("filled", !!pickA);
-  document.getElementById("slotB").classList.toggle("filled", !!pickB);
-  document.getElementById("linkbtn").disabled = !(pickA && pickB);
-}
-function pick(id) {
-  if (!pickA) pickA = id; else if (!pickB) pickB = id; else { pickA = id; pickB = null; }
-  renderHits();
-}
-document.getElementById("search").addEventListener("input", renderHits);
-async function linkPicked() {
-  if (!pickA || !pickB) return;
-  const r = await fetch("/api/edge", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: pickA, target: pickB, kind: "same_as" }) });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); flash(e.error || "Fehler", false); return; }
-  flash("same_as verlinkt"); pickA = pickB = null; renderHits(); await refresh();
-}
-document.getElementById("linkbtn").onclick = linkPicked;
+  const svg = d3.select("#graph");
+  const viewport = svg.append("g");
+  const linkLayer = viewport.append("g").attr("aria-hidden", "true");
+  const nodeLayer = viewport.append("g");
+  const zoom = d3.zoom().scaleExtent([0.12, 4]).on("zoom", event => {
+    viewport.attr("transform", event.transform);
+    $("#tooltip").hidden = true;
+  });
+  svg.call(zoom).on("dblclick.zoom", null);
+  svg.on("click", event => { if (event.target === svg.node()) clearSelection(); });
+  const simulation = d3.forceSimulation()
+    .force("link", d3.forceLink().id(node => node.id).distance(190))
+    .force("charge", d3.forceManyBody().strength(-550))
+    .force("collide", d3.forceCollide(65))
+    .force("center", d3.forceCenter())
+    .on("tick", tick)
+    .on("end", () => { if (initialFit && nodes.length) { fitNodes(nodes); initialFit = false; } });
 
-// ================= Keyboard =================
-document.addEventListener("keydown", e => {
-  const tag = (document.activeElement.tagName || "").toUpperCase();
-  const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-  if (typing) return;
-  if (e.key === "1") showTab("ingest");
-  else if (e.key === "2") showTab("graph");
-  else if (e.key === "3") showTab("review");
-  else if (e.key === "i") { showTab("ingest"); document.getElementById("ingestarea").focus(); }
-  else if (activeTab === "review") {
-    if (e.key === "j") { if (pending.length) { sel = Math.min(sel + 1, pending.length - 1); renderCards(); } }
-    else if (e.key === "k") { if (pending.length) { sel = Math.max(sel - 1, 0); renderCards(); } }
-    else if (e.key === "Enter") { if (pending[sel]) resolveEdge(pending[sel].id, true); }
-    else if (e.key === "Escape") { if (pending[sel]) resolveEdge(pending[sel].id, false); }
+  function tick() {
+    linkLayer.selectAll("line")
+      .attr("x1", edge => edge.source.x).attr("y1", edge => edge.source.y)
+      .attr("x2", edge => edge.target.x).attr("y2", edge => edge.target.y);
+    nodeLayer.selectAll("g.node").attr("transform", node => `translate(${node.x},${node.y})`);
   }
-});
 
-// ================= Flash =================
-function flash(msg, ok = true) {
-  const f = document.getElementById("flash");
-  f.textContent = msg; f.style.borderColor = ok ? "var(--green)" : "var(--red)";
-  f.style.color = ok ? "var(--green)" : "var(--red)"; f.style.opacity = 1;
-  setTimeout(() => f.style.opacity = 0, 1800);
-}
+  function drawGraph() {
+    linkLayer.selectAll("line").data(links, edge => edge.id).join("line")
+      .attr("stroke", edge => colors[edge.kind] || "#a0afc1")
+      .attr("stroke-dasharray", edge => edge.pending ? "5 6" : null);
+    const groups = nodeLayer.selectAll("g.node").data(nodes, node => node.id).join(enter => {
+      const group = enter.append("g").attr("class", "node").attr("tabindex", 0).attr("role", "button")
+        .on("click", (event, node) => { event.stopPropagation(); showDetail(node.id); })
+        .on("keydown", (event, node) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); showDetail(node.id); }
+        })
+        .on("pointerenter", (event, node) => {
+          if (event.pointerType === "touch") return;
+          const tooltip = $("#tooltip");
+          tooltip.textContent = short(node.text, 240);
+          tooltip.hidden = false;
+          const rect = $("#canvas").getBoundingClientRect();
+          tooltip.style.left = `${Math.max(8, Math.min(event.clientX - rect.left + 16, rect.width - tooltip.offsetWidth - 8))}px`;
+          tooltip.style.top = `${Math.max(8, Math.min(event.clientY - rect.top + 16, rect.height - tooltip.offsetHeight - 8))}px`;
+        })
+        .on("pointerleave", () => { $("#tooltip").hidden = true; })
+        .call(d3.drag()
+          .on("start", (event, node) => { initialFit = false; if (!event.active) simulation.alphaTarget(.2).restart(); node.fx = node.x; node.fy = node.y; })
+          .on("drag", (event, node) => { node.fx = event.x; node.fy = event.y; })
+          .on("end", (event, node) => { if (!event.active) simulation.alphaTarget(0); node.fx = null; node.fy = null; }));
+      group.append("circle").attr("class", "halo").attr("r", 20);
+      group.append("circle").attr("class", "dot").attr("r", 9);
+      group.append("text").attr("text-anchor", "middle").attr("y", -29);
+      group.append("title");
+      return group;
+    });
+    groups.attr("aria-label", node => `Idee öffnen: ${node.text}`);
+    groups.select("text").text(node => short(node.text.replace(/\s+/g, " ")));
+    groups.select("title").text(node => node.text);
+    if (graph3D) update3D();
+    highlight();
+    tick();
+  }
 
-// ================= WebSocket Live =================
-const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-ws.onmessage = ev => {
-  const m = JSON.parse(ev.data);
-  if (m.type === "ingested") { if (m.duplicate) flash("Duplikat erkannt — gemergt"); refresh(); }
-  else if (m.type === "edge_resolved" || m.type === "edge_linked") { refresh(); }
-};
+  function highlight() {
+    const selected = edges.find(edge => edge.id === selectedEdge);
+    const ids = new Set(selected ? [selected.source, selected.target] : selectedNode ? [selectedNode] : []);
+    const searching = $("#search").value.trim().toLocaleLowerCase("de");
+    if (graph3D) {
+      graph3D.nodeColor(node => (ids.size ? !ids.has(node.id) : searching && !node.text.toLocaleLowerCase("de").includes(searching)) ? "#303b49" : ids.has(node.id) ? "#83b9ff" : "#eaf0f7");
+      for (const [id, sprite] of sprites) {
+        sprite.material.opacity = (ids.size ? !ids.has(id) : searching && !sprite.text.toLocaleLowerCase("de").includes(searching)) ? .2 : 1;
+      }
+      graph3D.linkColor(edge => ids.size && !(selected ? edge.id === selectedEdge : ids.has(idOf(edge.source)) || ids.has(idOf(edge.target))) ? "#202a36" : colors[edge.kind] || "#a0afc1");
+      graph3D.linkWidth(edge => edge.id === selectedEdge ? 2.5 : edge.pending ? .4 : 1);
+    }
+    nodeLayer.selectAll(".node")
+      .classed("selected", node => ids.has(node.id))
+      .classed("dimmed", node => ids.size ? !ids.has(node.id) : searching ? !node.text.toLocaleLowerCase("de").includes(searching) : false);
+    linkLayer.selectAll("line")
+      .attr("stroke-width", edge => edge.id === selectedEdge ? 3 : 1.5)
+      .attr("opacity", edge => ids.size ? (selected ? edge.id === selectedEdge : ids.has(idOf(edge.source)) || ids.has(idOf(edge.target))) ? 1 : .08 : edge.pending ? .5 : .75);
+  }
 
-// ================= Start =================
-showTab("ingest");
-refresh();
+  function fitNodes(targets) {
+    if (!targets.length || width < 2 || height < 2) return;
+    if (use3D && graph3D) {
+      const ids = new Set(targets.map(node => node.id));
+      graph3D.zoomToFit(motion.matches ? 0 : 280, 60, node => ids.has(node.id));
+      return;
+    }
+    const x0 = d3.min(targets, node => node.x) - 130, x1 = d3.max(targets, node => node.x) + 130;
+    const y0 = d3.min(targets, node => node.y) - 65, y1 = d3.max(targets, node => node.y) + 65;
+    const scale = Math.max(.12, Math.min(1.5, width / (x1 - x0), height / (y1 - y0)) * .85);
+    const transform = d3.zoomIdentity.translate(width / 2, height / 2).scale(scale).translate(-(x0 + x1) / 2, -(y0 + y1) / 2);
+    svg.interrupt().transition().duration(motion.matches ? 0 : 280).call(zoom.transform, transform);
+  }
+
+  new ResizeObserver(entries => {
+    const rect = entries[0].contentRect;
+    if (!rect.width || !rect.height) return;
+    width = rect.width; height = rect.height;
+    if (graph3D) graph3D.width(width).height(height);
+    svg.attr("viewBox", `0 0 ${width} ${height}`);
+    simulation.force("center").x(width / 2).y(height / 2);
+    simulation.alpha(.2).restart();
+    if (loaded) {
+      const edge = edges.find(item => item.id === selectedEdge);
+      const targets = edge ? nodes.filter(node => node.id === edge.source || node.id === edge.target) : selectedNode ? nodes.filter(node => node.id === selectedNode) : nodes;
+      fitNodes(targets);
+    }
+  }).observe($("#canvas"));
+
+  function setView(view) {
+    document.body.dataset.view = view;
+    document.querySelectorAll("#mobile-tabs button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.view === view)));
+  }
+  document.querySelectorAll("#mobile-tabs button").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
+  $("#zoom-in").onclick = () => { initialFit = false; if (use3D) zoom3D(1 / 1.3); else svg.call(zoom.scaleBy, 1.3); };
+  $("#zoom-out").onclick = () => { initialFit = false; if (use3D) zoom3D(1.3); else svg.call(zoom.scaleBy, 1 / 1.3); };
+  $("#fit").onclick = () => { clearSelection(); fitNodes(nodes); };
+  svg.on("wheel.intent pointerdown.intent", () => { initialFit = false; });
+
+  // Keep the upstream WebGL view, with independent simulation objects so the
+  // 2D and 3D force engines never overwrite one another's positions.
+  function label3D(node) {
+    if (sprites.has(node.id)) return sprites.get(node.id).object;
+    const canvas = document.createElement("canvas");
+    canvas.width = 640; canvas.height = 96;
+    const context = canvas.getContext("2d");
+    context.font = "32px system-ui, sans-serif";
+    context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillStyle = "#eaf0f7";
+    context.fillText(short(node.text, 30), 320, 48, 620);
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map:texture, transparent:true, depthWrite:false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(65, 10, 1); sprite.position.y = 12;
+    const object = new THREE.Group(); object.add(sprite);
+    sprites.set(node.id, { object, texture, material, text:node.text });
+    return object;
+  }
+
+  function update3D() {
+    const existing = new Map(graph3D.graphData().nodes.map(node => [node.id, node]));
+    const degree = new Map();
+    edges.forEach(edge => [edge.source, edge.target].forEach(id => degree.set(id, (degree.get(id) || 0) + 1)));
+    for (const [id, sprite] of sprites) {
+      if (nodeById(id)?.text !== sprite.text) {
+        sprite.texture.dispose(); sprite.material.dispose(); sprites.delete(id);
+      }
+    }
+    const data = nodes.map(node => Object.assign(existing.get(node.id) || {}, { id:node.id, text:node.text, val:1 + Math.log2(1 + (degree.get(node.id) || 0)) }));
+    graph3D.graphData({ nodes:data, links:edges.map(edge => ({ ...edge })) });
+    graph3D.nodeThreeObject(label3D);
+  }
+
+  function zoom3D(factor) {
+    const camera = graph3D.camera().position;
+    const target = graph3D.controls().target;
+    graph3D.cameraPosition({
+      x:target.x + (camera.x - target.x) * factor,
+      y:target.y + (camera.y - target.y) * factor,
+      z:target.z + (camera.z - target.z) * factor,
+    }, target, motion.matches ? 0 : 200);
+  }
+
+  $("#graph-mode").onclick = () => {
+    try {
+      if (!graph3D) {
+        if (!window.ForceGraph3D || !window.THREE) throw new Error("3D unavailable");
+        graph3D = ForceGraph3D()($("#graph3d"))
+          .width(width).height(height).backgroundColor("#0d1117")
+          .nodeRelSize(5).nodeLabel(node => esc(node.text))
+          .nodeThreeObjectExtend(true).nodeThreeObject(label3D)
+          .linkOpacity(.65).linkLabel(edge => esc(`${labels[edge.kind] || edge.kind}${edge.pending ? " · Vorschlag" : ""}`))
+          .onNodeClick(node => showDetail(node.id)).onBackgroundClick(clearSelection)
+          .warmupTicks(80).cooldownTicks(100);
+        update3D();
+      }
+      use3D = !use3D;
+      $("#graph3d").hidden = !use3D; $("#graph").hidden = use3D;
+      $("#graph-mode").setAttribute("aria-pressed", String(use3D));
+      if (use3D) graph3D.resumeAnimation(); else graph3D.pauseAnimation();
+      highlight(); fitNodes(nodes);
+    } catch {
+      graph3D?.pauseAnimation(); graph3D = null; use3D = false;
+      $("#graph3d").hidden = true; $("#graph").hidden = false;
+      $("#graph-mode").setAttribute("aria-pressed", "false");
+      notify("3D ist hier nicht verfügbar. Du kannst den Graph in 2D weiter nutzen.");
+    }
+  };
+
+  function clearSelection() {
+    selectedEdge = null; selectedNode = null;
+    document.querySelectorAll(".card").forEach(card => card.classList.remove("active"));
+    highlight();
+  }
+
+  function selectEdge(id, reveal = false) {
+    selectedEdge = id; selectedNode = null; initialFit = false;
+    const edge = edges.find(item => item.id === id);
+    if (!edge) return;
+    document.querySelectorAll(".card").forEach(card => card.classList.toggle("active", card.dataset.id === id));
+    if (reveal) setView("graph");
+    highlight();
+    requestAnimationFrame(() => fitNodes(nodes.filter(node => node.id === edge.source || node.id === edge.target)));
+  }
+
+  async function request(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const error = new Error(response.status === 404 || response.status === 409 ? "Dieser Vorschlag wurde bereits geändert. Bitte wähle ihn erneut." : "Speichern fehlgeschlagen. Bitte versuche es erneut.");
+      error.status = response.status;
+      throw error;
+    }
+    return response.json();
+  }
+
+  async function refresh() {
+    const version = ++refreshVersion;
+    try {
+      const graph = await request("/api/graph");
+      if (version !== refreshVersion) return;
+      const existing = new Map(nodes.map(node => [node.id, node]));
+      nodes = graph.nodes.map(node => Object.assign(existing.get(node.id) || {}, node));
+      const ids = new Set(nodes.map(node => node.id));
+      edges = graph.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target) && !edge.rejected && !edge.valid_to);
+      links = edges.map(edge => ({ ...edge }));
+      pending = edges.filter(edge => edge.pending);
+      if (!pending.some(edge => edge.id === selectedEdge)) selectedEdge = null;
+      if (!ids.has(selectedNode)) selectedNode = null;
+      // Clear old links before replacing nodes, so deleted endpoints cannot leak into the simulation.
+      simulation.force("link").links([]);
+      simulation.nodes(nodes);
+      simulation.force("link").links(links);
+      loaded = true;
+      $("#stats").textContent = `${nodes.length} ${nodes.length === 1 ? "Idee" : "Ideen"} · ${edges.filter(edge => !edge.pending).length} Verbindungen`;
+      $("#pending-count").textContent = pending.length;
+      $("#mobile-count").textContent = pending.length ? `(${pending.length})` : "";
+      $("#graph-empty").hidden = nodes.length > 0;
+      $("#graph-empty h2").textContent = "Jede Verbindung beginnt mit einer Idee";
+      $("#graph-empty p").textContent = "Halte deinen ersten Gedanken fest. Mit weiteren Ideen entstehen Vorschläge für Verbindungen.";
+      $("#empty-action").hidden = false;
+      $("#empty-action").textContent = "Erste Idee hinzufügen";
+      $("#empty-action").onclick = () => $("#text").focus();
+      renderCards(); drawGraph();
+      simulation.alpha(.6).restart();
+      if (initialFit && nodes.length) { simulation.tick(80); tick(); fitNodes(nodes); initialFit = false; }
+      if (detailId) renderDetail(detailId);
+      if (document.activeElement === $("#search")) renderSearch();
+    } catch (error) {
+      if (version !== refreshVersion) return;
+      if (!loaded) {
+        $("#stats").textContent = "Ideen nicht geladen";
+        $("#graph-empty h2").textContent = "Deine Ideen konnten nicht geladen werden";
+        $("#graph-empty p").textContent = "Bitte prüfe die Verbindung und versuche es erneut.";
+        $("#empty-action").hidden = false;
+        $("#empty-action").textContent = "Erneut versuchen";
+        $("#empty-action").onclick = refresh;
+        $("#cards").innerHTML = '<div class="empty-inbox"><p>Vorschläge sind verfügbar, sobald die Verbindung wiederhergestellt ist.</p></div>';
+      }
+      notify("Der Graph konnte nicht aktualisiert werden. Bitte versuche es erneut.", true);
+    } finally {
+      $("#cards").setAttribute("aria-busy", "false");
+    }
+  }
+
+  function renderCards() {
+    const cards = $("#cards");
+    const active = document.activeElement;
+    const focusedId = active?.closest(".card")?.dataset.id;
+    const focusedAction = active?.dataset.action;
+    if (!pending.length) {
+      cards.innerHTML = `<div class="empty-inbox"><h3>${nodes.length ? "Alles geprüft" : "Platz für neue Verbindungen"}</h3><p>${nodes.length ? "Zurzeit gibt es keine offenen Vorschläge. Füge weitere Ideen hinzu, um neue Verbindungen zu entdecken." : "Sobald deine Ideen Verbindungen ergeben, kannst du sie hier prüfen."}</p></div>`;
+      return;
+    }
+    cards.innerHTML = pending.map(edge => `
+      <article class="card ${edge.id === selectedEdge ? "active" : ""}" data-id="${esc(edge.id)}">
+        <div class="card-heading"><span class="kind" data-kind="${esc(edge.kind)}">${esc(labels[edge.kind] || edge.kind)}</span><button class="select-pair quiet" data-action="select">Im Graph zeigen</button></div>
+        <button class="idea-preview" data-action="source" aria-label="Erste Idee vollständig lesen"><span class="excerpt">${esc(textOf(edge.source))}</span><span class="read">Idee lesen ↗</span></button>
+        <button class="idea-preview" data-action="target" aria-label="Zweite Idee vollständig lesen"><span class="excerpt">${esc(textOf(edge.target))}</span><span class="read">Idee lesen ↗</span></button>
+        <div class="actions"><button class="ok" data-action="accept" ${resolving ? "disabled" : ""}>✓ Akzeptieren</button><button class="quiet" data-action="reject" ${resolving ? "disabled" : ""}>Verwerfen</button></div>
+      </article>`).join("");
+    if (focusedId && focusedAction) {
+      const card = [...cards.children].find(item => item.dataset.id === focusedId);
+      card?.querySelector(`[data-action="${focusedAction}"]`)?.focus({ preventScroll:true });
+    }
+  }
+
+  $("#cards").addEventListener("click", event => {
+    const card = event.target.closest(".card");
+    if (!card) return;
+    const edge = pending.find(item => item.id === card.dataset.id);
+    if (!edge) return;
+    const action = event.target.closest("button")?.dataset.action;
+    if (action === "accept" || action === "reject") resolveEdge(edge.id, action);
+    else if (action === "source" || action === "target") { selectEdge(edge.id); showDetail(edge[action]); }
+    else selectEdge(edge.id, action === "select");
+  });
+
+  function setResolving(value) {
+    resolving = value;
+    document.querySelectorAll('[data-action="accept"], [data-action="reject"], #undo').forEach(button => { button.disabled = value; });
+  }
+
+  async function resolveEdge(id, action) {
+    if (resolving) return;
+    const index = pending.findIndex(edge => edge.id === id);
+    const focusInCard = Boolean(document.activeElement.closest(".card"));
+    setResolving(true);
+    try {
+      await request(`/api/edge/${encodeURIComponent(id)}/${action}`, { method:"POST" });
+      undoId = id;
+      $("#decision").hidden = false;
+      $("#decision-message").textContent = action === "accept" ? "Verbindung akzeptiert." : "Vorschlag verworfen.";
+      await refresh();
+      setResolving(false);
+      const next = pending[Math.min(index, pending.length - 1)];
+      if (next) {
+        selectEdge(next.id);
+        if (focusInCard) [...$("#cards").children].find(card => card.dataset.id === next.id)?.querySelector("button")?.focus();
+      } else if (focusInCard) $("#undo").focus();
+    } catch (error) {
+      notify(error instanceof TypeError ? "Keine Verbindung. Deine Entscheidung wurde nicht bestätigt." : error.message, true);
+      await refresh();
+    } finally { setResolving(false); }
+  }
+
+  $("#undo").onclick = async () => {
+    if (!undoId || resolving) return;
+    setResolving(true);
+    try {
+      const id = undoId;
+      await request(`/api/edge/${encodeURIComponent(id)}/undo`, { method:"POST" });
+      undoId = null;
+      $("#decision").hidden = true;
+      await refresh();
+      selectEdge(id);
+      [...$("#cards").children].find(card => card.dataset.id === id)?.querySelector("button")?.focus();
+      notify("Entscheidung rückgängig gemacht.");
+    } catch (error) {
+      notify(error instanceof TypeError ? "Keine Verbindung. Rückgängig machen wurde nicht bestätigt." : error.message, true);
+    } finally { setResolving(false); }
+  };
+  $("#dismiss-decision").onclick = () => { $("#decision").hidden = true; undoId = null; };
+
+  $("#bar").addEventListener("submit", async event => {
+    event.preventDefault();
+    const input = $("#text");
+    const text = input.value.trim();
+    if (!text || saving) return;
+    saving = true;
+    $("#ingest-button").disabled = true;
+    $("#ingest-button").textContent = "Wird gespeichert …";
+    try {
+      const result = await request("/api/ingest", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ text, source:$("#source").value }) });
+      if (input.value.trim() === text) input.value = "";
+      await refresh();
+      selectedEdge = null; selectedNode = result.node.id;
+      setView("graph"); highlight(); fitNodes(nodes.filter(node => node.id === selectedNode));
+      notify(result.duplicate ? "Duplikat erkannt und mit der bestehenden Idee zusammengeführt." : "Idee gespeichert.");
+    } catch (error) {
+      notify(error instanceof TypeError ? "Keine Verbindung. Dein Text bleibt erhalten. Prüfe den Graph vor einem erneuten Versuch." : error.message, true);
+    } finally {
+      saving = false;
+      $("#ingest-button").disabled = false;
+      $("#ingest-button").textContent = "Idee hinzufügen";
+    }
+  });
+  $("#text").addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); $("#bar").requestSubmit(); }
+  });
+
+  function renderDetail(id) {
+    const node = nodeById(id);
+    if (!node) { $("#detail").close(); return; }
+    $("#detail-text").textContent = node.text;
+    const date = new Date(node.created);
+    $("#detail-meta").textContent = [node.source, Number.isNaN(date.getTime()) ? null : date.toLocaleDateString("de-DE"), ...(node.tags || []).map(tag => `#${tag}`)].filter(Boolean).join(" · ");
+    const relations = edges.filter(edge => edge.source === id || edge.target === id);
+    $("#detail-relations").innerHTML = `<h3>Verbindungen (${relations.length})</h3>${relations.map(edge => {
+      const target = edge.source === id ? edge.target : edge.source;
+      return `<button class="relation quiet" data-node="${esc(target)}"><span>${esc(labels[edge.kind] || edge.kind)}${edge.pending ? " · Vorschlag" : " · Akzeptiert"}</span>${esc(short(textOf(target), 160))}</button>`;
+    }).join("") || '<p style="color:var(--dim)">Noch keine Verbindungen.</p>'}`;
+  }
+  function showDetail(id) {
+    if (!nodeById(id)) return;
+    detailId = id;
+    $("#tooltip").hidden = true;
+    renderDetail(id);
+    if (!$("#detail").open) $("#detail").showModal();
+    $("#detail").scrollTop = 0;
+  }
+  $("#detail-relations").onclick = event => {
+    const button = event.target.closest("button[data-node]");
+    if (button) { showDetail(button.dataset.node); $("#close-detail").focus(); }
+  };
+  $("#close-detail").onclick = () => $("#detail").close();
+  $("#detail").addEventListener("close", () => { detailId = null; });
+  $("#detail").addEventListener("click", event => {
+    const rect = $("#detail").getBoundingClientRect();
+    if (event.target === $("#detail") && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) $("#detail").close();
+  });
+
+  function closeSearch() { $("#search-results").hidden = true; $("#search").setAttribute("aria-expanded", "false"); }
+  function renderSearch() {
+    const query = $("#search").value.trim().toLocaleLowerCase("de");
+    highlight();
+    if (!query) { closeSearch(); return; }
+    const matches = nodes.filter(node => node.text.toLocaleLowerCase("de").includes(query)).slice(0, 12);
+    $("#search-results").innerHTML = matches.map(node => `<li><button data-node="${esc(node.id)}">${esc(short(node.text, 100))}</button></li>`).join("") || '<li class="no-results">Keine passende Idee gefunden.</li>';
+    $("#search-results").hidden = false;
+    $("#search").setAttribute("aria-expanded", "true");
+  }
+  $("#search").addEventListener("input", () => { clearSelection(); renderSearch(); });
+  $("#search").addEventListener("focus", renderSearch);
+  $("#search").addEventListener("keydown", event => {
+    if (event.key === "ArrowDown") { event.preventDefault(); $("#search-results button")?.focus(); }
+    if (event.key === "Enter") { event.preventDefault(); $("#search-results button")?.click(); }
+  });
+  $("#search-results").addEventListener("keydown", event => {
+    const buttons = [...document.querySelectorAll("#search-results button")];
+    const index = buttons.indexOf(document.activeElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      buttons[Math.max(0, Math.min(buttons.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
+    }
+  });
+  $("#search-results").addEventListener("click", event => {
+    const button = event.target.closest("button[data-node]");
+    if (!button) return;
+    selectedEdge = null; selectedNode = button.dataset.node; initialFit = false;
+    $("#search").value = ""; closeSearch(); highlight();
+    fitNodes(nodes.filter(node => node.id === selectedNode));
+    $("#search").focus(); showDetail(selectedNode);
+  });
+  document.addEventListener("pointerdown", event => { if (!event.target.closest(".search")) closeSearch(); });
+  document.addEventListener("focusin", event => { if (!event.target.closest(".search")) closeSearch(); });
+
+  window.addEventListener("keydown", event => {
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || $("#detail").open) return;
+    if (event.key === "Escape") {
+      closeSearch(); $("#search").value = ""; clearSelection();
+      if (document.activeElement.matches("input,textarea")) document.activeElement.blur();
+      return;
+    }
+    if (event.target.closest("input,textarea,select,[contenteditable='true']")) return;
+    // Native controls retain Enter/Space; shortcuts must never trigger a second action.
+    if (event.target.closest("button,[role='button']") && ["Enter", " "].includes(event.key)) return;
+    if (event.key.toLowerCase() === "i") { event.preventDefault(); $("#text").focus(); }
+    else if (event.key === "/") { event.preventDefault(); setView("graph"); $("#search").focus(); }
+    else if (["j", "k"].includes(event.key.toLowerCase()) && pending.length) {
+      event.preventDefault();
+      const index = pending.findIndex(edge => edge.id === selectedEdge);
+      const next = index < 0 ? (event.key.toLowerCase() === "j" ? 0 : pending.length - 1) : Math.max(0, Math.min(pending.length - 1, index + (event.key.toLowerCase() === "j" ? 1 : -1)));
+      selectEdge(pending[next].id);
+      document.querySelector(".card.active")?.scrollIntoView({ block:"nearest" });
+    } else if (event.key === "Enter" && selectedEdge) { event.preventDefault(); if (!event.repeat) resolveEdge(selectedEdge, "accept"); }
+    else if (event.key === " ") {
+      const id = selectedNode || pending.find(edge => edge.id === selectedEdge)?.target;
+      if (id) { event.preventDefault(); showDetail(id); }
+    }
+  });
+
+  function connect() {
+    clearTimeout(reconnectTimer);
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+    socket.onopen = () => { $("#connection").dataset.state = "live"; $("#connection").textContent = "Live verbunden"; refresh(); };
+    socket.onmessage = event => {
+      try { if (["ingested", "edge_resolved", "edge_restored", "edge_linked"].includes(JSON.parse(event.data).type)) refresh(); } catch { /* Ignore unknown live messages. */ }
+    };
+    socket.onerror = () => socket.close();
+    socket.onclose = () => {
+      $("#connection").dataset.state = "offline";
+      $("#connection").textContent = "Live-Verbindung unterbrochen";
+      reconnectTimer = setTimeout(connect, 5000);
+    };
+  }
+  refresh(); connect();
+})();

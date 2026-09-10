@@ -154,3 +154,12 @@ async def ws_endpoint(ws: WebSocket):
             await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)
+
+
+@app.post("/api/edge/{edge_id}/undo")
+async def undo_edge(edge_id: str):
+    edge = make_engine().undo(edge_id)
+    if edge is None:
+        return JSONResponse({"error": "edge nicht gefunden oder bereits pending"}, status_code=409)
+    await manager.broadcast({"type": "edge_restored", "edge": edge.to_dict()})
+    return edge.to_dict()

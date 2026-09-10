@@ -7,24 +7,33 @@ A generic engine for a persistent knowledge graph of ideas. The memory is
 the brain and points to your clone via `IG_BRAIN_PATH`. No hardcoded remote,
 no private data in the code: open-source ready.
 
-## Web UI (tabbed cockpit)
+## Web UI
 
-Start the server, open the URL, and you get a cockpit with three tabs:
+Start the server and open the cockpit to capture ideas, explore their connections,
+and review suggestions side by side. The source selector and duplicate merging
+remain available when adding ideas.
 
-| Tab | Purpose |
-|---|---|
-| **Ingest** (start) | Capture new ideas/notes (selectable source), duplicate merge, status |
-| **Graph 3D** | 3D force-directed network (Three.js / WebGL, via `3d-force-graph`): drag = rotate, scroll = zoom, hover = tooltip, click = details, search = center; node size = degree, edge color = kind, pending edges dimmed. Falls back to the classic 2D d3 graph when WebGL is unavailable. |
-| **Review** | Accept/reject pending edge suggestions + `same_as` picker |
+- Search ideas, read their full text, pan, zoom, and fit the graph to the screen.
+- Choose **Im Graph zeigen** to highlight both ideas and their proposed connection.
+- Toggle **3D** for the WebGL graph; the accessible 2D view remains available.
+- Accept or dismiss suggestions and undo the most recent decision in this session.
+- Use **Aliases manuell verknüpfen** to open the existing `same_as` picker.
+- On smaller screens, switch between **Graph** and **Vorschläge**.
 
-Keyboard: `1/2/3` tabs · `i` ingest · `Space` node text · `Esc` close ·
-`j/k/Enter` review navigation.
+Keyboard: `I` capture · `/` search · `J/K` choose suggestion · `Enter` accept
+selection · `Space` read idea · `Esc` close or clear selection (never dismiss).
+In the capture field, `Enter` saves and `Shift+Enter` inserts a new line.
 
-```
+```bash
 uvicorn ideagraph.server:app --host 127.0.0.1 --port 8000   # → http://localhost:8000
 ```
 
-![IdeaGraph Cockpit — Graph tab](docs/screenshot.png)
+Dismissed edges remain in `edges.jsonl` with `rejected: true` and `pending: false`
+for undo. `read_edges()` and `/api/graph` exclude them; internal writes preserve
+the records. Existing temporal, confidence, and provenance fields are retained.
+`POST /api/edge/{id}/undo` restores a saved decision to pending and broadcasts
+`edge_restored`. Invalidated edges cannot be restored. Merging away a node removes
+undo records involving that node, while retaining unrelated decisions.
 
 ## Architecture
 

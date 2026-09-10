@@ -72,6 +72,44 @@ def test_resolve_unknown_returns_none(tmp_path):
     assert brain.resolve_edge("gibtsnicht", accept=True) is None
 
 
+def test_undo_accept_returns_edge_to_inbox(tmp_path):
+    brain = make_brain(tmp_path)
+    edge = Edge(source="a", target="b", kind="ähnlich")
+    brain.add_edge(edge)
+    engine = BrainEngine(brain, HashEmbedder())
+    engine.resolve(edge.id, accept=True)
+    restored = engine.undo(edge.id)
+    assert restored.id == edge.id and restored.pending
+    assert brain.graph_state()["edges"] == [edge.to_dict()]
+    assert engine.undo(edge.id) is None
+
+
+def test_undo_reject_survives_reload_and_other_decisions(tmp_path):
+    brain = make_brain(tmp_path)
+    first = Edge(source="a", target="b", kind="ähnlich")
+    second = Edge(source="b", target="c", kind="erweitert")
+    brain.add_edge(first)
+    brain.resolve_edge(first.id, accept=False)
+    assert brain.graph_state()["edges"] == []
+    # Adding and resolving other edges must preserve the rejected record.
+    brain.add_edge(second)
+    brain.resolve_edge(second.id, accept=True)
+    reloaded = make_brain(tmp_path)
+    restored = reloaded.restore_edge(first.id)
+    assert restored.id == first.id and restored.pending and not restored.rejected
+    assert len(reloaded.read_edges()) == 2
+    assert reloaded.restore_edge("unknown") is None
+
+
+def test_rejected_edge_cannot_be_resolved_again(tmp_path):
+    brain = make_brain(tmp_path)
+    edge = Edge(source="a", target="b", kind="ähnlich")
+    brain.add_edge(edge)
+    brain.resolve_edge(edge.id, accept=False)
+    assert brain.resolve_edge(edge.id, accept=True) is None
+    assert brain.read_edges() == []
+
+
 def test_graph_state_shape(tmp_path):
     brain = make_brain(tmp_path)
     brain.write_node(Node(id="a", text="x"))
@@ -317,3 +355,28 @@ def test_ingest_auto_inits_missing_brain(tmp_path):
     node, _, _ = engine.ingest("Erste Idee fuer den Demo-Graph")
     assert (brain.path / "nodes").is_dir()
     assert any(n.id == node.id for n in brain.read_nodes())
+
+
+def test_undo_preserves_edge_metadata_and_invalidated_facts(tmp_path):
+    brain = make_brain(tmp_path)
+    edge = Edge(source="a", target="b", kind="ähnlich", confidence=.82,
+                valid_from="2026-08-01T00:00:00Z", invalidated_by="prior-event")
+    brain.add_edge(edge)
+    brain.resolve_edge(edge.id, accept=False)
+    assert brain.restore_edge(edge.id).to_dict() == edge.to_dict()
+    brain.resolve_edge(edge.id, accept=True)
+    brain.invalidate_edge(edge.id, by_edge_id="new-fact")
+    assert brain.restore_edge(edge.id) is None
+    saved = brain.read_edges()[0]
+    assert saved.valid_to is not None and saved.invalidated_by == "new-fact"
+
+
+def test_invalidation_preserves_unrelated_undo_record(tmp_path):
+    brain = make_brain(tmp_path)
+    rejected = Edge(source="a", target="b", kind="ähnlich")
+    other = Edge(source="b", target="c", kind="erweitert", pending=False)
+    brain.add_edge(rejected)
+    brain.add_edge(other)
+    brain.resolve_edge(rejected.id, accept=False)
+    brain.invalidate_edge(other.id)
+    assert brain.restore_edge(rejected.id).pending

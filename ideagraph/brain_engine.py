@@ -235,6 +235,14 @@ class BrainEngine:
             self.brain.commit_and_push(f"edge {action}: {edge_id[:8]} [{edge.kind}]")
         return edge
 
+    def undo(self, edge_id: str) -> Edge | None:
+        self.brain.ensure_ready()
+        self.brain.pull()
+        edge = self.brain.restore_edge(edge_id)
+        if edge is not None:
+            self.brain.commit_and_push(f"edge undo: {edge_id[:8]} [{edge.kind}]")
+        return edge
+
     def link(self, source_id: str, target_id: str,
              kind: str = "same_as") -> Edge:
         """Manuelle Edge anlegen (z.B. same_as für Übersetzungs-/Alias-Paare)."""
