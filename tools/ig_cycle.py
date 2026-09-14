@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 
@@ -154,11 +155,18 @@ def run(cmd: list[str], env: dict, cwd: str) -> str:
 
 
 def write_metrics(entry: dict, path: str = DEFAULT_METRICS) -> None:
-    """Append one JSON line to the metrics log (Tier 1: self-measurement)."""
+    """Append one JSON line to the metrics log (Tier 1: self-measurement).
+
+    Audit #28: the append holds an exclusive flock so concurrent cycles
+    (or a cycle racing a manual adapt run) can't interleave half-written
+    JSON lines."""
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        import fcntl
         with open(path, "a", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            fcntl.flock(f, fcntl.LOCK_UN)
     except OSError as e:
         print(f"metrics write failed (non-fatal): {e}")
 
@@ -169,12 +177,18 @@ def main() -> int:
     ap.add_argument("--brain", default=os.environ.get("IG_BRAIN_PATH", "/home/ubuntu/ideagraph-brain"))
     ap.add_argument("--engine", default="/home/ubuntu/ideagraph-live")
     ap.add_argument("--dry-run-only", action="store_true")
-    ap.add_argument("--copy", default="/tmp/ig-brain-dryrun")
+    ap.add_argument("--copy", default="",
+                    help="dry-run copy dir (default: unique mkdtemp in /tmp)")
     args = ap.parse_args()
 
     t0 = time.time()
-    n_before = len([f for f in os.listdir(os.path.join(args.brain, "nodes"))
-                    if f.endswith(".md")])
+    try:
+        n_before = len([f for f in os.listdir(os.path.join(args.brain, "nodes"))
+                        if f.endswith(".md")])
+    except FileNotFoundError:
+        # Audit #28: a missing brain crashed with a raw traceback — friendly abort.
+        print(f"brain not found or has no nodes/ dir: {args.brain}")
+        return 1
     # Engine venv python (has numpy/st embedder); fall back to current interpreter.
     eng_py = os.path.join(args.engine, ".venv", "bin", "python")
     if not os.path.exists(eng_py):
@@ -205,20 +219,23 @@ def main() -> int:
         return 1
     print("marker-scan: CLEAN")
 
-    # Dry-run on a copy (exclude .git, per skill).
-    if os.path.exists(args.copy):
-        shutil.rmtree(args.copy)
-    os.makedirs(args.copy)
-    shutil.copytree(os.path.join(args.brain, "nodes"), os.path.join(args.copy, "nodes"))
+    # Dry-run on a copy (exclude .git, per skill). Audit #28: the copy path is a
+    # unique mkdtemp by default — a fixed /tmp/ig-brain-dryrun collided across
+    # concurrent cycles (one cycle rmtree'd the copy another was using).
+    copy_dir = args.copy or tempfile.mkdtemp(prefix="ig-brain-dryrun-")
+    if os.path.exists(copy_dir):
+        shutil.rmtree(copy_dir)
+    os.makedirs(copy_dir)
+    shutil.copytree(os.path.join(args.brain, "nodes"), os.path.join(copy_dir, "nodes"))
     for f in ("edges.jsonl", "vectors.jsonl", "INDEX.md"):
-        shutil.copy(os.path.join(args.brain, f), os.path.join(args.copy, f))
-    dry_env = dict(os.environ, IG_BRAIN_PATH=args.copy, IG_BRAIN_MODE="local",
+        shutil.copy(os.path.join(args.brain, f), os.path.join(copy_dir, f))
+    dry_env = dict(os.environ, IG_BRAIN_PATH=copy_dir, IG_BRAIN_MODE="local",
                    IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
     dry_islands = []
     for src, finding in findings:
         out = run([eng_py, "-m", "ideagraph", "ingest", finding, "--source", src],
                   dry_env, args.engine)
-        n = out.count("Vorschlag:")
+        n = out.count("Suggestion:")
         m = __import__("re").search(r"Node (\w{12}):", out)
         if m and n == 0:
             dry_islands.append(m.group(1))
@@ -233,22 +250,42 @@ def main() -> int:
     git_env = dict(os.environ, IG_BRAIN_MODE="git", IG_BRAIN_PATH=os.path.abspath(args.brain),
                    IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
     real_islands = []
+    dups = 0
+    failed: list[str] = []
     for src, finding in findings:
-        out = run([eng_py, "-m", "ideagraph", "ingest", finding, "--source", src],
-                  git_env, args.engine)
-        n = out.count("Vorschlag:")
+        # Audit #28: per-finding error handling — one failed ingest no longer
+        # aborts mid-batch (earlier findings committed, later lost, no metrics,
+        # review_edges never ran). Failed findings are recorded and skipped.
+        try:
+            out = run([eng_py, "-m", "ideagraph", "ingest", finding, "--source", src],
+                      git_env, args.engine)
+        except RuntimeError as e:
+            failed.append(f"{src}: {str(e)[-200:]}")
+            continue
+        if "Duplicate" in out and "merged into" in out:
+            dups += 1
+        n = out.count("Suggestion:")
         m = __import__("re").search(r"Node (\w{12}):", out)
         if m and n == 0:
             real_islands.append(m.group(1))
-    print(f"ingest: {len(findings)} findings, 0-edge islands={real_islands}")
+    print(f"ingest: {len(findings) - len(failed)} ok, {len(failed)} failed, "
+          f"{dups} dup-merged, 0-edge islands={real_islands}")
+    for f_ in failed:
+        print("  FAILED:", f_)
 
-    # Accept pending edges (one commit).
-    review = os.path.join(os.path.dirname(__file__), "..", "..",
-                          ".hermes", "skills", "software-development",
-                          "ideagraph-engine", "scripts", "review_edges.py")
-    review = os.path.abspath(review)
-    out = run([eng_py, review], git_env, args.engine)
-    print(out.strip().splitlines()[-1] if out.strip() else "review: no output")
+    # Accept pending edges (one commit). Audit #28: the review script lives in the
+    # agent's skill dir OUTSIDE the repo — resolve via env override with a graceful
+    # skip instead of a hard crash when it's missing.
+    review = os.environ.get(
+        "IG_REVIEW_SCRIPT",
+        os.path.expanduser("~/.hermes/skills/software-development/"
+                           "ideagraph-engine/scripts/review_edges.py"))
+    if os.path.exists(review):
+        out = run([eng_py, review], git_env, args.engine)
+        print(out.strip().splitlines()[-1] if out.strip() else "review: no output")
+    else:
+        print(f"review_edges.py not found at {review} — skipping edge accept "
+              "(pending edges stay pending; review them manually)")
 
     # Report node count + write Tier-1 metrics.
     n_nodes = len([f for f in os.listdir(os.path.join(args.brain, "nodes"))
@@ -259,6 +296,8 @@ def main() -> int:
                    "nodes_before": n_before, "nodes_after": n_nodes,
                    "nodes_added": n_nodes - n_before,
                    "findings": len(findings),
+                   "failed": len(failed),
+                   "true_merges": dups,
                    "islands_found": len(real_islands),
                    "duration_s": round(time.time() - t0, 1),
                    "timed_out": False})

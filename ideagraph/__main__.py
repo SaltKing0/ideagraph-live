@@ -1,4 +1,4 @@
-"""CLI für das Brain: init, ingest, pending, accept, reject, link, search.
+"""CLI for the brain: init, ingest, pending, accept, reject, link, search.
 
 Beispiele:
   python -m ideagraph init [--remote <brain-repo-url>]
@@ -12,7 +12,7 @@ Beispiele:
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
   python -m ideagraph merge <survivor_id> <deletee_id>   # Near-Dup konsolidieren
   python -m ideagraph near-dup [--lo 0.78] [--hi 0.92]   # Near-Dup-Paare melden
-  python -m ideagraph status [--json]                     # Konnektivität/Hygiene-Report
+  python -m ideagraph status [--json]                     # connectivity/hygiene report
 
 Env wie beim Server: IG_BRAIN_PATH, IG_BRAIN_REMOTE, IG_BRAIN_MODE,
 IDEAGRAPH_EMBEDDER (st|hash).
@@ -34,13 +34,13 @@ from .retrieval import retrieve
 
 def make_engine() -> BrainEngine:
     # Audit #33: expanduser muss AUCH auf einen explizit gesetzten Env-Wert
-    # angewandt werden (IG_BRAIN_PATH=~/x erzeugte vorher ein wörtliches ./~).
+    # actually applied (IG_BRAIN_PATH=~/x used to create a literal ./~).
     brain_path = os.path.expanduser(
         os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")))
     brain = Brain(
         path=brain_path,
-        # Kein privater/persönlicher Default-Remote mehr: nur für `git clone`
-        # beim ersten Einrichten nötig. Bestehende Clones nutzen ihr eigenes
+        # No private/personal default remote: only needed for `git clone`
+        # on first setup. Existing clones use their own
         # origin-Repo (pull/push funktionieren ohne Remote-Angabe).
         remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
         mode=os.environ.get("IG_BRAIN_MODE", "git"),
@@ -74,8 +74,8 @@ def cmd_ingest(engine: BrainEngine, args: list[str]) -> None:
             rest.append(args[i])
             i += 1
     # Audit #32: '-' ist der stdin-Marker — auch in gemischten Args. Vorher
-    # wurde 'ig ingest - extra' als wörtlicher Text "- extra" ingestiert
-    # (Exit 0, Node angelegt). Ein '-'-Token bedeutet stdin; zusätzlicher
+    # 'ig ingest - extra' used to ingest the literal text "- extra"
+    # (exit 0, node created). A '-' token means stdin; an extra
     # Text daneben ist ein Fehler.
     if "-" in rest:
         if len(rest) > 1:
@@ -89,18 +89,18 @@ def cmd_ingest(engine: BrainEngine, args: list[str]) -> None:
         sys.exit(1)
     node, edges, dup = engine.ingest(text, source=source, allow_duplicates=allow_dup)
     if dup:
-        print(f"Duplikat → gemergt in {node.id}: {_short(node.text)}")
+        print(f"Duplicate → merged into {node.id}: {_short(node.text)}")
     else:
         print(f"Node {node.id}: {_short(node.text)}")
         for e in edges:
-            print(f"  Vorschlag: --[{e.kind}]--> {e.target} ({e.id})")
+            print(f"  Suggestion: --[{e.kind}]--> {e.target} ({e.id})")
 
 
 def cmd_pending(engine: BrainEngine, args: list[str]) -> None:
     edges = [e for e in engine.brain.read_edges() if e.pending]
     texts = {n.id: n.text for n in engine.brain.read_nodes()}
     if not edges:
-        print("Keine offenen Vorschläge.")
+        print("No pending suggestions.")
         return
     for e in edges:
         print(f"{e.id}  [{e.kind}]  {_short(texts.get(e.source, e.source), 40)}"
@@ -158,20 +158,20 @@ def cmd_init(engine: BrainEngine, args: list[str]) -> None:
             stats = build_demo_brain(str(brain.path))
         except FileExistsError:
             # Audit #58: freundliche Meldung statt roher Traceback — ein
-            # nicht-leeres Verzeichnis wird nie überschrieben.
+            # a non-empty directory is never overwritten.
             print(f"Fehler: {brain.path} existiert bereits und ist nicht leer.")
             print("Das Demo-Brain wird nie in ein bestehendes Verzeichnis geschrieben.")
-            print("Wähle einen anderen Pfad: IG_BRAIN_PATH=<pfad> ig init --demo")
+            print("Choose a different path: IG_BRAIN_PATH=<path> ig init --demo")
             sys.exit(1)
         print(f"✓ Demo-Brain initialisiert: {brain.path}")
         print(f"  {stats['nodes']} Nodes · {stats['edges']} Edges "
-              f"({stats['pending']} pending für das HITL-Review)")
+              f"({stats['pending']} pending for HITL review)")
         print("  Enthalten: alle Edge-Typen, 1 Orphan-Insel (demos `ig status`),")
         print("  1 Near-Dup-Paar (demos `ig near-dup` + `ig merge`), 1 same_as-Paar.")
         print("Jetzt ausprobieren:")
         print("  ig status                     # Insel + Hygiene-Report sehen")
         print("  ig near-dup                   # das Demo-Near-Dup-Paar finden")
-        print("  ig pending                    # die 2 pending Vorschläge reviewen")
+        print("  ig pending                    # review the 2 pending suggestions")
         print("  ig search \"RAG\"               # hybride Suche (sofort funktional)")
         print("  uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000")
         return
@@ -263,7 +263,7 @@ def cmd_near_dup(engine: BrainEngine, args: list[str]) -> None:
         else:
             i += 1
     # Audit #26 (Semantik): --lo >= --hi ist eine leere/invalide Band-Angabe;
-    # --max 0 heißt "0 Paare" (Limit), nicht "unbegrenzt".
+    # --max 0 means "0 pairs" (a limit), not "unlimited".
     if lo >= hi:
         print(f"Nutzung: --lo ({lo}) muss kleiner als --hi ({hi}) sein.")
         sys.exit(1)
@@ -332,7 +332,7 @@ def main() -> None:
     cmd, rest = args[0], args[1:]
     fn = COMMANDS.get(cmd)
     if fn is None:
-        print(f"Unbekannter Befehl: {cmd}. Verfügbar: {', '.join(COMMANDS)}")
+        print(f"Unknown command: {cmd}. Available: {', '.join(COMMANDS)}")
         sys.exit(1)
     fn(make_engine(), rest)
 

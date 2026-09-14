@@ -25,8 +25,8 @@ import os
 import subprocess
 import sys
 
-ENGINE = "/home/ubuntu/ideagraph-live"
-PY = os.path.join(ENGINE, ".venv/bin/python")
+ENGINE = os.environ.get("IG_ENGINE_PATH", "/home/ubuntu/ideagraph-live")
+PY = os.path.join(ENGINE, ".venv", "bin", "python")
 HISTORY = os.path.expanduser("~/.hermes/cron/ig_evolve_history.jsonl")
 
 
@@ -53,7 +53,7 @@ def eval_state() -> dict:
 def run_case(case_id: str) -> dict:
     """Run ONE roadmap case via run_eval with the test factory (HashEmbedder)."""
     code = f"""
-import json, tempfile, pathlib
+import json, tempfile
 from ideagraph.evals import ROADMAP_CASES, run_eval
 from ideagraph.brain import Brain
 from ideagraph.brain_engine import BrainEngine
@@ -66,8 +66,9 @@ else:
     counter = [0]
     def factory():
         counter[0] += 1
-        d = tempfile.mkdtemp()
-        return BrainEngine(Brain(d, mode="local"), HashEmbedder())
+        # TemporaryDirectory cleans itself up (audit: mkdtemp brains leaked).
+        td = tempfile.TemporaryDirectory()
+        return BrainEngine(Brain(td.name, mode="local"), HashEmbedder())
     res = run_eval(task, factory)
     print(json.dumps({{"id": res.task_id, "passed": res.passed,
                        "failures": res.failures, "runs": res.runs}}))
@@ -105,12 +106,23 @@ def read_history() -> list[dict]:
 
 
 def main() -> int:
+    global ENGINE, PY
     ap = argparse.ArgumentParser()
+    ap.add_argument("--engine", default=ENGINE,
+                    help="engine repo path (default: IG_ENGINE_PATH env or "
+                         "/home/ubuntu/ideagraph-live)")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--propose", metavar="SPEC_JSON")
     ap.add_argument("--flip", metavar="CASE_ID")
     args = ap.parse_args()
+
+    if args.engine != ENGINE:  # --engine flag overrides the module default
+        ENGINE = args.engine
+        PY = os.path.join(ENGINE, ".venv", "bin", "python")
+    if not os.path.exists(PY):
+        print(f"engine venv python not found: {PY} (use --engine)")
+        return 1
 
     if args.list:
         rows = read_history()
@@ -158,6 +170,15 @@ def main() -> int:
 
     if args.flip:
         case_id = args.flip
+        # PROPOSE→FLIP gate (audit #28): a case may only flip if it was registered
+        # as a RED spec first — flipping a never-proposed case skips the review
+        # step the Tier-3 loop exists for.
+        proposed = [r for r in read_history()
+                    if r.get("case_id") == case_id and r.get("action") == "propose"]
+        if not proposed:
+            print(f"case {case_id} has no 'propose' entry in the history — "
+                  f"register it first: ig_evolve.py --propose <spec.json>")
+            return 1
         res = run_case(case_id)
         if not res.get("passed"):
             print(json.dumps(res, indent=2, ensure_ascii=False))

@@ -47,12 +47,25 @@ def load_metrics(path: str) -> list[dict]:
     return rows
 
 
-def gap_counts(engine: str) -> dict[str, int]:
-    """Read current gap counts via the engine's gaps command (JSON)."""
-    env = dict(os.environ, IG_BRAIN_PATH="/home/ubuntu/ideagraph-brain")
-    r = subprocess.run([os.path.join(engine, ".venv/bin/python"), "-m", "ideagraph",
-                        "gaps", "--json"], capture_output=True, text=True, env=env,
-                       cwd=engine)
+def gap_counts(engine: str, brain: str = "") -> dict[str, int]:
+    """Read current gap counts via the engine's gaps command (JSON).
+
+    Audit #34: the brain path was hardcoded — it overrode the caller's env and
+    silently produced empty gap weights on any other machine/brain. Now: explicit
+    --brain flag wins, then IG_BRAIN_PATH from the environment, then the engine
+    default."""
+    env = dict(os.environ)
+    if brain:
+        env["IG_BRAIN_PATH"] = os.path.abspath(os.path.expanduser(brain))
+    elif not env.get("IG_BRAIN_PATH"):
+        env["IG_BRAIN_PATH"] = "/home/ubuntu/ideagraph-brain"
+    eng_py = os.path.join(engine, ".venv", "bin", "python")
+    if not os.path.exists(eng_py):
+        print(f"WARNING: engine venv python missing at {eng_py} — no gap weights",
+              file=sys.stderr)
+        return {}
+    r = subprocess.run([eng_py, "-m", "ideagraph", "gaps", "--json"],
+                       capture_output=True, text=True, env=env, cwd=engine)
     if r.returncode != 0:
         return {}
     try:
@@ -67,6 +80,9 @@ def main() -> int:
     ap.add_argument("--metrics", default=DEFAULT_METRICS)
     ap.add_argument("--strategy", default=DEFAULT_STRATEGY)
     ap.add_argument("--engine", default=DEFAULT_ENGINE)
+    ap.add_argument("--brain", default="",
+                    help="brain path for gap weights (default: IG_BRAIN_PATH env, "
+                         "then the engine's default brain)")
     ap.add_argument("--print", action="store_true")
     args = ap.parse_args()
 
@@ -95,7 +111,7 @@ def main() -> int:
         strat["batch_size"] = 4
 
     # --- topic_weights: thin areas weighted by focus get boosted ---
-    gaps = gap_counts(args.engine)
+    gaps = gap_counts(args.engine, args.brain)
     total = sum(gaps.values()) or 1
     weights = {}
     for area, count in gaps.items():
