@@ -34,6 +34,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   edge kind, pending edges are dimmed, and non-pending edges show a subtle
   directional particle flow. Automatically falls back to the classic 2D d3
   force graph when WebGL is unavailable.
+- **Demo seed brain (`ig init --demo`)** — a pre-filled example graph for
+  onboarding: 13 generic nodes (RAG, retrieval, memory, hygiene), 19 edges
+  covering every edge type, 2 pending suggestions for the HITL review flow,
+  1 island node to demo `ig status`, 1 near-dup pair to demo
+  `ig near-dup` + `ig merge`, and a DE/EN `same_as` pair. Precomputed
+  vectors make `ig search` work immediately.
 - **Self-evolving pipeline tools (`tools/`)** — a three-tier feedback loop that
   turns the engine into a self-improving system:
   - `tools/ig_cycle.py` (Tier 1) — the safe mechanical ingest pipeline

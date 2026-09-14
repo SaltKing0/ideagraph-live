@@ -119,10 +119,26 @@ def cmd_link(engine: BrainEngine, args: list[str]) -> None:
 
 def cmd_init(engine: BrainEngine, args: list[str]) -> None:
     remote = None
+    demo = "--demo" in args
     if "--remote" in args:
         i = args.index("--remote")
         remote = args[i + 1] if i + 1 < len(args) else None
     brain = engine.brain
+    if demo:
+        from .demo import build_demo_brain
+        stats = build_demo_brain(str(brain.path))
+        print(f"✓ Demo-Brain initialisiert: {brain.path}")
+        print(f"  {stats['nodes']} Nodes · {stats['edges']} Edges "
+              f"({stats['pending']} pending für das HITL-Review)")
+        print("  Enthalten: alle Edge-Typen, 1 Orphan-Insel (demos `ig status`),")
+        print("  1 Near-Dup-Paar (demos `ig near-dup` + `ig merge`), 1 same_as-Paar.")
+        print("Jetzt ausprobieren:")
+        print("  ig status                     # Insel + Hygiene-Report sehen")
+        print("  ig near-dup                   # das Demo-Near-Dup-Paar finden")
+        print("  ig pending                    # die 2 pending Vorschläge reviewen")
+        print("  ig search \"RAG\"               # hybride Suche (sofort funktional)")
+        print("  uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000")
+        return
     brain.init(remote=remote, commit=True)
     print(f"✓ Brain-Repo initialisiert: {brain.path}")
     print(f"  Modus: {brain.mode}" + (f" · Remote: {remote}" if remote else " (lokal, ohne Remote)"))

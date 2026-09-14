@@ -141,8 +141,10 @@ The fastest path — **zero manual git setup**:
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 
-# 2) create your brain repo — one command (git repo + structure + first commit)
-ig init
+# 2) create your brain — one command; `--demo` seeds it with an example graph
+ig init            # empty brain (nodes/ · edges.jsonl · vectors.jsonl · INDEX.md)
+ig init --demo     # pre-filled demo: 13 nodes, 19 edges, pending suggestions,
+                   # one island (ig status), one near-dup pair (ig near-dup)
 #   → ~/ideagraph-brain  (nodes/ · edges.jsonl · vectors.jsonl · INDEX.md)
 
 # 3) start capturing ideas — the brain grows as visible git history
