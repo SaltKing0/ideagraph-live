@@ -200,7 +200,7 @@ def test_merge_records_provenance(tmp_path):
     b.write_node(Node(id="d", text="Deletee-Text"))
     r = merge_nodes(b, "s", "d", commit=False)
     s = next(n for n in b.read_nodes() if n.id == "s")
-    assert f"[konsolidiert aus {r.deletee} am" in s.text
+    assert f"[consolidated from {r.deletee} on" in s.text
     assert "Deletee-Text" in s.text
 
 
