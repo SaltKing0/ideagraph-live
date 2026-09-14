@@ -133,13 +133,13 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q   # 120 tests
+.venv/bin/python -m pytest tests/ -q   # 233 tests
 ```
 
 ## Status
 
-In development. Core features, hygiene loop, and the self-evolving pipeline
-are implemented; release `v0.4.0` is published — see
+Core features, the hygiene loop, and the self-evolving pipeline are
+implemented; release `v0.5.0` is published — see
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Open source / privacy

@@ -4,7 +4,7 @@ All notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-14
 
 ### Changed
 - **BREAKING: canonical English edge kinds** — `ähnlich`→`similar`,
