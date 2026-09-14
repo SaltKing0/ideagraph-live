@@ -17,19 +17,24 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Environment :: Web Environment",
 ]
+# Core stays light (HashEmbedder works out of the box, zero heavy deps).
+# The real ST embedder is opt-in via [st] — it pulls PyTorch (~2 GB).
 dependencies = [
   "fastapi==0.116.0",
   "uvicorn[standard]==0.35.0",
   "httpx==0.28.1",
-  "sentence-transformers==5.0.0",
   "numpy==2.3.1",
 ]
 
 [project.optional-dependencies]
+st = ["sentence-transformers==5.0.0"]
 dev = ["pytest==8.4.0"]
 
 [project.scripts]
 ig = "ideagraph.__main__:main"
 
 [tool.setuptools]
-packages = ["ideagraph"]
+packages = ["ideagraph", "ideagraph.web"]
+
+[tool.setuptools.package-data]
+"ideagraph.web" = ["*.html", "*.js"]

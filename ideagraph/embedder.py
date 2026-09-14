@@ -59,7 +59,21 @@ class HashEmbedder:
 
 
 def get_embedder(name: str = "st", model: str | None = None) -> Embedder | HashEmbedder:
-    """Audit #60: model override is honored (default: all-MiniLM-L6-v2)."""
+    """Audit #60: model override is honored (default: all-MiniLM-L6-v2).
+
+    'st' degrades gracefully when sentence-transformers is not installed
+    (the [st] extra is optional): falls back to HashEmbedder with a clear
+    notice instead of crashing the CLI/server on a light install.
+    """
     if name == "hash":
+        return HashEmbedder()
+    try:
+        import sentence_transformers  # noqa: F401 — availability probe only
+    except ImportError:
+        print(
+            "NOTE: sentence-transformers is not installed — falling back to the "
+            "deterministic HashEmbedder (64-dim, lower quality). Install the "
+            "real embedder with: pip install 'ideagraph-live[st]'"
+        )
         return HashEmbedder()
     return Embedder(model or "all-MiniLM-L6-v2")

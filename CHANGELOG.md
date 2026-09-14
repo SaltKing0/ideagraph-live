@@ -27,6 +27,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - Hygiene reports cache parsed vectors (mtime-keyed) (#60).
 
 ### Added
+- **pip-installable end to end** — the web UI ships inside the package
+  (`ideagraph/web/`), so `pip install` serves the full cockpit; core
+  dependencies are lightweight and the sentence-transformers embedder is
+  now the optional `[st]` extra (falls back to the deterministic
+  HashEmbedder with a notice when absent).
+- README documents installing straight from the repository.
 - `IDEAGRAPH_EMBEDDER_MODEL` / `get_embedder(name, model)` — embedder model
   override (#60).
 - `ig_cycle --metrics` — route metrics output for tests/side-runs (#57).

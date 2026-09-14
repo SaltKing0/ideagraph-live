@@ -11,7 +11,8 @@ coverage gaps and grow the engine itself through an eval-gated feedback loop.
 ## Quickstart
 
 ```bash
-# 1) set up the engine (Python 3.10+)
+# 1) set up the engine (Python 3.10+) — lightweight core, HashEmbedder works
+#    out of the box; add the real embedder with: pip install -e ".[st]"
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 
@@ -22,6 +23,18 @@ ig init --demo     # 13 nodes, 19 edges, 2 pending suggestions,
 # 3) see it in the web UI
 uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000
 ```
+
+Or install straight from the repository:
+
+```bash
+pip install git+https://github.com/SaltKing0/ideagraph-live.git
+# with the real (semantic) embedder — pulls PyTorch:
+pip install "ideagraph-live[st] @ git+https://github.com/SaltKing0/ideagraph-live.git"
+```
+
+The web UI ships inside the package, so a pip install serves it out of the
+box. Without the `[st]` extra the engine falls back to the deterministic
+HashEmbedder (lower quality, zero model download) with a notice on first use.
 
 Start from scratch instead with `ig init` (empty brain), connect a private
 remote with `ig init --remote <url>`, or auto-clone an existing brain on

@@ -148,9 +148,12 @@ def build_demo_brain(path: str, commit: bool = True) -> dict:
                             kind=kind, pending=pending, confidence=conf))
 
     # Embedding cache for the demo nodes (so `ig search` works immediately).
-    from .embedder import Embedder
-    emb = Embedder()
-    vectors = {n.id: emb.embed(n.text) for n in nodes}
+    # Route through get_embedder() so a light install (no [st] extra) degrades
+    # to the HashEmbedder instead of crashing the demo seed.
+    from .embedder import get_embedder
+    emb = get_embedder()
+    vectors = emb.embed_batch([n.text for n in nodes])
+    vectors = {n.id: v for n, v in zip(nodes, vectors)}
     brain.write_vectors(vectors)
 
     brain.rebuild_index()

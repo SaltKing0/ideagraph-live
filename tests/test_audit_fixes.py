@@ -777,3 +777,45 @@ def test_hygiene_vector_cache_hit_and_invalidate(tmp_path):
     b.write_vectors({"a": [0.0, 1.0], "b": [1.0, 0.0]})
     ids3, V3 = hygiene._load_vectors(b)
     assert V3 is not V1  # cache invalidated
+
+
+# ---- packaging: pip-install surface (wave 5) ----
+
+def test_web_ui_ships_inside_package():
+    """The UI files live inside the package so pip installs serve them too."""
+    import ideagraph
+    web = Path(ideagraph.__file__).resolve().parent / "web"
+    for name in ("index.html", "app.js", "review.html", "review.js"):
+        assert (web / name).is_file(), f"missing shipped UI asset: {name}"
+
+
+def test_server_serves_ui_from_package_dir():
+    """DOCS_DIR points at the in-package web dir, not a repo-root docs/."""
+    import ideagraph.server as srv
+    assert srv.DOCS_DIR.name == "web"
+    assert srv.DOCS_DIR.parent.name == "ideagraph"
+    assert (srv.DOCS_DIR / "index.html").is_file()
+
+
+def test_get_embedder_falls_back_without_sentence_transformers(monkeypatch):
+    """A light install (no [st] extra) degrades to HashEmbedder, no crash."""
+    import builtins
+    import ideagraph.embedder as emb
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "sentence_transformers":
+            raise ImportError("No module named 'sentence_transformers'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    e = emb.get_embedder("st")
+    assert isinstance(e, emb.HashEmbedder)
+
+
+def test_get_embedder_st_returns_real_embedder():
+    """With ST available (venv has it), 'st' returns the real embedder."""
+    import ideagraph.embedder as emb
+    e = emb.get_embedder("st")
+    assert isinstance(e, emb.Embedder)

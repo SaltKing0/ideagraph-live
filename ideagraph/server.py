@@ -23,7 +23,9 @@ from .brain import Brain
 from .brain_engine import BrainEngine
 from .embedder import get_embedder
 
-DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+# Shipped UI assets live INSIDE the package so a pip install serves them too
+# (repo-root docs/ would not exist in site-packages).
+DOCS_DIR = Path(__file__).resolve().parent / "web"
 
 app = FastAPI(title="IdeaGraph Live Engine")
 
