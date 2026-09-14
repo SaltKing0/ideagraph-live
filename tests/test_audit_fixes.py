@@ -607,3 +607,65 @@ def test_gaps_keyword_word_boundary(tmp_path):
     # "test" dürfte durch "latest" nicht mehr feuern — der Node ist unklassifiziert
     test_counts = [a.count for a in coverage.areas if "test" in a.name.lower()]
     assert all(c == 0 for c in test_counts)
+
+
+# ---------- Fix-Welle 3: Intent-Korrektheit (#35 #36 #51 #61) ----------
+
+def test_intent_no_false_positive_from_marker_substring():
+    """Audit #35: "versetzt" enthaelt "ersetzt" als Substring — Token-Matching
+    darf nicht feuern."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Der Mitarbeiter wird versetzt in die neue Abteilung",
+                         "Der Mitarbeiter arbeitet in der Abteilung") is None
+
+
+def test_intent_no_false_positive_from_ordinary_negation():
+    """Audit #35: "keine Zeit fuer Review" ist keine Kontradiktion ueber Review."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Ich habe keine Zeit für Review",
+                         "Review des Agent-Systems") is None
+
+
+def test_intent_stattfinden_is_not_supersedes():
+    """Audit #35: "findet statt" ist stattfinden-Verb, kein supersedes-Marker."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Das Meeting findet statt", "Das Meeting des Teams") is None
+
+
+def test_intent_statt_with_object_still_fires():
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Wir nutzen Tool B statt Tool A",
+                         "Tool A war das bisherige Tool") == "supersedes"
+
+
+def test_intent_negation_both_directions():
+    """Audit #36: alt verneint, neu bejaht denselben Gegenstand → kontradiktorisch."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Die Erde ist eine Kugel",
+                         "Die Erde ist keine Kugel") == "kontradiktorisch"
+
+
+def test_intent_punctuation_does_not_break_shared_words():
+    """Audit #36: "Erde," ist nach Tokenisierung dasselbe Wort wie "Erde"."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("Die Erde, wie sie ist, bleibt eine Kugel",
+                         "Die Erde ist keine Kugel") is not None
+
+
+def test_intent_english_markers():
+    """Audit #61: Marker-Sets sind zweisprachig."""
+    from ideagraph.intent import detect_intent
+    assert detect_intent("The new scheduler replaces the old scheduler",
+                         "The old scheduler of the system") == "supersedes"
+    assert detect_intent("This finding contradicts the earlier claim",
+                         "The earlier claim about the scheduler") == "kontradiktorisch"
+    assert detect_intent("This builds on the previous analysis",
+                         "The previous analysis of the system") == "continues"
+
+
+def test_intent_marker_priority_deterministic():
+    """Audit #51: supersedes > kontradiktorisch > continues — deterministisch."""
+    from ideagraph.intent import detect_intent
+    both = "Die neue API ersetzt die alte API, die alte Behauptung ist falsch"
+    old = "Die alte API der Plattform"
+    assert detect_intent(both, old) == "supersedes"

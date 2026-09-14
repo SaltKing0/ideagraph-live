@@ -142,10 +142,10 @@ class BrainEngine:
         wird kein neuer Node angelegt, sondern der bestehende gemergt:
         Quelle wird an der Node protokolliert, Commit-Meldung sagt "dup".
         auto_accept (default: Env IDEAGRAPH_AUTO_ACCEPT) akzeptiert
-        Edge-Vorschläge direkt statt sie pending zu lassen.
+        Auto-accept edge suggestions instead of leaving them pending.
         env (Tier-3): per-Call-Env-Overrides für Eval-Cases. Der Confidence-Floor
         (IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) verwirft schwache
-        Auto-Edge-Vorschläge — ROADMAP_CASE `roadmap-confidence-floor`.
+        Auto-edge suggestions — ROADMAP_CASE `roadmap-confidence-floor`.
         """
         if auto_accept is None:
             auto_accept = auto_accept_from_env()
@@ -264,9 +264,9 @@ class BrainEngine:
                                 status=target_node.status))
                             evolved += 1
             self.brain.rebuild_index()
-            suffix = f", {evolved} Nodes evolviert" if evolved else ""
+            suffix = f", {evolved} nodes evolved" if evolved else ""
             self.brain.commit_and_push(
-                f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} Vorschläge{suffix})")
+                f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} suggestions{suffix})")
             return node, new_edges, False
 
     @staticmethod
@@ -302,7 +302,7 @@ class BrainEngine:
             ids = {n.id for n in self.brain.read_nodes()}
             missing = [nid for nid in (source_id, target_id) if nid not in ids]
             if missing:
-                raise ValueError(f"Node(s) nicht gefunden: {', '.join(missing)}")
+                raise ValueError(f"Node(s) not found: {', '.join(missing)}")
             # Audit #23: das Pair-Set war richtungslos und kind-blind — ein
             # legitimes same_as UND ähnlich zwischen demselben Paar konnte nicht
             # koexistieren, und A→B blockierte auch B→A. Dedupe ist jetzt

@@ -138,7 +138,7 @@ async def ingest(body: IngestBody):
 async def accept_edge(edge_id: str):
     edge = await run_in_threadpool(make_engine().resolve, edge_id, True)
     if edge is None:
-        return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
+        return JSONResponse({"error": "edge not found or not pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": True})
     return edge.to_dict()
 
@@ -147,7 +147,7 @@ async def accept_edge(edge_id: str):
 async def reject_edge(edge_id: str):
     edge = await run_in_threadpool(make_engine().resolve, edge_id, False)
     if edge is None:
-        return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
+        return JSONResponse({"error": "edge not found or not pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": False})
     return {"rejected": edge_id}
 
@@ -195,6 +195,6 @@ async def ws_endpoint(ws: WebSocket):
 async def undo_edge(edge_id: str):
     edge = await run_in_threadpool(make_engine().undo, edge_id)
     if edge is None:
-        return JSONResponse({"error": "edge nicht gefunden oder bereits pending"}, status_code=409)
+        return JSONResponse({"error": "edge not found or already resolved"}, status_code=409)
     await manager.broadcast({"type": "edge_restored", "edge": edge.to_dict()})
     return edge.to_dict()

@@ -9,24 +9,63 @@ INTENTION zwischen zwei Nodes anhand von Signalen im Text:
 
 Heuristisch (keine NLP-Dependency), deterministisch und testbar. Liefert None,
 wenn kein Intent erkannt wird — dann entscheidet weiterhin die Similarity.
+
+Audit #35/#36/#51/#61 (Fix-Welle 3): Marker matchen auf Token-Grenzen
+("versetzt" feuert nicht mehr auf "ersetzt"), die Subjekt-Prüfung läuft
+satzenlagenweise (der Marker muss im selben Satz wie ein gemeinsames
+Inhaltswort stehen — bloße Anwesenheit im Text genügt nicht), die
+Negations-Prüfung läuft beidseitig (neu bejaht, was alt verneint → auch
+kontradiktorisch), und die Marker-Sets sind durchgehend zweisprachig.
 """
 
 from __future__ import annotations
 
-# Marker, sortiert nach Spezifität (supersedes > kontradiktorisch > continues).
-SUPERSEDE_MARKERS = (
-    "ersetzt durch", "ersetzt", "ablösen", "ablöst", "supersedes",
-    "obsolet", "statt", "anstelle von",
+import re
+
+# Marker als Token-Folgen (lowercase). Matching ist Token-basiert: ein Marker
+# passt nur, wenn seine Token als FOLGE im Token-Stream stehen — "versetzt"
+# (Tokens: [versetzt]) matcht "ersetzt" nicht mehr, "findet statt" (Tokens
+# [findet, statt]) matcht den supersedes-Marker "statt" weiterhin, weil er
+# dort wirklich als eigenes Wort auftritt (aber nur im selben Satz wie das
+# Subjekt — siehe _clause_hits).
+# Zweisprachig (Audit #61): jedes Set deckt DE und EN ab.
+SUPERSEDE_MARKERS: tuple[tuple[str, ...], ...] = (
+    ("ersetzt",), ("ersetzt", "durch"), ("ersatz",),
+    ("ablöst",), ("löst", "ab"), ("abgelöst",),
+    ("supersedes",), ("superseded",), ("replaces",), ("replaced", "by"),
+    ("obsolet",), ("obsolete",), ("deprecated",),
+    ("statt",), ("anstelle", "von"), ("instead", "of"), ("replaces",),
 )
-CONTRADICT_MARKERS = (
-    "ist nicht", "keineswegs", "widerspricht", "nicht mehr", "keine", "kein",
-    "niemals", "ist falsch", "sondern", "falsch",
+CONTRADICT_MARKERS: tuple[tuple[str, ...], ...] = (
+    ("ist", "nicht"), ("nicht", "mehr"), ("keineswegs",),
+    ("widerspricht",), ("widersprochen",),
+    ("keine",), ("kein",), ("niemals",), ("nie",),
+    ("ist", "falsch"), ("falsch",), ("falsche",),
+    ("is", "not"), ("no", "longer"), ("never",), ("not", "true"),
+    ("false",), ("wrong",), ("contradicts",),
 )
-CONTINUE_MARKERS = (
-    "setzt fort", "basiert auf", "aufbauend", "weiterentwicklung",
-    "weiterentwickelt", "verfeinert", "erweitert um",
+CONTINUE_MARKERS: tuple[tuple[str, ...], ...] = (
+    ("setzt", "fort"), ("basiert", "auf"), ("aufbauend",),
+    ("weiterentwicklung",), ("weiterentwickelt",), ("verfeinert",),
+    ("erweitert", "um"), ("fortgeführt",),
+    ("builds", "on"), ("based", "on"), ("extends",), ("extends", "with"),
+    ("continues",), ("continued",), ("refines",), ("follows", "from"),
 )
 
+# Priorität bei Mehrfach-Treffern (Audit #51): supersedes > kontradiktorisch
+# > continues — dokumentiert und deterministisch; die satzenlage Subjekt-
+# Prüfung disambiguiert die meisten Doppeltreffer bereits.
+_PRIORITY = ("supersedes", "kontradiktorisch", "continues")
+
+_MARKER_TO_INTENT: dict[tuple[str, ...], str] = {}
+for _m in SUPERSEDE_MARKERS:
+    _MARKER_TO_INTENT[_m] = "supersedes"
+for _m in CONTRADICT_MARKERS:
+    _MARKER_TO_INTENT[_m] = "kontradiktorisch"
+for _m in CONTINUE_MARKERS:
+    _MARKER_TO_INTENT[_m] = "continues"
+
+_WORD_RE = re.compile(r"[a-zäöüß0-9]+")
 
 # Gemeine Funktions-/Stoppwörter (DE + EN), die KEINEN Themenüberlapp anzeigen.
 # Ohne Filter wäre `shared` fast immer true (die/der/und/ist… in jedem Text),
@@ -45,8 +84,75 @@ _STOPWORDS = frozenset(
 )
 
 
+def _tokens(text: str) -> list[str]:
+    """Token-Stream: lowercase, Interpunktion getrennt (Audit #36: "Erde," war
+    vorher ein anderes Token als "Erde")."""
+    return _WORD_RE.findall(text.lower())
+
+
 def _content_words(text: str) -> set[str]:
-    return {w for w in text.split() if len(w) >= 3 and w not in _STOPWORDS}
+    return {w for w in _tokens(text) if len(w) >= 3 and w not in _STOPWORDS}
+
+
+def _clauses(text: str) -> list[list[str]]:
+    """Satz/Teilsatz-Grenzen: . ! ? ; , : und Zeilenumbrüche trennen."""
+    parts = re.split(r"[.!?;,:()\[\]\"\']|\n+", text.lower())
+    return [_tokens(p) for p in parts if _tokens(p)]
+
+
+def _marker_hits(tokens: list[str], markers: tuple[tuple[str, ...], ...]) -> list[tuple[str, ...]]:
+    """Marker, die als zusammenhängende Token-Folge vorkommen."""
+    hits = []
+    n = len(tokens)
+    for m in markers:
+        L = len(m)
+        for i in range(n - L + 1):
+            if tokens[i:i + L] == list(m):
+                hits.append(m)
+                break
+    return hits
+
+
+# Nomen-Negations-/Ersetzungs-Marker: hier ist das negierte/ersetzte Ding das
+# OBJEKT des Markers — es muss als geteiltes Inhaltswort KURZ NACH dem Marker
+# stehen. "keine Zeit für Review" negiert "Zeit", nicht "Review" (Audit #35);
+# "findet statt" hat kein Objekt nach "statt" (stattfinden-Verb, kein supersedes).
+_OBJECT_MARKERS = frozenset(("keine", "kein", "nie", "niemals", "statt", "falsch",
+                             "falsche", "no", "never", "false", "wrong"))
+
+
+def _marker_object_shared(clause: list[str], marker: tuple[str, ...], subjects: set[str]) -> bool:
+    if marker[0] not in _OBJECT_MARKERS:
+        return True  # verbale Marker: Subjekt-im-Satz-Prüfung genügt
+    # Position des Marker-Endes suchen; ein geteiltes Inhaltswort innerhalb der
+    # nächsten 2 Tokens macht die Negation zum Gegenstand ("keine Scheibe" ✓,
+    # "keine Zeit für Review" ✗ — Review steht an Position +3 und ist nicht
+    # das Negierte). Fenster ist positional (Artikel/Adjektive dazwischen ok).
+    n = len(clause)
+    for i in range(n - len(marker) + 1):
+        if clause[i:i + len(marker)] == list(marker):
+            window = clause[i + len(marker):i + len(marker) + 2]
+            if set(window) & subjects:
+                return True
+    return False
+
+
+def _clause_hits(clauses: list[list[str]], markers: tuple[tuple[str, ...], ...],
+                 subjects: set[str]) -> bool:
+    """True, wenn ein Marker im selben Satz/Teilsatz wie ein Subjekt-Inhaltswort steht.
+
+    Audit #35: bloße Marker-Anwesenheit im Text feuerte gegen JEDE verwandte
+    Node ("Der Mitarbeiter wird versetzt" → supersedes wegen 'ersetzt'-Substring
+    in 'versetzt' + geteilte Domänenwörter). Jetzt muss der Marker im selben
+    Satz wie ein geteiltes Inhaltswort stehen — und bei Objekt-Markern (keine/
+    kein/nie/statt/falsch) muss das negierte/ersetzte Objekt selbst geteilt sein."""
+    for clause in clauses:
+        if not (_content_words(" ".join(clause)) & subjects):
+            continue
+        hits = _marker_hits(clause, markers)
+        if any(_marker_object_shared(clause, m, subjects) for m in hits):
+            return True
+    return False
 
 
 def detect_intent(new_text: str, old_text: str) -> str | None:
@@ -54,18 +160,41 @@ def detect_intent(new_text: str, old_text: str) -> str | None:
 
     `new_text` ist die neu ingestierte Aussage, `old_text` die bestehende.
     Alle drei Intents verlangen, dass beide über denselben Gegenstand
-    sprechen (geteilte Inhaltswörter), um Fehltreffer zu vermeiden — auch
-    supersedes: ein bloßes Marker-Wort (z.B. "ersetzt", "supersedes") darf
-    eine Node nicht gegen JEDE bestehende Node als Nachfolger markieren.
-    """
-    nt = " " + new_text.lower() + " "
-    ot = " " + old_text.lower() + " "
-    shared = bool(_content_words(nt) & _content_words(ot))
+    sprechen (geteilte Inhaltswörter) UND dass der Marker im selben Satz
+    wie ein geteiltes Inhaltswort steht (Audit #35).
 
-    if shared and any(m in nt for m in SUPERSEDE_MARKERS):
-        return "supersedes"
-    if shared and any(m in nt for m in CONTRADICT_MARKERS):
-        return "kontradiktorisch"
-    if shared and any(m in nt for m in CONTINUE_MARKERS):
-        return "continues"
+    Audit #36 (beidseitige Negation): verneint ALT den Gegenstand und bejaht
+    NEU ihn (oder umgekehrt), ist das ebenfalls kontradiktorisch — vorher
+    lieferte new-affirms-what-old-denies None.
+    """
+    new_subjects = _content_words(new_text)
+    shared = new_subjects & _content_words(old_text)
+    if not shared:
+        return None
+
+    new_clauses = _clauses(new_text)
+    old_clauses = _clauses(old_text)
+
+    hits: dict[str, bool] = {}
+    for intent, markers in (
+        ("supersedes", SUPERSEDE_MARKERS),
+        ("kontradiktorisch", CONTRADICT_MARKERS),
+        ("continues", CONTINUE_MARKERS),
+    ):
+        hits[intent] = (
+            _clause_hits(new_clauses, markers, shared)
+            or _clause_hits(old_clauses, markers, shared)
+        )
+
+    # Beidseitige Negation (Audit #36): alt verneint, neu bejaht denselben
+    # Gegenstand ohne Verneinung → Widerspruch zwischen den Aussagen.
+    if not hits["kontradiktorisch"]:
+        old_denies = _clause_hits(old_clauses, CONTRADICT_MARKERS, shared)
+        new_denies = _clause_hits(new_clauses, CONTRADICT_MARKERS, shared)
+        if old_denies and not new_denies:
+            hits["kontradiktorisch"] = True
+
+    for intent in _PRIORITY:
+        if hits[intent]:
+            return intent
     return None

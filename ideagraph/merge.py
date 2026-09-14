@@ -139,9 +139,9 @@ def merge_nodes(
     brain.pull()
     nodes = {n.id: n for n in brain.read_nodes()}
     if survivor_id not in nodes:
-        raise ValueError(f"Node nicht gefunden: {survivor_id}")
+        raise ValueError(f"Node not found: {survivor_id}")
     if deletee_id not in nodes:
-        raise ValueError(f"Node nicht gefunden: {deletee_id}")
+        raise ValueError(f"Node not found: {deletee_id}")
     survivor, deletee = nodes[survivor_id], nodes[deletee_id]
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -161,7 +161,7 @@ def merge_nodes(
     # Text zusammenführen (Informationserhalt) — mit Merge-Provenance (Audit #41)
     survivor.text = (
         survivor.text.rstrip()
-        + f"\n\n[konsolidiert aus {deletee_id} am {now_iso}: {deletee.text.strip()}]"
+        + f"\n\n[consolidated from {deletee_id} on {now_iso}: {deletee.text.strip()}]"
     )
     brain.write_node(survivor)
 
@@ -185,7 +185,7 @@ def merge_nodes(
 
     if commit:
         brain.commit_and_push(
-            f"merge: {deletee_id} konsolidiert in {survivor_id} "
+            f"merge: {deletee_id} consolidated into {survivor_id} "
             f"({redirected} umgeleitet, {invalidated} invalidiert, {removed} entfernt)")
 
     return MergeResult(
