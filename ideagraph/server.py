@@ -1,12 +1,12 @@
-"""FastAPI-Server auf Brain-Basis (privates Git-Repo als Speicher).
+"""FastAPI server on top of the Brain (private git repo as storage).
 
-Env-Steuerung:
-  IG_BRAIN_PATH   — Pfad zum Brain-Clone (default: ~/ideagraph-brain)
-  IG_BRAIN_REMOTE — SSH/GitHub-URL (nur für `git clone` beim ersten
-                    Einrichten; kein persönlicher Default, Bestandsklones
-                    nutzen ihr eigenes origin)
-  IG_BRAIN_MODE   — "git" (echtes Repo) oder "local" (nur FS, für Tests)
-  IDEAGRAPH_EMBEDDER — "st" (sentence-transformers) oder "hash" (Demo/Tests)
+Env control:
+  IG_BRAIN_PATH   — path to the brain clone (default: ~/ideagraph-brain)
+  IG_BRAIN_REMOTE — SSH/GitHub URL (only used for `git clone` on first
+                    setup; no personal default, existing clones keep
+                    their own origin)
+  IG_BRAIN_MODE   — "git" (real repo) or "local" (FS only, for tests)
+  IDEAGRAPH_EMBEDDER — "st" (sentence-transformers) or "hash" (demo/tests)
 """
 
 from __future__ import annotations
@@ -36,13 +36,13 @@ def make_brain() -> Brain:
     )
 
 
-# Audit #16: pro Request eine frische Engine zu bauen re-instantiiert das
-# sentence-transformers-Modell pro Request (Sekunden CPU, Memory-Churn).
-# Ein prozessweiter Cache teilt das Modell + den Vektor-Cache; die
-# Schreibkonsistenz liefert der Brain-Instanz-Lock (alle RMW-Mutationen
-# laufen unter brain._lock bzw. BRAIN_LOCK). Der Cache ist an
-# (Brain-Pfad, Embedder) gekoppelt: ein geändertes Env (Tests, Multi-Brain-
-# Setups) bekommt korrekt eine frische Engine statt der fremden Instanz.
+# Audit #16: building a fresh engine per request re-instantiates the
+# sentence-transformers model per request (seconds of CPU, memory churn).
+# A process-wide cache shares the model + vector cache; write consistency
+# is provided by the Brain instance lock (all RMW mutations run under
+# brain._lock / BRAIN_LOCK). The cache is keyed on (brain path, embedder):
+# a changed env (tests, multi-brain setups) correctly gets a fresh engine
+# instead of the foreign instance.
 _ENGINES: dict[tuple[str, str], BrainEngine] = {}
 
 
@@ -116,11 +116,19 @@ class IngestBody(BaseModel):
     allow_duplicates: bool = False
 
 
+@app.exception_handler(ValueError)
+async def value_error_handler(_req, exc: ValueError):
+    """Audit #57: engine ValueErrors (e.g. empty ingest text) are client errors,
+    not 500s — return a clean 400 with the message."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"error": str(exc)}, status_code=400)
+
+
 @app.post("/api/ingest")
 async def ingest(body: IngestBody):
-    # Audit #16: git pull/push + Embedding-Inferenz sind Blocking-I/O — sie
-    # laufen im Threadpool, nicht auf dem Event-Loop (sonst stallt ein
-    # langsamer Ingest alle Requests und WS-Broadcasts).
+    # Audit #16: git pull/push + embedding inference are blocking I/O — they
+    # run in the threadpool, not on the event loop (otherwise a slow ingest
+    # stalls all requests and WS broadcasts).
     engine = make_engine()
     node, edges, is_dup = await run_in_threadpool(
         engine.ingest, body.text, body.source, body.tags,
@@ -178,9 +186,9 @@ async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
         while True:
-            # Audit #29: nur WebSocketDisconnect zu fangen ließ Zombies zurück
-            # (Binary-Frame → KeyError, TCP-Reset → RuntimeError) — die Socket
-            # blieb forever in manager.active und wurde nie geschlossen.
+            # Audit #29: catching only WebSocketDisconnect left zombies behind
+            # (binary frame → KeyError, TCP reset → RuntimeError) — the socket
+            # stayed in manager.active forever and was never closed.
             await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)
