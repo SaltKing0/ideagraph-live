@@ -179,6 +179,8 @@ def main() -> int:
     ap.add_argument("--dry-run-only", action="store_true")
     ap.add_argument("--copy", default="",
                     help="dry-run copy dir (default: unique mkdtemp in /tmp)")
+    ap.add_argument("--metrics", default=DEFAULT_METRICS,
+                    help="metrics JSONL path (default: %s)" % DEFAULT_METRICS)
     args = ap.parse_args()
 
     t0 = time.time()
@@ -215,7 +217,7 @@ def main() -> int:
                                                and not _covered_by_allow(
                                                    _marker_spans(_fold(f), _fold(m)),
                                                    _allow_spans(_fold(f)))}),
-                       "findings": len(findings)})
+                       "findings": len(findings)}, path=args.metrics)
         return 1
     print("marker-scan: CLEAN")
 
@@ -300,7 +302,7 @@ def main() -> int:
                    "true_merges": dups,
                    "islands_found": len(real_islands),
                    "duration_s": round(time.time() - t0, 1),
-                   "timed_out": False})
+                   "timed_out": False}, path=args.metrics)
     return 0
 
 

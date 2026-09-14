@@ -143,7 +143,14 @@ def main() -> int:
         # Register a proposed case: the spec JSON describes the EvalTask; the
         # actual EvalTask code is written by the orchestrator into evals.py
         # ROADMAP_CASES (this tool verifies it runs and fails for the right reason).
-        spec = json.load(open(args.propose, encoding="utf-8"))
+        try:
+            spec = json.load(open(args.propose, encoding="utf-8"))
+        except FileNotFoundError:
+            print(f"spec file not found: {args.propose}")
+            return 1
+        except json.JSONDecodeError as exc:
+            print(f"spec file is not valid JSON: {exc}")
+            return 1
         case_id = spec.get("id", "")
         if not case_id.startswith("roadmap-"):
             print("case id must start with 'roadmap-'")
