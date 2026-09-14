@@ -480,3 +480,18 @@ def test_ws_zombie_binary_frame_disconnects(tmp_path):
                 while time.time() < deadline and len(srv.manager.active) != 1:
                     time.sleep(0.05)
                 assert len(srv.manager.active) == 1  # nur der erste lebt noch
+
+
+def test_knn_skips_foreign_dim_candidates():
+    """Audit #8-Follow-up: knn überspringt fremd-dimensionale Kandidaten statt zu
+    crashen — ein Brain mit Alt-Vektoren falscher Dimension degradiert sauber."""
+    from ideagraph.similarity import knn
+    query = [1.0, 0.0, 0.0]
+    candidates = {
+        "same": [1.0, 0.0, 0.0],
+        "other": [0.0, 1.0, 0.0],
+        "stray64": [1.0] * 64,   # Alt-Vektor falscher Dimension
+    }
+    result = knn(query, candidates, k=3)
+    assert [nid for nid, _ in result] == ["same", "other"]  # stray übersprungen
+    assert result[0][1] == 1.0

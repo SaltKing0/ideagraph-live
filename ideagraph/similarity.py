@@ -23,7 +23,16 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 def knn(query: list[float], candidates: dict[str, list[float]], k: int = 3) -> list[tuple[str, float]]:
-    """Liefert die k nächsten Nachbarn als (id, similarity), absteigend sortiert."""
-    scored = [(nid, cosine(query, vec)) for nid, vec in candidates.items()]
+    """Liefert die k nächsten Nachbarn als (id, similarity), absteigend sortiert.
+
+    Audit #8-Follow-up (Fix-Welle 2): fremd-dimensionale Kandidaten werden
+    übersprungen statt den ganzen Query zu crashen — dieselbe Zwei-Ebenen-
+    Entscheidung wie bei _find_duplicate: das Primitiv cosine() streng,
+    die Call-Sites tolerant. Ein Brain mit ein paar Alt-Vektoren falscher
+    Dimension (z. B. nach Embedder-Wechsel) degradiert damit sauber auf die
+    kompatiblen Nachbarn."""
+    query_dim = len(query)
+    scored = [(nid, cosine(query, vec)) for nid, vec in candidates.items()
+              if len(vec) == query_dim]
     scored.sort(key=lambda t: t[1], reverse=True)
     return scored[:k]
