@@ -228,21 +228,33 @@ class BrainEngine:
             # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (ähnlich,
             # auto-akzeptiert via Confidence-Band ODER Env) → verwandte Alt-Nodes
             # mit Querverweis anreichern.
+            # Audit #22: der Rewrite muss den Status (und created) der Target-Node
+            # erhalten — vorher verlor sie status → active fiel auf probation
+            # zurück (Status-Erosion, live verifiziert).
+            # Audit #19: die Annotation wächst unbegrenzt und driftet das eigene
+            # Embedding der Node → hartes Cap; weitere Verweise landen in den
+            # Edges (die es ohnehin gibt), nicht im Text.
+            EVOLVED_ANNOTATION_CAP = 5
             evolved = 0
             for e in new_edges:
                 if not e.pending and e.kind == "ähnlich":
                         target_node = next((n for n in self.brain.read_nodes()
                                             if n.id == e.target), None)
-                        if target_node is not None:
-                            ref = f"[evolved {self._now_short()}: vernetzt mit {node.id[:8]} „{_normalize(text)[:40]}…“]"
-                            if "evolved" not in target_node.text or node.id[:8] not in target_node.text:
-                                self.brain.write_node(Node(
-                                    text=target_node.text + "\n\n" + ref,
-                                    id=target_node.id, created=target_node.created,
-                                    source=target_node.source, tags=target_node.tags,
-                                    sources=getattr(target_node, 'sources', []),
-                                    ntype=target_node.ntype))
-                                evolved += 1
+                        if target_node is None or target_node.status == "tombstone":
+                            continue
+                        existing = target_node.text.count("[evolved ")
+                        if existing >= EVOLVED_ANNOTATION_CAP:
+                            continue
+                        ref = f"[evolved {self._now_short()}: vernetzt mit {node.id[:8]} „{_normalize(text)[:40]}…“]"
+                        if "evolved" not in target_node.text or node.id[:8] not in target_node.text:
+                            self.brain.write_node(Node(
+                                text=target_node.text + "\n\n" + ref,
+                                id=target_node.id, created=target_node.created,
+                                source=target_node.source, tags=target_node.tags,
+                                sources=getattr(target_node, 'sources', []),
+                                ntype=target_node.ntype,
+                                status=target_node.status))
+                            evolved += 1
             self.brain.rebuild_index()
             suffix = f", {evolved} Nodes evolviert" if evolved else ""
             self.brain.commit_and_push(

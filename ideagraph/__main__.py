@@ -184,7 +184,7 @@ def cmd_merge(engine: BrainEngine, args: list[str]) -> None:
         sys.exit(1)
     survivor, deletee = args[0], args[1]
     try:
-        r = merge_nodes(engine.brain, survivor, deletee)
+        r = merge_nodes(engine.brain, survivor, deletee, embedder=engine.embedder)
     except ValueError as exc:
         print(f"Fehler: {exc}")
         sys.exit(1)

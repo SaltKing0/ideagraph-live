@@ -121,10 +121,22 @@ def merge_nodes(
     survivor_id: str,
     deletee_id: str,
     commit: bool = True,
+    embedder=None,
 ) -> MergeResult:
-    """Konsolidiert deletee in survivor. Destruktiv; ein Commit."""
+    """Konsolidiert deletee in survivor. Destruktiv; ein Commit.
+
+    embedder (optional): wenn gesetzt, wird der Survivor-Vektor nach dem
+    Text-Append neu berechnet — ohne ihn bliebe der alte Vektor stehen und
+    die Suche deduped/ranke gegen den VOR-Merge-Text (Audit-Befund
+    "survivor vector stale"). Der CLI übergibt immer den Engine-Embedder.
+    """
     if survivor_id == deletee_id:
         raise ValueError("Survivor und Deletee sind identisch.")
+    # Git-Modus: Repo-Existenz + frischer Pull VOR der Mutation — sonst kann
+    # der Merge auf einem stale Stand arbeiten und die History divergiert
+    # (Audit-Befund "merge_nodes macht kein pull()").
+    brain.ensure_ready()
+    brain.pull()
     nodes = {n.id: n for n in brain.read_nodes()}
     if survivor_id not in nodes:
         raise ValueError(f"Node nicht gefunden: {survivor_id}")
@@ -159,6 +171,14 @@ def merge_nodes(
 
     # Vektor entfernen
     _drop_vector(brain, deletee_id)
+
+    # Survivor-Vektor auffrischen: der Text ist gewachsen, der alte Vektor
+    # repräsentiert den Vor-Merge-Text (Audit: "survivor vector stale").
+    if embedder is not None:
+        normalized = " ".join(survivor.text.lower().split())
+        vecs = brain.read_vectors()
+        vecs[survivor_id] = list(embedder.embed(normalized))
+        brain.write_vectors(vecs)
 
     # INDEX neu bauen
     brain.rebuild_index()

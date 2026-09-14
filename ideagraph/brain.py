@@ -58,7 +58,12 @@ class Node:
         self.created = created or _now_iso()
         self.source = source
         self.tags = tags or []
-        self.sources = sources or []
+        # Audit #54 (Churn-Fix): neue Nodes tragen ihre Quelle SOFORT in
+        # `sources` (und to_markdown schreibt die Liste immer) — sonst gewinnt
+        # die Datei beim ersten Dup-Ingest eine rein kosmetische
+        # sources:-Zeile. from_markdown übergibt explizit [] → alte Dateien
+        # ohne die Zeile bleiben unverändert, bis sie real mutieren.
+        self.sources = sources if sources is not None else [source]
         # Taxonomie (LangGraph/Survey-Lektion): semantic | episodic | procedural
         self.ntype = ntype if ntype in ("semantic", "episodic", "procedural") else "semantic"
         # V2#2 Memory-Hygiene: Dual-Buffer — neue Nodes starten in probation,
@@ -70,8 +75,11 @@ class Node:
         lines = [f"id: {self.id}", f"created: {self.created}",
                  f"source: {self.source}", f"type: {self.ntype}",
                  f"status: {self.status}"]
-        if self.sources:
-            lines.append("sources: [" + ", ".join(self.sources) + "]")
+        # sources immer schreiben (auch leer) — sonst gewinnt die Datei beim
+        # ersten Dup-Ingest eine rein kosmetische sources:-Zeile (History-Churn,
+        # Audit #54): from_markdown liefert [], merge_node fügt node.source ein,
+        # der Rewrite "ändert" die Datei ohne inhaltlichen Gewinn.
+        lines.append("sources: [" + ", ".join(self.sources) + "]")
         lines.append(f"tags: {tags}")
         return "---\n" + "\n".join(lines) + "\n---\n\n" + f"{self.text}\n"
 
@@ -86,6 +94,11 @@ class Node:
             if ":" in line:
                 key, _, val = line.partition(":")
                 meta[key.strip()] = val.strip()
+        # Audit #56: eine Hand-editierte Datei ohne id: soll einen verständlichen
+        # Fehler werfen (mit Pfad-Kontext kann der Aufrufer sie überspringen),
+        # kein nackter KeyError.
+        if "id" not in meta:
+            raise ValueError("Frontmatter ohne 'id:' — Datei überspringen")
         tags = [t.strip() for t in meta.get("tags", "[]").strip("[]").split(",") if t.strip()]
         sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
@@ -242,14 +255,23 @@ class Brain:
     # ---------- Nodes ----------
 
     def node_path(self, node_id: str) -> Path:
+        # Audit #18: Node-IDs landen unverifiziert in Pfaden — eine crafted ID
+        # mit '/'/'..' könnte nodes/ verlassen (Arbitrary Read/Write mit
+        # .md-Suffix). Die Schranke ist Pfad-Sicherheit, nicht die 12-Hex-
+        # Konvention: kurze/lesbare IDs (Fixtures, Hand-Builds) bleiben gültig,
+        # alles was nodes/ verlassen oder Dotfiles anlegen könnte, wird
+        # abgewiesen.
+        if (not node_id or "/" in node_id or "\\" in node_id
+                or node_id in (".", "..") or node_id.startswith(".")
+                or "\x00" in node_id or len(node_id) > 200):
+            raise ValueError(f"Ungültige Node-ID: {node_id!r} (Pfad-unsafe)")
         return self.path / "nodes" / f"{node_id}.md"
 
     def merge_node(self, node: Node, source: str | None = None) -> None:
         """Duplikat-Ingest: bestehende Node behalten, Quelle protokollieren.
 
         tags/created bleiben unberührt; die neue source wird ins Frontmatter
-        als `sources:`-Liste aufgenommen (ohne Duplikate).
-        """
+        als `sources:`-Liste aufgenommen (ohne Duplikate)."""
         sources = list(getattr(node, "sources", []) or [])
         if node.source not in sources:
             sources.insert(0, node.source)
@@ -304,9 +326,15 @@ class Brain:
             return {}
         out: dict[str, list[float]] = {}
         for line in self.vectors_file.read_text(encoding="utf-8").splitlines():
-            if line.strip():
+            if not line.strip():
+                continue
+            # Audit #17: eine korrupte Zeile darf den ganzen Store-Lesevorgang
+            # nicht dauerhaft crashen (read_nodes skipped kaputte Files ebenso).
+            try:
                 d = json.loads(line)
                 out[d["id"]] = d["vec"]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
         return out
 
     def write_vectors(self, vectors: dict[str, list[float]]) -> None:
@@ -348,17 +376,24 @@ class Brain:
             return []
         edges = []
         for line in self.edges_file.read_text(encoding="utf-8").splitlines():
-            if line.strip():
+            if not line.strip():
+                continue
+            # Audit #17: skip-bad-line wie in read_nodes — eine korrupte Zeile
+            # (Crash-Rest, Hand-Edit) macht nicht den ganzen Graph API-tot.
+            try:
                 d = json.loads(line)
-                if d.get("rejected", False) and not include_rejected:
-                    continue
-                edges.append(Edge(d["source"], d["target"], d["kind"],
-                                  d.get("pending", False), d["id"],
-                                  valid_from=d.get("valid_from"),
-                                  valid_to=d.get("valid_to"),
-                                  confidence=d.get("confidence"),
-                                  invalidated_by=d.get("invalidated_by"),
-                                  rejected=d.get("rejected", False)))
+                edge = Edge(d["source"], d["target"], d["kind"],
+                            d.get("pending", False), d["id"],
+                            valid_from=d.get("valid_from"),
+                            valid_to=d.get("valid_to"),
+                            confidence=d.get("confidence"),
+                            invalidated_by=d.get("invalidated_by"),
+                            rejected=d.get("rejected", False))
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+            if edge.rejected and not include_rejected:
+                continue
+            edges.append(edge)
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:
@@ -427,6 +462,9 @@ class Brain:
             for n in self.read_nodes():
                 if n.status == "tombstone":
                     continue  # vergessene Nodes gehören nicht ins Inhaltsverzeichnis
-                title = n.text.replace("|", "\\|")[:60]
+                # Audit #55: erst auf 60 Zeichen kürzen, DANN escapen — umgekehrt
+                # kann der Slice ein \|-Escape halbieren und die Tabellenzeile
+                # kaputt machen.
+                title = n.text[:60].replace("|", "\\|")
                 lines.append(f"| [{title}](nodes/{n.id}.md) | {n.source} | {n.created} |")
             _atomic_write(self.path / "INDEX.md", "\n".join(lines) + "\n")
