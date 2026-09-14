@@ -132,6 +132,8 @@ frontmatter, the commit says `ingest dup of …`. Opt-out: `allow_duplicates: tr
 | `episodic` | events, session logs | "subagent X ran Y today" |
 | `procedural` | skills, reusable procedures | "how to ingest research" |
 
+![IdeaGraph — demo brain in the web UI](docs/screenshot.png)
+
 ## Quickstart
 
 The fastest path — **zero manual git setup**:

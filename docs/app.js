@@ -2,8 +2,8 @@
 (() => {
   "use strict";
   const $ = selector => document.querySelector(selector);
-  const colors = { "ähnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
-  const labels = { "ähnlich": "Ähnlich", "kontradiktorisch": "Widerspruch", "erweitert": "Erweiterung", "same_as": "Gleiche Idee", "supersedes": "Ersetzt", "continues": "Führt fort" };
+  const colors = { "aehnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
+  const labels = { "aehnlich": "Ähnlich", "kontradiktorisch": "Widerspruch", "erweitert": "Erweiterung", "same_as": "Gleiche Idee", "supersedes": "Ersetzt", "continues": "Führt fort" };
   const esc = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const short = (text, length = 36) => text.length > length ? `${text.slice(0, length - 1)}…` : text;
   const idOf = value => typeof value === "object" ? value.id : value;
