@@ -165,7 +165,7 @@ def render_status(brain: Brain) -> str:
 def render_near_dup(pairs: list[NearDup]) -> str:
     if not pairs:
         return "Keine Near-Duplikate im Band."
-    lines = [f"{len(pairs)} Near-Duplikat-Paare (Konsolidierung via `ig merge` prüfen):"]
+    lines = [f"{len(pairs)} near-duplicate pairs (review consolidation via `ig merge`):"]
     for p in pairs:
         lines.append(f"[{p.score:.3f}] {p.a} ↔ {p.b}")
         lines.append(f"    {p.a_text}")

@@ -191,7 +191,7 @@ def render(coverage: CoverageResult, threshold: int) -> str:
     gaps = find_gaps(coverage, threshold)
     if gaps:
         lines.append("")
-        lines.append(f"GAPS (< {threshold} Nodes) — nächste Forschungsziele (dünnste zuerst):")
+        lines.append(f"GAPS (< {threshold} nodes) — next research targets (thinnest first):")
         for a in gaps:
             lines.append(f"  {a.count:>3}  {a.name}")
     return "\n".join(lines)
