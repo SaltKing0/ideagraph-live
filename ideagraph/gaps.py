@@ -148,9 +148,14 @@ def analyze_coverage(brain: Brain, taxonomy: dict[str, list[str]] | None = None)
     examples: dict[str, list] = defaultdict(list)
     nodes = brain.read_nodes()
     unclassified = 0
+    # Audit #60: Substring-Matching liess "test" auf "latest" passen — Keywords
+    # matchen jetzt mit Wortgrenzen (Umlaute sind durch normalize() ASCII-förmig).
+    kw_res = {area: [re.compile(rf"\b{re.escape(k)}\b") for k in kws]
+              for area, kws in tax.items()}
     for node in nodes:
         b = normalize(_node_text(node))
-        matched = [area for area, kws in tax.items() if any(k in b for k in kws)]
+        matched = [area for area, patterns in kw_res.items()
+                   if any(p.search(b) for p in patterns)]
         if not matched:
             unclassified += 1
         for m in matched:

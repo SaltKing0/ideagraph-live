@@ -516,3 +516,94 @@ def test_link_allows_same_pair_different_kind_or_direction(tmp_path):
     # exaktes Duplikat → blockiert
     with pytest.raises(ValueError, match="existiert bereits"):
         engine.link(n1.id, n2.id, kind="same_as")
+
+
+# ---------- Fix-Welle 3: Retrieval/Analyse (#10 #37 #38 #39 #40 #60-Reste) ----------
+
+def test_bm25_scores_after_index_build(tmp_path):
+    """Audit #10: scores() schaut im vorgebauten Index nach — identische Scores
+    wie die Referenz-Formel, aber ohne Re-Tokenisierung pro Query."""
+    from ideagraph.retrieval import BM25
+    bm = BM25(["alpha beta gamma", "alpha alpha delta", "epsilon"])
+    s = bm.scores(["alpha", "delta"])
+    # alpha alpha delta hat doppeltes alpha + delta → höher als doc 1
+    assert s[1] > s[0] > 0.0
+    assert s[2] == 0.0
+    # zweite Query ist O(lookup) — keine Korpus-Re-Tokenisierung mehr
+    s2 = bm.scores(["epsilon"])
+    assert s2[2] > 0.0 and s2[0] == 0.0
+
+def test_retrieve_nonsense_query_returns_no_garbage(tmp_path):
+    """Audit #37: eine Query ohne jede Überlappung liefert [] statt
+    confident-aussehender RRF-Garbage."""
+    engine = make_engine(tmp_path)
+    engine.brain.write_node(Node(text="Vektordatenbanken und ANN-Indizes"))
+    engine.brain.write_node(Node(text="Transformer-Architektur Grundlagen"))
+    import json as _json
+    vec_file = engine.brain.path / "vectors.jsonl"
+    with open(vec_file, "a") as f:
+        for nid in ("x1", "x2"):
+            f.write(_json.dumps({"id": nid, "vec": [0.1] * 64}) + "\n")
+    from ideagraph.retrieval import retrieve
+    results = retrieve(engine, "zzzqqq unrelatedword")
+    assert results == []
+
+def test_near_dup_float64_band_boundary(tmp_path):
+    """Audit #38: ein Paar knapp unter der 0.92-Schwelle (float64 0.91999...)
+    erscheint im Review-Band, statt durch Rundung aus beiden Mechanismen zu fallen."""
+    import json as _json
+    import math
+    from ideagraph.hygiene import near_dup_pairs
+    brain = make_brain(tmp_path)
+    a = brain.write_node(Node(id="vecaaa1", text="Alpha Dokument"))
+    b = brain.write_node(Node(id="vecbbb2", text="Alpha Dokument zwei"))
+    # exakt 0.9199999990 float64 konstruieren: fast parallele Vektoren
+    with open(brain.path / "vectors.jsonl", "w") as f:
+        base = [1.0] + [0.0] * 7
+        # cos = cos(theta): theta so wählen, dass cos ≈ 0.9199999990
+        theta = math.acos(0.9199999990)
+        f.write(_json.dumps({"id": "vecaaa1", "vec": base}) + "\n")
+        f.write(_json.dumps({"id": "vecbbb2",
+                             "vec": [math.cos(theta)] + [math.sin(theta)] + [0.0] * 6}) + "\n")
+    pairs = near_dup_pairs(brain)
+    assert len(pairs) == 1
+    assert 0.78 <= pairs[0].score < 0.9200001
+
+def test_connectivity_ignores_invalidated_edges(tmp_path):
+    """Audit #40: eine Edge mit valid_to zählt nicht mehr zum Grad — der
+    Status-Report widerspricht nicht mehr der Admit-Rule-Logik."""
+    from ideagraph.hygiene import connectivity
+    brain = make_brain(tmp_path)
+    brain.write_node(Node(id="conn111", text="A"))
+    brain.write_node(Node(id="conn222", text="B"))
+    e = Edge(source="conn111", target="conn222", kind="ähnlich")
+    brain.add_edge(e)
+    c = connectivity(brain)
+    assert c.orphans == [] and c.edges == 1
+    brain.invalidate_edge(e.id, reason="test")
+    c2 = connectivity(brain)
+    assert c2.orphans == ["conn111", "conn222"] and c2.edges == 0
+
+def test_knn_k_zero_returns_empty():
+    """Audit #60: k<=0 → [] statt alle Items (k=0) bzw. letzter gedroppt (k=-1)."""
+    from ideagraph.similarity import knn
+    cands = {"a": [1.0, 0.0], "b": [0.0, 1.0]}
+    assert knn([1.0, 0.0], cands, k=0) == []
+    assert knn([1.0, 0.0], cands, k=-1) == []
+
+def test_knn_skips_empty_vectors():
+    """Audit #60: fehlende/leere Vektoren werden übersprungen statt als
+    Total-Mismatch (cos 0.0) zu ranken."""
+    from ideagraph.similarity import knn
+    result = knn([1.0, 0.0], {"good": [1.0, 0.0], "empty": []}, k=2)
+    assert [nid for nid, _ in result] == ["good"]
+
+def test_gaps_keyword_word_boundary(tmp_path):
+    """Audit #60: 'test' matcht nicht mehr 'latest' — Wortgrenzen-Matching."""
+    from ideagraph.gaps import analyze_coverage
+    brain = make_brain(tmp_path)
+    brain.write_node(Node(text="The latest developments in robotics"))
+    coverage = analyze_coverage(brain)
+    # "test" dürfte durch "latest" nicht mehr feuern — der Node ist unklassifiziert
+    test_counts = [a.count for a in coverage.areas if "test" in a.name.lower()]
+    assert all(c == 0 for c in test_counts)

@@ -30,9 +30,13 @@ def knn(query: list[float], candidates: dict[str, list[float]], k: int = 3) -> l
     Entscheidung wie bei _find_duplicate: das Primitiv cosine() streng,
     die Call-Sites tolerant. Ein Brain mit ein paar Alt-Vektoren falscher
     Dimension (z. B. nach Embedder-Wechsel) degradiert damit sauber auf die
-    kompatiblen Nachbarn."""
+    kompatiblen Nachbarn.
+    Audit #60: k<=0 liefert [] statt alle Items (k=0) bzw. den letzten
+    gedroppt (k=-1) — ein Limit heißt Limit."""
+    if k <= 0:
+        return []
     query_dim = len(query)
     scored = [(nid, cosine(query, vec)) for nid, vec in candidates.items()
-              if len(vec) == query_dim]
+              if vec and len(vec) == query_dim]
     scored.sort(key=lambda t: t[1], reverse=True)
     return scored[:k]

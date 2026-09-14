@@ -36,24 +36,31 @@ class NearDup:
 
 
 def _load_vectors(brain: Brain) -> tuple[list[str], np.ndarray]:
-    """Liest vectors.jsonl; nutzt die dominante Dimension (384 real vs 64 Hash)."""
+    """Liest vectors.jsonl; nutzt die dominante Dimension (384 real vs 64 Hash).
+
+    Audit #38: float32 rundet Band-Grenzfälle falsch (0.9199999990 float64 →
+    0.9200000167 float32 — das Paar fällt durch BEIDE Mechanismen: kein Dup
+    im Engine, aber auch nicht im Review-Band). Deshalb float64."""
     vec_file = brain.path / "vectors.jsonl"
     if not vec_file.exists():
-        return [], np.zeros((0, 0), dtype=np.float32)
+        return [], np.zeros((0, 0), dtype=np.float64)
     vecs: dict[str, list[float]] = {}
     lens: Counter = Counter()
     for l in vec_file.read_text(encoding="utf-8").splitlines():
         if not l.strip():
             continue
-        o = json.loads(l)
+        try:
+            o = json.loads(l)
+        except json.JSONDecodeError:
+            continue  # Audit #17-Familie: korrupte Zeile killt nicht den Report
         vecs[o["id"]] = o["vec"]
         lens[len(o["vec"])] += 1
     if not vecs:
-        return [], np.zeros((0, 0), dtype=np.float32)
+        return [], np.zeros((0, 0), dtype=np.float64)
     dom = max(lens, key=lambda k: lens[k])
     ids = [n for n, v in vecs.items() if len(v) == dom]
-    V = np.array([vecs[n] for n in ids], dtype=np.float32)
-    V = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
+    V = np.array([vecs[n] for n in ids], dtype=np.float64)
+    V = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-12)
     return ids, V
 
 
@@ -63,20 +70,27 @@ def near_dup_pairs(
     hi: float = DEFAULT_DEDUP_THRESHOLD,
     max_pairs: int | None = None,
 ) -> list[NearDup]:
-    """Findet Near-Duplikat-Paare im Kosinus-Band [lo, hi), absteigend nach Score."""
+    """Findet Near-Duplikat-Paare im Kosinus-Band [lo, hi), absteigend nach Score.
+
+    Audit #38: das obere Band-Ende ist inklusiv-versus-Engine konsistent — ein
+    float64-cos 0.9199999990 ist im Engine KEIN Dup (0.92-Schwelle), muss also
+    im Review-Band erscheinen. Ein epsilon-Puffer an `hi` verhindert, dass
+    Rundung solche Paare aus beiden Mechanismen fallen lässt.
+    Audit #39: die Paar-Iteration läuft vektorisiert (triu-Maske) statt in
+    O(N²)-Python-Schleifen (4M Iterationen @2k, ~50 s @20k)."""
     ids, V = _load_vectors(brain)
     if len(ids) < 2:
         return []
     S = V @ V.T
     np.fill_diagonal(S, -1.0)
+    band = (S >= lo) & (S < hi + 1e-6)
+    band = np.triu(band, k=1)
+    ii, jj = np.nonzero(band)
     texts = {n.id: n.text for n in brain.read_nodes()}
-    pairs: list[NearDup] = []
-    for i in range(len(ids)):
-        for j in range(i + 1, len(ids)):
-            c = float(S[i][j])
-            if lo <= c < hi:
-                a, b = ids[i], ids[j]
-                pairs.append(NearDup(c, a, b, texts.get(a, a)[:72], texts.get(b, b)[:72]))
+    pairs = [NearDup(float(S[i][j]), ids[int(i)], ids[int(j)],
+                     texts.get(ids[int(i)], ids[int(i)])[:72],
+                     texts.get(ids[int(j)], ids[int(j)])[:72])
+             for i, j in zip(ii, jj)]
     pairs.sort(key=lambda p: p.score, reverse=True)
     if max_pairs is not None:
         # Audit #60: `if max_pairs:` behandelte max_pairs=0 als "unbegrenzt" —
@@ -99,8 +113,12 @@ class Connectivity:
 def connectivity(brain: Brain) -> Connectivity:
     nodes = brain.read_nodes()
     edges = brain.read_edges()
+    # Audit #40: invalidierte Edges (valid_to gesetzt) zählen nicht mehr zur
+    # Konnektivität — sonst widerspricht der Status-Report der Admit-Rule-Logik
+    # (_has_relation ignoriert sie korrekt).
+    live_edges = [e for e in edges if e.valid_to is None]
     deg: Counter = Counter()
-    for e in edges:
+    for e in live_edges:
         deg[e.source] += 1
         deg[e.target] += 1
     ids = [n.id for n in nodes]
@@ -110,7 +128,7 @@ def connectivity(brain: Brain) -> Connectivity:
     vals = [deg[n] for n in ids] or [0]
     return Connectivity(
         total=len(ids),
-        edges=len(edges),
+        edges=len(live_edges),
         islands=islands,
         weak=weak,
         orphans=orphans,
