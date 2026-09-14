@@ -425,6 +425,8 @@ class Brain:
         with self._lock:
             lines = ["# Index", "", "| Idee | Quelle | Erstellt |", "|---|---|---|"]
             for n in self.read_nodes():
+                if n.status == "tombstone":
+                    continue  # vergessene Nodes gehören nicht ins Inhaltsverzeichnis
                 title = n.text.replace("|", "\\|")[:60]
                 lines.append(f"| [{title}](nodes/{n.id}.md) | {n.source} | {n.created} |")
             _atomic_write(self.path / "INDEX.md", "\n".join(lines) + "\n")
