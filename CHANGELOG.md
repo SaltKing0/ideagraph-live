@@ -7,6 +7,15 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [0.4.0] - 2026-09-14
 
 ### Added
+- **Demo seed brain (`ig init --demo`)** — a pre-filled example graph for
+  onboarding: 13 generic nodes, 19 edges covering every edge type, 2 pending
+  suggestions for the HITL flow, one island (`ig status`), one measured
+  near-dup pair (`ig near-dup`/`ig merge`), precomputed vectors (`ig search`
+  works immediately).
+- **English UI** — the web cockpit (capture bar, graph, legend, review
+  inbox, review page) is now fully English, matching the OSS scope; edge
+  kind values on disk stay unchanged.
+- **README hero screenshot** — the demo brain rendered in the web UI.
 - **`ig status` — connectivity/hygiene report.** Reports node/edge counts,
   degree stats, orphans (0 edges), islands (≤1), weak (==2), and the status
   distribution (probation backlog). Read-only; `--json` for machine-readable.

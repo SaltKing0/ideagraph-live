@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d1117">
-  <meta name="description" content="Ideen sammeln, Verbindungen entdecken und Vorschläge gemeinsam mit deinem Graph prüfen.">
-  <title>IdeaGraph · Deine Ideen verbinden</title>
+  <meta name="description" content="Capture ideas, discover connections, and review suggestions with your graph.">
+  <title>IdeaGraph · Connect your ideas</title>
   <style>
     :root { color-scheme:dark; --bg:#0d1117; --panel:#151c25; --raised:#1c2633; --border:#2c3847; --fg:#eaf0f7; --dim:#a0afc1; --blue:#83b9ff; --green:#6ed5a0; --red:#ff9393; --amber:#edc27d; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     * { box-sizing:border-box; }
@@ -133,31 +133,31 @@
 <body data-view="graph">
   <header>
     <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M6 7L20 6L14 21Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="7" r="3" fill="currentColor"/><circle cx="20" cy="6" r="3" fill="currentColor"/><circle cx="14" cy="21" r="3" fill="currentColor"/></svg>IdeaGraph</div>
-    <div id="stats">Ideen werden geladen …</div>
-    <span id="connection" role="status" data-state="connecting">Verbindung wird hergestellt …</span>
+    <div id="stats">Loading ideas …</div>
+    <span id="connection" role="status" data-state="connecting">Connecting …</span>
   </header>
   <form id="bar">
-    <div class="compose"><label for="text">Eine neue Idee festhalten</label><textarea id="text" rows="1" placeholder="Was beschäftigt dich gerade?" aria-description="Enter speichert die Idee. Umschalt und Enter fügt eine neue Zeile ein." required></textarea></div>
-    <div class="source"><label for="source">Quelle</label><select id="source"><option value="human">Mensch</option><option value="agent">Agent</option><option value="research/subagent">Recherche</option></select></div>
-    <button id="ingest-button" class="primary" type="submit">Idee hinzufügen</button>
+    <div class="compose"><label for="text">Capture a new idea</label><textarea id="text" rows="1" placeholder="What is on your mind?" aria-description="Enter saves the idea. Shift and Enter inserts a new line." required></textarea></div>
+    <div class="source"><label for="source">Source</label><select id="source"><option value="human">Human</option><option value="agent">Agent</option><option value="research/subagent">Research</option></select></div>
+    <button id="ingest-button" class="primary" type="submit">Add idea</button>
   </form>
-  <nav id="mobile-tabs" aria-label="Ansicht"><button type="button" data-view="graph" aria-pressed="true">Graph</button><button type="button" data-view="inbox" aria-pressed="false">Vorschläge <span id="mobile-count"></span></button></nav>
+  <nav id="mobile-tabs" aria-label="View"><button type="button" data-view="graph" aria-pressed="true">Graph</button><button type="button" data-view="inbox" aria-pressed="false">Suggestions <span id="mobile-count"></span></button></nav>
   <main id="main">
-    <section id="graphwrap" aria-label="Ideengraph">
-      <div class="graph-toolbar"><h1>Dein Ideennetz</h1><div class="search"><label for="search" class="sr-only">Ideen durchsuchen</label><input id="search" type="search" placeholder="Ideen suchen …" autocomplete="off" aria-controls="search-results" aria-expanded="false"><ul id="search-results" aria-label="Suchergebnisse" hidden></ul></div></div>
+    <section id="graphwrap" aria-label="Idea graph">
+      <div class="graph-toolbar"><h1>Your idea network</h1><div class="search"><label for="search" class="sr-only">Search ideas</label><input id="search" type="search" placeholder="Search ideas …" autocomplete="off" aria-controls="search-results" aria-expanded="false"><ul id="search-results" aria-label="Search results" hidden></ul></div></div>
       <div id="canvas">
         <div id="graph3d" hidden></div>
-        <svg id="graph" aria-label="Verbindungen zwischen deinen Ideen"></svg>
-        <div id="graph-empty"><h2>Dein Graph wird geladen …</h2><p>Einen Moment bitte.</p><button id="empty-action" hidden>Erste Idee hinzufügen</button></div>
+        <svg id="graph" aria-label="Connections between your ideas"></svg>
+        <div id="graph-empty"><h2>Loading your graph …</h2><p>One moment, please.</p><button id="empty-action" hidden>Add your first idea</button></div>
         <div id="tooltip" hidden></div>
       </div>
-      <div class="graph-bottom"><div class="legend" aria-label="Verbindungstypen"><span><i class="line similar"></i>Ähnlich</span><span><i class="line contradiction"></i>Widerspruch</span><span><i class="line extends"></i>Erweiterung</span><span><i class="line pending"></i>Vorschlag</span></div><div class="graph-controls"><button id="graph-mode" aria-pressed="false" title="3D-Ansicht umschalten">3D</button><button id="zoom-out" aria-label="Verkleinern">−</button><button id="zoom-in" aria-label="Vergrößern">+</button><button id="fit">Alles zeigen</button></div></div>
+      <div class="graph-bottom"><div class="legend" aria-label="Edge types"><span><i class="line similar"></i>Similar</span><span><i class="line contradiction"></i>Contradiction</span><span><i class="line extends"></i>Extension</span><span><i class="line pending"></i>Suggestion</span></div><div class="graph-controls"><button id="graph-mode" aria-pressed="false" title="Toggle 3D view">3D</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="fit">Show all</button></div></div>
     </section>
-    <aside id="inbox" aria-labelledby="inbox-title"><div class="inbox-heading"><h2 id="inbox-title">Verbindungen prüfen <span id="pending-count">0</span></h2><p>Welche Ideen gehören zusammen? Du entscheidest.</p><a class="review-link" href="/review">Aliases manuell verknüpfen ↗</a></div><div id="cards" aria-busy="true"></div></aside>
+    <aside id="inbox" aria-labelledby="inbox-title"><div class="inbox-heading"><h2 id="inbox-title">Review connections <span id="pending-count">0</span></h2><p>Which ideas belong together? You decide.</p><a class="review-link" href="/review">Link aliases manually ↗</a></div><div id="cards" aria-busy="true"></div></aside>
   </main>
-  <div id="decision" hidden><span id="decision-message" role="status"></span><button id="undo" class="quiet">Rückgängig</button><button id="dismiss-decision" class="quiet" aria-label="Hinweis schließen">×</button></div>
-  <footer id="help"><span><kbd>I</kbd> Neue Idee</span><span><kbd>/</kbd> Suchen</span><span><kbd>J</kbd> / <kbd>K</kbd> Vorschlag wählen</span><span><kbd>↵</kbd> Akzeptieren</span><span><kbd>Leertaste</kbd> Idee lesen</span><span><kbd>Esc</kbd> Schließen / Auswahl aufheben</span></footer>
-  <dialog id="detail" aria-labelledby="detail-title"><div class="detail-header"><h2 id="detail-title">Idee</h2><button id="close-detail" class="quiet" aria-label="Ideendetails schließen" autofocus>Schließen ×</button></div><div id="detail-meta"></div><p id="detail-text"></p><div id="detail-relations"></div></dialog>
+  <div id="decision" hidden><span id="decision-message" role="status"></span><button id="undo" class="quiet">Undo</button><button id="dismiss-decision" class="quiet" aria-label="Dismiss notice">×</button></div>
+  <footer id="help"><span><kbd>I</kbd> New idea</span><span><kbd>/</kbd> Search</span><span><kbd>J</kbd> / <kbd>K</kbd> Pick suggestion</span><span><kbd>↵</kbd> Accept</span><span><kbd>Space</kbd> Read idea</span><span><kbd>Esc</kbd> Close / clear selection</span></footer>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="detail-header"><h2 id="detail-title">Idea</h2><button id="close-detail" class="quiet" aria-label="Close idea details" autofocus>Close ×</button></div><div id="detail-meta"></div><p id="detail-text"></p><div id="detail-relations"></div></dialog>
   <div id="notice" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>

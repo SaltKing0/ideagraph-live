@@ -33,7 +33,7 @@ async function refresh() {
 function renderCards() {
   const box = $("cards");
   if (!pending.length) {
-    box.innerHTML = `<div style="color:var(--dim);font-size:13px;">Keine offenen Vorschläge. 🎉</div>`;
+    box.innerHTML = `<div style="color:var(--dim);font-size:13px;">No open suggestions. 🎉</div>`;
     return;
   }
   box.innerHTML = pending.map((e, i) => `
@@ -56,7 +56,7 @@ function renderCards() {
 
 async function resolve(id, accept) {
   const r = await fetch(`/api/edge/${id}/${accept ? "accept" : "reject"}`, { method: "POST" });
-  if (!r.ok) return flash("Fehler beim Auflösen", false);
+  if (!r.ok) return flash("Failed to resolve", false);
   flash(accept ? "Edge akzeptiert" : "Edge verworfen");
   await refresh();
 }

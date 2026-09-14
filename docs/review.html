@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>IdeaGraph Review</title>
@@ -24,7 +24,7 @@
 
     #main { flex:1; display:flex; min-height:0; }
 
-    /* Linke Spalte: Suche + Node-Picker für same_as */
+    /* Left column: search + node picker for same_as */
     #side { width:400px; flex:none; border-right:1px solid var(--border);
             display:flex; flex-direction:column; min-height:0; }
     #side .pane { padding:12px; border-bottom:1px solid var(--border); }
@@ -50,7 +50,7 @@
     #linkbtn:disabled { opacity:.4; cursor:default; }
     .hint { font-size:10px; color:var(--dim); margin-top:6px; }
 
-    /* Rechte Spalte: Inbox */
+    /* Right column: inbox */
     #inbox { flex:1; overflow-y:auto; padding:12px 16px; }
     .card { background:var(--panel); border:1px solid var(--border); border-radius:8px;
             padding:14px; margin-bottom:10px; font-size:13px; }
@@ -84,15 +84,15 @@
 <div id="main">
   <div id="side">
     <div class="pane">
-      <h2>same_as verlinken</h2>
-      <input id="search" placeholder="Node suchen … (s)">
+      <h2>Link same_as</h2>
+      <input id="search" placeholder="Search nodes … (s)">
       <div id="hits"></div>
       <div id="pickbar">
-        <div class="slot a" id="slotA">A: leer</div>
-        <div class="slot b" id="slotB">B: leer</div>
-        <button id="linkbtn" disabled>verlinken ⏎</button>
+        <div class="slot a" id="slotA">A: empty</div>
+        <div class="slot b" id="slotB">B: empty</div>
+        <button id="linkbtn" disabled>Link ⏎</button>
       </div>
-      <div class="hint">Treffer anklicken: 1. Klick → A, 2. Klick → B. x leert die Auswahl.</div>
+      <div class="hint">Click a hit: 1st click → A, 2nd → B. x clears the selection.</div>
     </div>
   </div>
   <div id="inbox"><h2 style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Pending Edges</h2><div id="cards"></div></div>

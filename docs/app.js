@@ -3,7 +3,7 @@
   "use strict";
   const $ = selector => document.querySelector(selector);
   const colors = { "aehnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
-  const labels = { "aehnlich": "Ähnlich", "kontradiktorisch": "Widerspruch", "erweitert": "Erweiterung", "same_as": "Gleiche Idee", "supersedes": "Ersetzt", "continues": "Führt fort" };
+  const labels = { "aehnlich": "Similar", "kontradiktorisch": "Contradiction", "erweitert": "Extension", "same_as": "Same idea", "supersedes": "Supersedes", "continues": "Continues" };
   const esc = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const short = (text, length = 36) => text.length > length ? `${text.slice(0, length - 1)}…` : text;
   const idOf = value => typeof value === "object" ? value.id : value;
@@ -15,7 +15,7 @@
   let initialFit = true, graph3D = null, use3D = false;
   const sprites = new Map();
   const nodeById = id => nodes.find(node => node.id === id);
-  const textOf = id => nodeById(id)?.text || "Idee nicht verfügbar";
+  const textOf = id => nodeById(id)?.text || "Idea unavailable";
 
   function notify(message, error = false) {
     clearTimeout(noticeTimer);
@@ -27,8 +27,8 @@
   // Keep the rest of the page understandable if the graph library cannot load.
   if (!window.d3) {
     $("#graph-empty h2").textContent = "Der Graph konnte nicht geladen werden";
-    $("#graph-empty p").textContent = "Bitte prüfe deine Verbindung und lade die Seite erneut.";
-    $("#stats").textContent = "Graph nicht verfügbar";
+    $("#graph-empty p").textContent = "Check your connection and reload the page.";
+    $("#stats").textContent = "Graph unavailable";
     $("#connection").textContent = "Laden fehlgeschlagen";
     $("#empty-action").hidden = false;
     $("#empty-action").textContent = "Erneut laden";
@@ -93,7 +93,7 @@
       group.append("title");
       return group;
     });
-    groups.attr("aria-label", node => `Idee öffnen: ${node.text}`);
+    groups.attr("aria-label", node => `Open idea: ${node.text}`);
     groups.select("text").text(node => short(node.text.replace(/\s+/g, " ")));
     groups.select("title").text(node => node.text);
     if (graph3D) update3D();
@@ -212,7 +212,7 @@
           .width(width).height(height).backgroundColor("#0d1117")
           .nodeRelSize(5).nodeLabel(node => esc(node.text))
           .nodeThreeObjectExtend(true).nodeThreeObject(label3D)
-          .linkOpacity(.65).linkLabel(edge => esc(`${labels[edge.kind] || edge.kind}${edge.pending ? " · Vorschlag" : ""}`))
+          .linkOpacity(.65).linkLabel(edge => esc(`${labels[edge.kind] || edge.kind}${edge.pending ? " · Suggestion" : ""}`))
           .onNodeClick(node => showDetail(node.id)).onBackgroundClick(clearSelection)
           .warmupTicks(80).cooldownTicks(100);
         update3D();
@@ -226,7 +226,7 @@
       graph3D?.pauseAnimation(); graph3D = null; use3D = false;
       $("#graph3d").hidden = true; $("#graph").hidden = false;
       $("#graph-mode").setAttribute("aria-pressed", "false");
-      notify("3D ist hier nicht verfügbar. Du kannst den Graph in 2D weiter nutzen.");
+      notify("3D is unavailable here. You can keep using the graph in 2D.");
     }
   };
 
@@ -249,7 +249,7 @@
   async function request(url, options) {
     const response = await fetch(url, options);
     if (!response.ok) {
-      const error = new Error(response.status === 404 || response.status === 409 ? "Dieser Vorschlag wurde bereits geändert. Bitte wähle ihn erneut." : "Speichern fehlgeschlagen. Bitte versuche es erneut.");
+      const error = new Error(response.status === 404 || response.status === 409 ? "This suggestion was already changed. Please pick it again." : "Saving failed. Please try again.");
       error.status = response.status;
       throw error;
     }
@@ -274,14 +274,14 @@
       simulation.nodes(nodes);
       simulation.force("link").links(links);
       loaded = true;
-      $("#stats").textContent = `${nodes.length} ${nodes.length === 1 ? "Idee" : "Ideen"} · ${edges.filter(edge => !edge.pending).length} Verbindungen`;
+      $("#stats").textContent = `${nodes.length} ${nodes.length === 1 ? "idea" : "ideas"} · ${edges.filter(edge => !edge.pending).length} connections`;
       $("#pending-count").textContent = pending.length;
       $("#mobile-count").textContent = pending.length ? `(${pending.length})` : "";
       $("#graph-empty").hidden = nodes.length > 0;
-      $("#graph-empty h2").textContent = "Jede Verbindung beginnt mit einer Idee";
-      $("#graph-empty p").textContent = "Halte deinen ersten Gedanken fest. Mit weiteren Ideen entstehen Vorschläge für Verbindungen.";
+      $("#graph-empty h2").textContent = "Every connection starts with an idea";
+      $("#graph-empty p").textContent = "Capture your first thought. More ideas will surface connection suggestions.";
       $("#empty-action").hidden = false;
-      $("#empty-action").textContent = "Erste Idee hinzufügen";
+      $("#empty-action").textContent = "Add your first idea";
       $("#empty-action").onclick = () => $("#text").focus();
       renderCards(); drawGraph();
       simulation.alpha(.6).restart();
@@ -291,13 +291,13 @@
     } catch (error) {
       if (version !== refreshVersion) return;
       if (!loaded) {
-        $("#stats").textContent = "Ideen nicht geladen";
-        $("#graph-empty h2").textContent = "Deine Ideen konnten nicht geladen werden";
-        $("#graph-empty p").textContent = "Bitte prüfe die Verbindung und versuche es erneut.";
+        $("#stats").textContent = "Ideas not loaded";
+        $("#graph-empty h2").textContent = "Your ideas could not be loaded";
+        $("#graph-empty p").textContent = "Check the connection and try again.";
         $("#empty-action").hidden = false;
         $("#empty-action").textContent = "Erneut versuchen";
         $("#empty-action").onclick = refresh;
-        $("#cards").innerHTML = '<div class="empty-inbox"><p>Vorschläge sind verfügbar, sobald die Verbindung wiederhergestellt ist.</p></div>';
+        $("#cards").innerHTML = '<div class="empty-inbox"><p>Suggestions are available once the connection is restored.</p></div>';
       }
       notify("Der Graph konnte nicht aktualisiert werden. Bitte versuche es erneut.", true);
     } finally {
@@ -311,15 +311,15 @@
     const focusedId = active?.closest(".card")?.dataset.id;
     const focusedAction = active?.dataset.action;
     if (!pending.length) {
-      cards.innerHTML = `<div class="empty-inbox"><h3>${nodes.length ? "Alles geprüft" : "Platz für neue Verbindungen"}</h3><p>${nodes.length ? "Zurzeit gibt es keine offenen Vorschläge. Füge weitere Ideen hinzu, um neue Verbindungen zu entdecken." : "Sobald deine Ideen Verbindungen ergeben, kannst du sie hier prüfen."}</p></div>`;
+      cards.innerHTML = `<div class="empty-inbox"><h3>${nodes.length ? "All reviewed" : "Room for new connections"}</h3><p>${nodes.length ? "There are no open suggestions right now. Add more ideas to discover new connections." : "Once your ideas form connections, you can review them here."}</p></div>`;
       return;
     }
     cards.innerHTML = pending.map(edge => `
       <article class="card ${edge.id === selectedEdge ? "active" : ""}" data-id="${esc(edge.id)}">
-        <div class="card-heading"><span class="kind" data-kind="${esc(edge.kind)}">${esc(labels[edge.kind] || edge.kind)}</span><button class="select-pair quiet" data-action="select">Im Graph zeigen</button></div>
-        <button class="idea-preview" data-action="source" aria-label="Erste Idee vollständig lesen"><span class="excerpt">${esc(textOf(edge.source))}</span><span class="read">Idee lesen ↗</span></button>
-        <button class="idea-preview" data-action="target" aria-label="Zweite Idee vollständig lesen"><span class="excerpt">${esc(textOf(edge.target))}</span><span class="read">Idee lesen ↗</span></button>
-        <div class="actions"><button class="ok" data-action="accept" ${resolving ? "disabled" : ""}>✓ Akzeptieren</button><button class="quiet" data-action="reject" ${resolving ? "disabled" : ""}>Verwerfen</button></div>
+        <div class="card-heading"><span class="kind" data-kind="${esc(edge.kind)}">${esc(labels[edge.kind] || edge.kind)}</span><button class="select-pair quiet" data-action="select">Show in graph</button></div>
+        <button class="idea-preview" data-action="source" aria-label="Read first idea in full"><span class="excerpt">${esc(textOf(edge.source))}</span><span class="read">Read idea ↗</span></button>
+        <button class="idea-preview" data-action="target" aria-label="Read second idea in full"><span class="excerpt">${esc(textOf(edge.target))}</span><span class="read">Read idea ↗</span></button>
+        <div class="actions"><button class="ok" data-action="accept" ${resolving ? "disabled" : ""}>&#10003; Accept</button><button class="quiet" data-action="reject" ${resolving ? "disabled" : ""}>Dismiss</button></div>
       </article>`).join("");
     if (focusedId && focusedAction) {
       const card = [...cards.children].find(item => item.dataset.id === focusedId);
@@ -352,7 +352,7 @@
       await request(`/api/edge/${encodeURIComponent(id)}/${action}`, { method:"POST" });
       undoId = id;
       $("#decision").hidden = false;
-      $("#decision-message").textContent = action === "accept" ? "Verbindung akzeptiert." : "Vorschlag verworfen.";
+      $("#decision-message").textContent = action === "accept" ? "Connection accepted." : "Suggestion dismissed.";
       await refresh();
       setResolving(false);
       const next = pending[Math.min(index, pending.length - 1)];
@@ -361,7 +361,7 @@
         if (focusInCard) [...$("#cards").children].find(card => card.dataset.id === next.id)?.querySelector("button")?.focus();
       } else if (focusInCard) $("#undo").focus();
     } catch (error) {
-      notify(error instanceof TypeError ? "Keine Verbindung. Deine Entscheidung wurde nicht bestätigt." : error.message, true);
+      notify(error instanceof TypeError ? "No connection. Your decision was not confirmed." : error.message, true);
       await refresh();
     } finally { setResolving(false); }
   }
@@ -377,9 +377,9 @@
       await refresh();
       selectEdge(id);
       [...$("#cards").children].find(card => card.dataset.id === id)?.querySelector("button")?.focus();
-      notify("Entscheidung rückgängig gemacht.");
+      notify("Decision undone.");
     } catch (error) {
-      notify(error instanceof TypeError ? "Keine Verbindung. Rückgängig machen wurde nicht bestätigt." : error.message, true);
+      notify(error instanceof TypeError ? "No connection. The undo was not confirmed." : error.message, true);
     } finally { setResolving(false); }
   };
   $("#dismiss-decision").onclick = () => { $("#decision").hidden = true; undoId = null; };
@@ -398,13 +398,13 @@
       await refresh();
       selectedEdge = null; selectedNode = result.node.id;
       setView("graph"); highlight(); fitNodes(nodes.filter(node => node.id === selectedNode));
-      notify(result.duplicate ? "Duplikat erkannt und mit der bestehenden Idee zusammengeführt." : "Idee gespeichert.");
+      notify(result.duplicate ? "Duplicate detected and merged into the existing idea." : "Idea saved.");
     } catch (error) {
-      notify(error instanceof TypeError ? "Keine Verbindung. Dein Text bleibt erhalten. Prüfe den Graph vor einem erneuten Versuch." : error.message, true);
+      notify(error instanceof TypeError ? "No connection. Your text is preserved. Check the graph before retrying." : error.message, true);
     } finally {
       saving = false;
       $("#ingest-button").disabled = false;
-      $("#ingest-button").textContent = "Idee hinzufügen";
+      $("#ingest-button").textContent = "Add idea";
     }
   });
   $("#text").addEventListener("keydown", event => {
@@ -416,11 +416,11 @@
     if (!node) { $("#detail").close(); return; }
     $("#detail-text").textContent = node.text;
     const date = new Date(node.created);
-    $("#detail-meta").textContent = [node.source, Number.isNaN(date.getTime()) ? null : date.toLocaleDateString("de-DE"), ...(node.tags || []).map(tag => `#${tag}`)].filter(Boolean).join(" · ");
+    $("#detail-meta").textContent = [node.source, Number.isNaN(date.getTime()) ? null : date.toLocaleDateString("en-US"), ...(node.tags || []).map(tag => `#${tag}`)].filter(Boolean).join(" · ");
     const relations = edges.filter(edge => edge.source === id || edge.target === id);
     $("#detail-relations").innerHTML = `<h3>Verbindungen (${relations.length})</h3>${relations.map(edge => {
       const target = edge.source === id ? edge.target : edge.source;
-      return `<button class="relation quiet" data-node="${esc(target)}"><span>${esc(labels[edge.kind] || edge.kind)}${edge.pending ? " · Vorschlag" : " · Akzeptiert"}</span>${esc(short(textOf(target), 160))}</button>`;
+      return `<button class="relation quiet" data-node="${esc(target)}"><span>${esc(labels[edge.kind] || edge.kind)}${edge.pending ? " · Suggestion" : " · Accepted"}</span>${esc(short(textOf(target), 160))}</button>`;
     }).join("") || '<p style="color:var(--dim)">Noch keine Verbindungen.</p>'}`;
   }
   function showDetail(id) {
@@ -505,7 +505,7 @@
   function connect() {
     clearTimeout(reconnectTimer);
     socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-    socket.onopen = () => { $("#connection").dataset.state = "live"; $("#connection").textContent = "Live verbunden"; refresh(); };
+    socket.onopen = () => { $("#connection").dataset.state = "live"; $("#connection").textContent = "Live connected"; refresh(); };
     socket.onmessage = event => {
       try { if (["ingested", "edge_resolved", "edge_restored", "edge_linked"].includes(JSON.parse(event.data).type)) refresh(); } catch { /* Ignore unknown live messages. */ }
     };
