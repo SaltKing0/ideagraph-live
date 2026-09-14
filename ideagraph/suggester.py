@@ -1,9 +1,9 @@
 """Edge-Vorschläge: aus den k nächsten Nachbarn werden getypte Vorschläge.
 
 Regeln (V2#3 — Confidence-Bänder statt nur Schwellen):
-- sim >= 0.95            → "ähnlich", AUTO-ACCEPT (pending=False), confidence=sim
-- 0.75 <= sim < 0.95     → "ähnlich", pending
-- 0.45 <= sim < 0.75     → "erweitert", pending
+- sim >= 0.95            → "similar", AUTO-ACCEPT (pending=False), confidence=sim
+- 0.75 <= sim < 0.95     → "similar", pending
+- 0.45 <= sim < 0.75     → "extends", pending
 - sim < 0.45             → kein Vorschlag
 
 Jeder Vorschlag trägt einen confidence (die Kosinus-Ähnlichkeit). Der Aufrufer
@@ -40,9 +40,9 @@ def suggest(source_id: str, query_vec: list[float],
         if nid == source_id or nid in seen:
             continue
         if sim >= THRESHOLD_SIMILAR:
-            kind = "ähnlich"
+            kind = "similar"
         elif sim >= THRESHOLD_EXTEND:
-            kind = "erweitert"
+            kind = "extends"
         else:
             continue
         seen.add(nid)

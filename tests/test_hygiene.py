@@ -107,8 +107,8 @@ def test_demote_forgotten_keeps_frequent(tmp_path):
 
 def test_invalidate_edge_records_provenance(tmp_path):
     brain = make_brain(tmp_path)
-    e1 = Edge(source="a", target="b", kind="erweitert")
-    e2 = Edge(source="b", target="c", kind="ähnlich")
+    e1 = Edge(source="a", target="b", kind="extends")
+    e2 = Edge(source="b", target="c", kind="similar")
     brain.add_edge(e1)
     brain.add_edge(e2)
     invalidated = brain.invalidate_edge(e1.id, by_edge_id=e2.id)
@@ -127,8 +127,8 @@ def test_ingest_contradiction_edge(tmp_path):
     eng.ingest("Die Erde ist eine Scheibe")
     _, edges, _ = eng.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
     kinds = {e.kind for e in edges}
-    assert "kontradiktorisch" in kinds
-    assert all(not e.pending for e in edges if e.kind == "kontradiktorisch")
+    assert "contradicts" in kinds
+    assert all(not e.pending for e in edges if e.kind == "contradicts")
 
 
 def test_ingest_supersedes_edge(tmp_path):
@@ -143,13 +143,13 @@ def test_intent_pending_config(tmp_path, monkeypatch):
     eng = make_engine(tmp_path)
     eng.ingest("Die Erde ist eine Scheibe")
     _, edges, _ = eng.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
-    assert any(e.kind == "kontradiktorisch" and not e.pending for e in edges)
+    assert any(e.kind == "contradicts" and not e.pending for e in edges)
     # Mit IDEAGRAPH_INTENT_PENDING=1: Intent-Edges werden pending (HITL).
     monkeypatch.setenv("IDEAGRAPH_INTENT_PENDING", "1")
     eng2 = make_engine(tmp_path / "b2")  # frischer Brain, sonst Dedupe gegen eng
     eng2.ingest("Die Erde ist eine Scheibe")
     _, edges2, _ = eng2.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
-    assert any(e.kind == "kontradiktorisch" and e.pending for e in edges2)
+    assert any(e.kind == "contradicts" and e.pending for e in edges2)
 
 
 def test_admit_rule_declared_relations(tmp_path):

@@ -18,7 +18,7 @@ def _brain(tmp_path) -> Brain:
     return Brain(str(tmp_path / "brain"), mode="local")
 
 
-def _add_edge(b: Brain, s: str, t: str, kind: str = "erweitert") -> None:
+def _add_edge(b: Brain, s: str, t: str, kind: str = "extends") -> None:
     b.add_edge(Edge(source=s, target=t, kind=kind, pending=False))
 
 
@@ -119,8 +119,8 @@ def test_merge_preserves_only_undo_records_with_surviving_nodes(tmp_path):
     brain = _brain(tmp_path)
     for id in ("survivor", "deletee", "other"):
         brain.write_node(Node(id=id, text=id))
-    unrelated = Edge(source="survivor", target="other", kind="ähnlich")
-    deleted = Edge(source="deletee", target="other", kind="ähnlich")
+    unrelated = Edge(source="survivor", target="other", kind="similar")
+    deleted = Edge(source="deletee", target="other", kind="similar")
     for edge in (unrelated, deleted):
         brain.add_edge(edge)
         brain.resolve_edge(edge.id, accept=False)
@@ -178,18 +178,18 @@ def test_merge_does_not_invert_directional_intent(tmp_path):
 
 
 def test_merge_redirects_neutral_kinds(tmp_path):
-    """Richtungsneutrale Kinds (ähnlich/erweitert) werden normal umgeleitet."""
+    """Direction-neutral kinds (similar/extends) redirect normally."""
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee"))
     b.write_node(Node(id="t", text="Third"))
-    _add_edge(b, "d", "t", kind="ähnlich")
-    _add_edge(b, "x", "d", kind="erweitert")
+    _add_edge(b, "d", "t", kind="similar")
+    _add_edge(b, "x", "d", kind="extends")
     b.write_node(Node(id="x", text="X"))
     r = merge_nodes(b, "s", "d", commit=False)
     edges = b.read_edges()
-    assert any(e.source == "s" and e.target == "t" and e.kind == "ähnlich" for e in edges)
-    assert any(e.source == "x" and e.target == "s" and e.kind == "erweitert" for e in edges)
+    assert any(e.source == "s" and e.target == "t" and e.kind == "similar" for e in edges)
+    assert any(e.source == "x" and e.target == "s" and e.kind == "extends" for e in edges)
     assert r.edges_redirected == 2
 
 

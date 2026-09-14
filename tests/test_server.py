@@ -16,7 +16,7 @@ def client_and_edge(tmp_path, monkeypatch):
     brain = Brain(str(path))
     brain.write_node(Node(id="first", text="Erste Idee"))
     brain.write_node(Node(id="second", text="Zweite Idee"))
-    edge = Edge(source="first", target="second", kind="ähnlich")
+    edge = Edge(source="first", target="second", kind="similar")
     brain.add_edge(edge)
     with TestClient(app) as client:
         yield client, edge

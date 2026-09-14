@@ -19,13 +19,13 @@ from .reranker import get_reranker
 
 DEDUPE_THRESHOLD = 0.92
 # Intent-Edges dürfen nur für Paare feuern, die auch wirklich thematisch
-# verwandt sind (gleiche Schwelle wie "erweitert"). Ohne diese Schranke würde
+# verwandt sind (same threshold as "extends"). Ohne diese Schranke würde
 # ein Marker-Wort im neuen Text ("ersetzt", "supersedes") eine Node gegen
 # JEDE bestehende Node als Intent nachordnen — in einem thematisch homogenen
 # Brain (geteilte Domänenvokabeln) sogar gegen fast alle.
 INTENT_SIM_THRESHOLD = 0.45
 AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
-# "1"/"true" → Intent-Edges (supersedes/continues/kontradiktorisch) werden
+# "1"/"true" -> intent edges (supersedes/continues/contradicts) stay
 # pending (HITL-Review) statt auto-akzeptiert. Lässt Nutzer frei entscheiden,
 # ob automatisch erkannte Intentionen direkt in den Graph sollen.
 INTENT_PENDING_ENV = "IDEAGRAPH_INTENT_PENDING"
@@ -240,7 +240,7 @@ class BrainEngine:
             cached = self.brain.read_vectors()
             cached[node.id] = vec
             self.brain.write_vectors(cached)
-            # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (ähnlich,
+            # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (similar,
             # auto-akzeptiert via Confidence-Band ODER Env) → verwandte Alt-Nodes
             # mit Querverweis anreichern.
             # Audit #22: der Rewrite muss den Status (und created) der Target-Node
@@ -252,7 +252,7 @@ class BrainEngine:
             EVOLVED_ANNOTATION_CAP = 5
             evolved = 0
             for e in new_edges:
-                if not e.pending and e.kind == "ähnlich":
+                if not e.pending and e.kind == "similar":
                         target_node = next((n for n in self.brain.read_nodes()
                                             if n.id == e.target), None)
                         if target_node is None or target_node.status == "tombstone":
@@ -330,7 +330,7 @@ class BrainEngine:
             if missing:
                 raise ValueError(f"Node(s) not found: {', '.join(missing)}")
             # Audit #23: das Pair-Set war richtungslos und kind-blind — ein
-            # legitimes same_as UND ähnlich zwischen demselben Paar konnte nicht
+            # a legitimate same_as AND similar between the same pair could not
             # koexistieren, und A→B blockierte auch B→A. Dedupe ist jetzt
             # kind-aware und richtungssensitiv; nur exakte Duplikate blockieren.
             existing = [(e.source, e.target, e.kind) for e in self.brain.read_edges()

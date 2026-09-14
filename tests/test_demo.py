@@ -28,7 +28,7 @@ def test_build_demo_brain_creates_graph(demo_path):
     assert len(edges) == 19
     kinds = {e.kind for e in edges}
     # every edge type is represented
-    assert {"aehnlich", "erweitert", "kontradiktorisch", "supersedes",
+    assert {"similar", "extends", "contradicts", "supersedes",
             "same_as"} <= kinds
     assert sum(1 for e in edges if e.pending) == 2
 

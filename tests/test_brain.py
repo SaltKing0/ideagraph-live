@@ -52,7 +52,7 @@ def test_write_and_read_nodes(tmp_path):
 
 def test_edges_roundtrip_and_resolve(tmp_path):
     brain = make_brain(tmp_path)
-    e = Edge(source="a", target="b", kind="ähnlich")
+    e = Edge(source="a", target="b", kind="similar")
     brain.add_edge(e)
     resolved = brain.resolve_edge(e.id, accept=True)
     assert resolved is not None and resolved.pending is False
@@ -61,7 +61,7 @@ def test_edges_roundtrip_and_resolve(tmp_path):
 
 def test_edge_reject_removes(tmp_path):
     brain = make_brain(tmp_path)
-    e = Edge(source="a", target="b", kind="erweitert")
+    e = Edge(source="a", target="b", kind="extends")
     brain.add_edge(e)
     brain.resolve_edge(e.id, accept=False)
     assert brain.read_edges() == []
@@ -74,7 +74,7 @@ def test_resolve_unknown_returns_none(tmp_path):
 
 def test_undo_accept_returns_edge_to_inbox(tmp_path):
     brain = make_brain(tmp_path)
-    edge = Edge(source="a", target="b", kind="ähnlich")
+    edge = Edge(source="a", target="b", kind="similar")
     brain.add_edge(edge)
     engine = BrainEngine(brain, HashEmbedder())
     engine.resolve(edge.id, accept=True)
@@ -86,8 +86,8 @@ def test_undo_accept_returns_edge_to_inbox(tmp_path):
 
 def test_undo_reject_survives_reload_and_other_decisions(tmp_path):
     brain = make_brain(tmp_path)
-    first = Edge(source="a", target="b", kind="ähnlich")
-    second = Edge(source="b", target="c", kind="erweitert")
+    first = Edge(source="a", target="b", kind="similar")
+    second = Edge(source="b", target="c", kind="extends")
     brain.add_edge(first)
     brain.resolve_edge(first.id, accept=False)
     assert brain.graph_state()["edges"] == []
@@ -103,7 +103,7 @@ def test_undo_reject_survives_reload_and_other_decisions(tmp_path):
 
 def test_rejected_edge_cannot_be_resolved_again(tmp_path):
     brain = make_brain(tmp_path)
-    edge = Edge(source="a", target="b", kind="ähnlich")
+    edge = Edge(source="a", target="b", kind="similar")
     brain.add_edge(edge)
     brain.resolve_edge(edge.id, accept=False)
     assert brain.resolve_edge(edge.id, accept=True) is None
@@ -113,7 +113,7 @@ def test_rejected_edge_cannot_be_resolved_again(tmp_path):
 def test_graph_state_shape(tmp_path):
     brain = make_brain(tmp_path)
     brain.write_node(Node(id="a", text="x"))
-    brain.add_edge(Edge(source="a", target="a", kind="ähnlich"))
+    brain.add_edge(Edge(source="a", target="a", kind="similar"))
     state = brain.graph_state()
     assert len(state["nodes"]) == 1 and len(state["edges"]) == 1
 
@@ -154,7 +154,7 @@ def test_engine_suggests_similar_kind(tmp_path):
     _, _, _ = engine.ingest("katze hund tier futter")
     _, edges, _ = engine.ingest("katze hund tier spiel")
     kinds = {e.kind for e in edges}
-    assert kinds <= {"ähnlich", "erweitert"}
+    assert kinds <= {"similar", "extends"}
 
 
 def test_engine_dedupes_exact_duplicate(tmp_path):
@@ -223,7 +223,7 @@ def test_edge_suggestion_dedupe(tmp_path):
     engine.ingest("katze hund tier futter", allow_duplicates=True)
     n2, _, _ = engine.ingest("katze hund tier spiel")
     before = len(engine.brain.read_edges())
-    # dritter Ingest aehnlich zu beiden: keine (source,target)-Doppelvorschlaege
+    # third ingest similar to both: no duplicate (source,target) suggestions
     _, edges3, _ = engine.ingest("katze hund tier futter spiel", allow_duplicates=True)
     pairs_before = [(e.source, e.target) for e in engine.brain.read_edges()]
     assert len(pairs_before) == len(set(pairs_before))
@@ -359,7 +359,7 @@ def test_ingest_auto_inits_missing_brain(tmp_path):
 
 def test_undo_preserves_edge_metadata_and_invalidated_facts(tmp_path):
     brain = make_brain(tmp_path)
-    edge = Edge(source="a", target="b", kind="ähnlich", confidence=.82,
+    edge = Edge(source="a", target="b", kind="similar", confidence=.82,
                 valid_from="2026-08-01T00:00:00Z", invalidated_by="prior-event")
     brain.add_edge(edge)
     brain.resolve_edge(edge.id, accept=False)
@@ -373,8 +373,8 @@ def test_undo_preserves_edge_metadata_and_invalidated_facts(tmp_path):
 
 def test_invalidation_preserves_unrelated_undo_record(tmp_path):
     brain = make_brain(tmp_path)
-    rejected = Edge(source="a", target="b", kind="ähnlich")
-    other = Edge(source="b", target="c", kind="erweitert", pending=False)
+    rejected = Edge(source="a", target="b", kind="similar")
+    other = Edge(source="b", target="c", kind="extends", pending=False)
     brain.add_edge(rejected)
     brain.add_edge(other)
     brain.resolve_edge(rejected.id, accept=False)

@@ -2,8 +2,8 @@
 (() => {
   "use strict";
   const $ = selector => document.querySelector(selector);
-  const colors = { "aehnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
-  const labels = { "aehnlich": "Similar", "kontradiktorisch": "Contradiction", "erweitert": "Extension", "same_as": "Same idea", "supersedes": "Supersedes", "continues": "Continues" };
+  const colors = { "similar": "#6ed5a0", "contradicts": "#ff9393", "extends": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
+  const labels = { "similar": "Similar", "contradicts": "Contradiction", "extends": "Extension", "same_as": "Same idea", "supersedes": "Supersedes", "continues": "Continues" };
   const esc = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   // Audit #50: slice by code points — UTF-16 indexing split surrogate pairs (emoji).
 const short = (text, length = 36) => {

@@ -60,7 +60,7 @@ def test_verify_detects_missing_edge(tmp_path):
     b.write_node(Node(id="a", text="alpha"))
     b.write_node(Node(id="b", text="beta"))
     failures = verify_end_state(
-        b, EvalOracle(edges=[EdgeExpectation("alpha", "beta", "erweitert")])
+        b, EvalOracle(edges=[EdgeExpectation("alpha", "beta", "extends")])
     )
     assert any("edge missing" in f for f in failures)
 
@@ -69,7 +69,7 @@ def test_verify_detects_unexpected_edge(tmp_path):
     b = _brain(tmp_path)
     b.write_node(Node(id="a", text="alpha"))
     b.write_node(Node(id="b", text="beta"))
-    b.add_edge(Edge(source="a", target="b", kind="erweitert"))
+    b.add_edge(Edge(source="a", target="b", kind="extends"))
     failures = verify_end_state(b, EvalOracle(no_edge=[EdgeExpectation("alpha", "beta", "*")]))
     assert any("unexpected edge" in f for f in failures)
 
@@ -91,7 +91,7 @@ def test_verify_wildcard_kind_matches_any_edge(tmp_path):
     b = _brain(tmp_path)
     b.write_node(Node(id="a", text="alpha"))
     b.write_node(Node(id="b", text="beta"))
-    b.add_edge(Edge(source="a", target="b", kind="ähnlich"))
+    b.add_edge(Edge(source="a", target="b", kind="similar"))
     assert verify_end_state(b, EvalOracle(edges=[EdgeExpectation("alpha", "beta", "*")])) == []
 
 

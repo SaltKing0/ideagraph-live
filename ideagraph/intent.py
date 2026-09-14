@@ -1,21 +1,21 @@
-"""Intent-getypte Edges (Roadmap V2#3, Zettelkasten-Lektion).
+"""Intent-typed edges (Roadmap V2#3, Zettelkasten lesson).
 
-Statt nur bare similarity ("ähnlich"/"erweitert") erkennt die Engine die
-INTENTION zwischen zwei Nodes anhand von Signalen im Text:
+Beyond bare similarity ("similar"/"extends") the engine detects
+INTENT between two nodes from signals in the text:
 
-  supersedes      neu ersetzt/obsolet macht alt   ("API v2 ersetzt v1")
-  kontradiktorisch neu verneint/opponiert alt      ("Die Erde ist KEINE Scheibe")
-  continues       neu führt alt fort / baut auf    ("weiter ... basiert auf")
+  supersedes      new makes old obsolete        ("API v2 replaces v1")
+  contradicts     new denies/opposes old        ("The Earth is NOT flat")
+  continues       new continues/builds on old   ("further ... based on")
 
-Heuristisch (keine NLP-Dependency), deterministisch und testbar. Liefert None,
-wenn kein Intent erkannt wird — dann entscheidet weiterhin die Similarity.
+Heuristic (no NLP dependency), deterministic and testable. Returns None
+when no intent is detected — similarity then decides as before.
 
-Audit #35/#36/#51/#61 (Fix-Welle 3): Marker matchen auf Token-Grenzen
-("versetzt" feuert nicht mehr auf "ersetzt"), die Subjekt-Prüfung läuft
-satzenlagenweise (der Marker muss im selben Satz wie ein gemeinsames
-Inhaltswort stehen — bloße Anwesenheit im Text genügt nicht), die
-Negations-Prüfung läuft beidseitig (neu bejaht, was alt verneint → auch
-kontradiktorisch), und die Marker-Sets sind durchgehend zweisprachig.
+Audit #35/#36/#51/#61 (fix wave 3): markers match on token boundaries
+("versetzt" no longer fires "ersetzt"), the subject check runs
+clause-scoped (the marker must share a sentence with a shared content
+word — mere presence in the text is not enough), the negation check runs
+bidirectionally (new affirms what old denied -> contradicts too), and
+the marker sets are fully bilingual.
 """
 
 from __future__ import annotations
@@ -52,16 +52,16 @@ CONTINUE_MARKERS: tuple[tuple[str, ...], ...] = (
     ("continues",), ("continued",), ("refines",), ("follows", "from"),
 )
 
-# Priorität bei Mehrfach-Treffern (Audit #51): supersedes > kontradiktorisch
+# Priority on multiple hits (audit #51): supersedes > contradicts
 # > continues — dokumentiert und deterministisch; die satzenlage Subjekt-
 # Prüfung disambiguiert die meisten Doppeltreffer bereits.
-_PRIORITY = ("supersedes", "kontradiktorisch", "continues")
+_PRIORITY = ("supersedes", "contradicts", "continues")
 
 _MARKER_TO_INTENT: dict[tuple[str, ...], str] = {}
 for _m in SUPERSEDE_MARKERS:
     _MARKER_TO_INTENT[_m] = "supersedes"
 for _m in CONTRADICT_MARKERS:
-    _MARKER_TO_INTENT[_m] = "kontradiktorisch"
+    _MARKER_TO_INTENT[_m] = "contradicts"
 for _m in CONTINUE_MARKERS:
     _MARKER_TO_INTENT[_m] = "continues"
 
@@ -164,7 +164,7 @@ def detect_intent(new_text: str, old_text: str) -> str | None:
     wie ein geteiltes Inhaltswort steht (Audit #35).
 
     Audit #36 (beidseitige Negation): verneint ALT den Gegenstand und bejaht
-    NEU ihn (oder umgekehrt), ist das ebenfalls kontradiktorisch — vorher
+    NEW affirms it (or vice versa), that is also contradicts — before
     lieferte new-affirms-what-old-denies None.
     """
     new_subjects = _content_words(new_text)
@@ -178,7 +178,7 @@ def detect_intent(new_text: str, old_text: str) -> str | None:
     hits: dict[str, bool] = {}
     for intent, markers in (
         ("supersedes", SUPERSEDE_MARKERS),
-        ("kontradiktorisch", CONTRADICT_MARKERS),
+        ("contradicts", CONTRADICT_MARKERS),
         ("continues", CONTINUE_MARKERS),
     ):
         hits[intent] = (
@@ -188,11 +188,11 @@ def detect_intent(new_text: str, old_text: str) -> str | None:
 
     # Beidseitige Negation (Audit #36): alt verneint, neu bejaht denselben
     # Gegenstand ohne Verneinung → Widerspruch zwischen den Aussagen.
-    if not hits["kontradiktorisch"]:
+    if not hits["contradicts"]:
         old_denies = _clause_hits(old_clauses, CONTRADICT_MARKERS, shared)
         new_denies = _clause_hits(new_clauses, CONTRADICT_MARKERS, shared)
         if old_denies and not new_denies:
-            hits["kontradiktorisch"] = True
+            hits["contradicts"] = True
 
     for intent in _PRIORITY:
         if hits[intent]:

@@ -1,15 +1,16 @@
 """ideagraph.demo — a small, generic seed brain for onboarding (`ig init --demo`).
 
 13 nodes over generic LLM/agent topics (no user-specific content), linked with
-every edge type (aehnlich, erweitert, kontradiktorisch, supersedes, same_as),
+every edge type (similar, extends, contradicts, supersedes, same_as),
 2 pending edges for the HITL review flow, an orphan island to demo `ig status`,
 and 1 near-dup pair (0.78-0.92 band) to demo `ig near-dup` + `ig merge`.
 
 Everything is deterministic and public-safe: no private data, no personal
 defaults, neutral English texts that avoid the intent-marker vocabulary
 (the demo mirrors the marker-free finding style used by the self-evolving
-pipeline). Edge KIND values stay ASCII German (`aehnlich`, ...) — that is the
-on-disk data format shared with existing brains, only UI display is English.
+pipeline). Edge KIND values are canonical English (`similar`, `extends`,
+`contradicts`, `supersedes`, `continues`, `same_as`) — matching the
+engine emission since the v0.5 kind migration.
 """
 from __future__ import annotations
 
@@ -98,26 +99,26 @@ _NODES: list[tuple[str, str, list[str]]] = [
 
 # (source_idx, target_idx, kind, pending, confidence)
 _EDGES: list[tuple[int, int, str, bool, float | None]] = [
-    (1, 0, "erweitert", False, None),
-    (2, 0, "erweitert", False, None),
-    (2, 1, "erweitert", False, None),   # BM25 complements dense retrieval
-    (3, 1, "erweitert", False, None),   # hybrid search builds on dense retrieval
-    (3, 0, "erweitert", False, None),
-    (4, 0, "erweitert", False, None),
-    (9, 0, "erweitert", False, None),
-    (10, 0, "erweitert", False, None),
-    (11, 7, "erweitert", False, None),
-    (4, 5, "erweitert", False, None),
-    (4, 6, "erweitert", False, None),
-    (5, 6, "aehnlich", False, None),
+    (1, 0, "extends", False, None),
+    (2, 0, "extends", False, None),
+    (2, 1, "extends", False, None),   # BM25 complements dense retrieval
+    (3, 1, "extends", False, None),   # hybrid search builds on dense retrieval
+    (3, 0, "extends", False, None),
+    (4, 0, "extends", False, None),
+    (9, 0, "extends", False, None),
+    (10, 0, "extends", False, None),
+    (11, 7, "extends", False, None),
+    (4, 5, "extends", False, None),
+    (4, 6, "extends", False, None),
+    (5, 6, "similar", False, None),
     (7, 0, "supersedes", False, None),        # intent demo: graph-RAG supersedes plain RAG
-    (9, 10, "kontradiktorisch", False, None),  # intent demo (explicitly labeled demo pair)
-    (3, 2, "aehnlich", False, 0.85),         # near-dup demo pair (hybrid ≈ BM25)
+    (9, 10, "contradicts", False, None),  # intent demo (explicitly labeled demo pair)
+    (3, 2, "similar", False, 0.85),         # near-dup demo pair (hybrid ≈ BM25)
     (0, 12, "same_as", False, None),           # EN/DE alias demo
-    (9, 12, "erweitert", False, None),   # hallucination motivates the DE twin too
+    (9, 12, "extends", False, None),   # hallucination motivates the DE twin too
     # 2 pending edges → the HITL review flow has something to review
-    (10, 4, "erweitert", True, 0.62),
-    (11, 3, "erweitert", True, 0.58),
+    (10, 4, "extends", True, 0.62),
+    (11, 3, "extends", True, 0.58),
 ]
 
 

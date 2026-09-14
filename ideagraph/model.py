@@ -1,6 +1,6 @@
 """Kern-Datenmodell: Nodes (Ideen) und getypte Edges.
 
-Edges tragen einen Typ: "ähnlich", "kontradiktorisch", "erweitert".
+Edges carry a type: "similar", "contradicts", "extends".
 Pending-Edges sind Vorschläge des Wachstums-Loops und warten auf
 Human-in-the-loop Entscheidung (akzeptieren/verwerfen).
 """
@@ -11,7 +11,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, asdict
 
-EDGE_TYPES = ("ähnlich", "kontradiktorisch", "erweitert")
+EDGE_TYPES = ("similar", "contradicts", "extends")
 
 
 def _now() -> float:

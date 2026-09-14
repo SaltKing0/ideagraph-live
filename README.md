@@ -40,8 +40,8 @@ graph grows as visible history.
 
 - **Nodes** — one Markdown file per idea (`nodes/<id>.md`, YAML frontmatter:
   `type: semantic|episodic|procedural`, `status: probation|active|tombstone`)
-- **Edges** — `edges.jsonl`, typed (`aehnlich`/similar, `erweitert`/extends,
-  `kontradiktorisch`/contradicts, `supersedes`, `continues`, `same_as`),
+- **Edges** — `edges.jsonl`, typed (`similar`, `extends`,
+  `contradicts`, `supersedes`, `continues`, `same_as`),
   bi-temporal (`valid_from`/`valid_to`) with confidence + provenance
 - **vectors.jsonl** — embedding cache · **INDEX.md** — generated TOC
 - **Human in the loop** — similarity edges ≥ 0.95 auto-accept, the rest go

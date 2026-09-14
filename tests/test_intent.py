@@ -1,4 +1,4 @@
-"""Unit-Tests für Intent-getypte Edges (V2#3): supersedes / kontradiktorisch / continues."""
+"""Unit tests for intent-typed edges (V2#3): supersedes / contradicts / continues."""
 
 import sys
 from pathlib import Path
@@ -25,7 +25,7 @@ def test_contradiction_negation():
             "Die Erde ist keine Scheibe, sondern eine Kugel",
             "Die Erde ist eine Scheibe",
         )
-        == "kontradiktorisch"
+        == "contradicts"
     )
 
 

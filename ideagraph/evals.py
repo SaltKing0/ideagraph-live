@@ -107,7 +107,7 @@ def find_node_by_text(brain: Brain, text: str) -> Node | None:
     """Node, dessen Inhalt (normalisiert) mit `text` beginnt, sonst None.
 
     Starts-with statt exakt: Memory Evolution hängt auto-akzeptierten
-    "ähnlich"-Kanten einen "[evolved …]" Querverweis ans Ende — der ursprüngliche
+    "similar" edges get an "[evolved …]" Querverweis ans Ende — der ursprüngliche
     Text bleibt Präfix, und die Zuordnung soll dennoch greifen.
     """
     target = _norm(text)
@@ -303,7 +303,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="edge-similar",
-        name="ähnliche Nodes werden über eine Kante verbunden (pending <0.95)",
+        name="similar nodes get connected by an edge (pending <0.95)",
         ingests=[
             ("katze hund tier futter", {}),
             ("katze hund tier spiel", {}),
@@ -439,14 +439,14 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="intent-contradiction",
-        name="V2: widersprüchliche Aussage → 'kontradiktorisch'-Edge auto-erkannt",
+        name="V2: contradictory statement -> 'contradicts' edge auto-detected",
         ingests=[
             ("Die Erde ist eine Scheibe", {}),
             ("Die Erde ist keine Scheibe", {}),
         ],
         oracle=EvalOracle(
             node_count=2,
-            edges=[EdgeExpectation("Die Erde ist eine Scheibe", "Die Erde ist keine Scheibe", "kontradiktorisch")],
+            edges=[EdgeExpectation("Die Erde ist eine Scheibe", "Die Erde ist keine Scheibe", "contradicts")],
         ),
     ),
     EvalTask(
@@ -479,7 +479,7 @@ GOLDEN_SET: list[EvalTask] = [
         ingests=[
             ("aaa bbb ccc", {}),
             ("aaa bbb ccc ddd", {"allow_duplicates": True,
-                                 "relations": [("aaa bbb ccc", "erweitert")]}),
+                                 "relations": [("aaa bbb ccc", "extends")]}),
         ],
         actions=[lambda e: e.consolidate(admit_required=True)],
         oracle=EvalOracle(
@@ -508,12 +508,12 @@ GOLDEN_SET: list[EvalTask] = [
         ],
         oracle=EvalOracle(
             node_count=2,
-            # Mit Floor: der 0.653-Vorschlag ist verworfen (kein aehnlich-Edge).
+            # With floor: the 0.653 suggestion is rejected (no similar edge).
             edges=[],
             no_edge=[EdgeExpectation(
                 source="Agentenplanung in Multi-Agent-Systemen verteilt",
                 target="Agentenplanung zerlegt langfristige Aufgaben",
-                kind="aehnlich")],
+                kind="similar")],
         ),
     ),
 ]

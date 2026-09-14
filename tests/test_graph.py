@@ -45,18 +45,18 @@ def test_suggest_similar_edge():
     candidates = {"b": emb.embed("katze hund tier spiel")}
     edges = suggest_edges("a", vec_a, candidates)
     assert len(edges) == 1
-    assert edges[0].kind == "ähnlich"
+    assert edges[0].kind == "similar"
     assert edges[0].source == "a" and edges[0].target == "b"
     assert edges[0].pending is True
 
 
 def test_suggest_extend_edge():
-    # Teilweise Wortüberlappung → "erweitert"-Bereich
+    # Partial word overlap -> "extends" band
     vec_a = emb.embed("katze hund tier futter")
     candidates = {"c": emb.embed("katze hund auto straße futter katze hund")}
     edges = suggest_edges("a", vec_a, candidates)
     kinds = {e.kind for e in edges}
-    assert kinds <= {"ähnlich", "erweitert"}
+    assert kinds <= {"similar", "extends"}
     assert all(e.pending for e in edges)
 
 
@@ -78,7 +78,7 @@ def test_engine_ingest_creates_node_and_pending(tmp_path):
 def test_store_resolve_accept(tmp_path):
     from ideagraph.model import Edge
     store = Store(tmp_path / "data.jsonl")
-    edge = Edge(source="a", target="b", kind="ähnlich")
+    edge = Edge(source="a", target="b", kind="similar")
     store.add_edge(edge)
     resolved = store.resolve_edge(edge.id, accept=True)
     assert resolved is not None and resolved.pending is False
@@ -87,7 +87,7 @@ def test_store_resolve_accept(tmp_path):
 def test_store_resolve_reject(tmp_path):
     from ideagraph.model import Edge
     store = Store(tmp_path / "data.jsonl")
-    edge = Edge(source="a", target="b", kind="erweitert")
+    edge = Edge(source="a", target="b", kind="extends")
     store.add_edge(edge)
     eid = edge.id
     resolved = store.resolve_edge(eid, accept=False)

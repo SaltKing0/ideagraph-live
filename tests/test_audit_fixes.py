@@ -40,7 +40,7 @@ def test_crash_mid_write_leaves_no_truncated_edges(tmp_path):
     Edges. Mit tmp+os.replace ist die Datei entweder alt oder neu, nie halb.
     """
     brain = make_brain(tmp_path)
-    edges = [Edge(source="a", target="b", kind="aehnlich", pending=False,
+    edges = [Edge(source="a", target="b", kind="similar", pending=False,
                   id=f"{i:012x}") for i in range(5)]
     brain.write_edges(edges)
     before = brain.read_edges()
@@ -48,7 +48,7 @@ def test_crash_mid_write_leaves_no_truncated_edges(tmp_path):
     # Kein Crash mehr möglich: der Write ist atomar. Verifiziere, dass die
     # Datei nach 100 Rewrites immer vollständig ist (kein Truncation-Fenster).
     for i in range(100):
-        edges.append(Edge(source="x", target="y", kind="erweitert", pending=True,
+        edges.append(Edge(source="x", target="y", kind="extends", pending=True,
                           id=f"{100 + i:012x}"))
         brain.write_edges(edges)
         got = brain.read_edges()
@@ -69,7 +69,7 @@ def test_crash_mid_write_leaves_no_truncated_vectors(tmp_path):
 
 def test_atomic_write_replaces_not_appends(tmp_path):
     brain = make_brain(tmp_path)
-    brain.write_edges([Edge(source="a", target="b", kind="aehnlich")])
+    brain.write_edges([Edge(source="a", target="b", kind="similar")])
     brain.write_edges([])  # kompletter Rewrite auf leer
     assert brain.read_edges() == []
 
@@ -82,7 +82,7 @@ def test_concurrent_resolves_do_not_lose_updates(tmp_path):
     Vor dem Fix loste der last-writer-wins Rewrite Schreibungen des anderen.
     """
     brain = make_brain(tmp_path)
-    brain.write_edges([Edge(source="a", target="b", kind="aehnlich",
+    brain.write_edges([Edge(source="a", target="b", kind="similar",
                             pending=True, id=f"{i:012x}") for i in range(20)])
     errors = []
 
@@ -232,7 +232,7 @@ def test_corrupt_edges_line_does_not_kill_reads(tmp_path):
     """Audit #17: eine korrupte Zeile in edges.jsonl darf die API nicht permanent
     crashen — read_nodes skipped kaputte Files ebenso."""
     brain = make_brain(tmp_path)
-    brain.write_edges([Edge(source="a", target="b", kind="aehnlich", pending=False,
+    brain.write_edges([Edge(source="a", target="b", kind="similar", pending=False,
                             id="aaaaaaaaaaaa")])
     raw = (tmp_path / "brain" / "edges.jsonl").read_text()
     (tmp_path / "brain" / "edges.jsonl").write_text(
@@ -277,7 +277,7 @@ def test_evolved_rewrite_preserves_status(tmp_path):
     n1, _, _ = engine.ingest("x x x x x y y y y y z z z z z", source="test")
     n2, _, _ = engine.ingest("x x x x x y y y y y z z z z z w", source="test",
                              allow_duplicates=True)
-    # Force-accept a strong ähnlich edge so the evolution branch fires:
+    # Force-accept a strong similar edge so the evolution branch fires:
     edges = engine.brain.read_edges()
     for e in edges:
         engine.brain.resolve_edge(e.id, accept=True)
@@ -499,7 +499,7 @@ def test_knn_skips_foreign_dim_candidates():
 
 def test_link_allows_same_pair_different_kind_or_direction(tmp_path):
     """Audit #23: link()-Dedupe ist kind-aware und richtungssensitiv —
-    same_as und ähnlich koexistieren, A→B blockiert B→A nicht; nur das
+    same_as and similar coexist; A→B does not block B→A; only the
     exakte Tripel blockiert."""
     engine = make_engine(tmp_path)
     n1, n2 = Node(id="aaaa1111", text="Erster Gedanke"), Node(id="bbbb2222", text="Zweiter Gedanke")
@@ -508,8 +508,8 @@ def test_link_allows_same_pair_different_kind_or_direction(tmp_path):
     e1 = engine.link(n1.id, n2.id, kind="same_as")
     assert e1.pending is False
     # andere Kind, gleiches Paar → erlaubt
-    e2 = engine.link(n1.id, n2.id, kind="ähnlich")
-    assert e2.kind == "ähnlich"
+    e2 = engine.link(n1.id, n2.id, kind="similar")
+    assert e2.kind == "similar"
     # gleiche Kind, andere Richtung → erlaubt
     e3 = engine.link(n2.id, n1.id, kind="same_as")
     assert (e3.source, e3.target) == (n2.id, n1.id)
@@ -576,7 +576,7 @@ def test_connectivity_ignores_invalidated_edges(tmp_path):
     brain = make_brain(tmp_path)
     brain.write_node(Node(id="conn111", text="A"))
     brain.write_node(Node(id="conn222", text="B"))
-    e = Edge(source="conn111", target="conn222", kind="ähnlich")
+    e = Edge(source="conn111", target="conn222", kind="similar")
     brain.add_edge(e)
     c = connectivity(brain)
     assert c.orphans == [] and c.edges == 1
@@ -639,10 +639,10 @@ def test_intent_statt_with_object_still_fires():
 
 
 def test_intent_negation_both_directions():
-    """Audit #36: alt verneint, neu bejaht denselben Gegenstand → kontradiktorisch."""
+    """Audit #36: old denies, new affirms the same subject -> contradicts."""
     from ideagraph.intent import detect_intent
     assert detect_intent("Die Erde ist eine Kugel",
-                         "Die Erde ist keine Kugel") == "kontradiktorisch"
+                         "Die Erde ist keine Kugel") == "contradicts"
 
 
 def test_intent_punctuation_does_not_break_shared_words():
@@ -658,13 +658,13 @@ def test_intent_english_markers():
     assert detect_intent("The new scheduler replaces the old scheduler",
                          "The old scheduler of the system") == "supersedes"
     assert detect_intent("This finding contradicts the earlier claim",
-                         "The earlier claim about the scheduler") == "kontradiktorisch"
+                         "The earlier claim about the scheduler") == "contradicts"
     assert detect_intent("This builds on the previous analysis",
                          "The previous analysis of the system") == "continues"
 
 
 def test_intent_marker_priority_deterministic():
-    """Audit #51: supersedes > kontradiktorisch > continues — deterministisch."""
+    """Audit #51: supersedes > contradicts > continues — deterministic."""
     from ideagraph.intent import detect_intent
     both = "Die neue API ersetzt die alte API, die alte Behauptung ist falsch"
     old = "Die alte API der Plattform"

@@ -77,9 +77,9 @@ def test_connectivity_detects_islands_and_orphans(tmp_path):
     b.write_node(Node(id="weak", text="Schwach"))
     b.write_node(Node(id="hub", text="Hub"))
     # hub-weak, hub-weak2 -> weak hat 2 Kanten; island 1; orphan 0
-    b.add_edge(Edge(source="hub", target="weak", kind="erweitert", pending=False))
-    b.add_edge(Edge(source="hub", target="island", kind="erweitert", pending=False))
-    b.add_edge(Edge(source="weak", target="hub", kind="erweitert", pending=False))
+    b.add_edge(Edge(source="hub", target="weak", kind="extends", pending=False))
+    b.add_edge(Edge(source="hub", target="island", kind="extends", pending=False))
+    b.add_edge(Edge(source="weak", target="hub", kind="extends", pending=False))
     c = connectivity(b)
     assert c.total == 4
     assert "orphan" in c.orphans

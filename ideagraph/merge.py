@@ -18,7 +18,7 @@ Audit #3/#9/#41-Fixes:
   Survivor→X umgeleitet NUR wenn die Richtung semantisch erhalten bleibt.
   Für supersedes/ersetzt/kontradiktorisch (Deletee als Quelle) wird die
   Kante stattdessen invalidiert (valid_to gesetzt) statt eine möglicherweise
-  falsche Aussage über den Survivor zu machen; erweitert/ähnlich/verlinkt-
+  falsche Aussage über den Survivor zu machen; extends/similar/linked-
   Kanten sind richtungsneutral genug für einen Redirect.
 - Merge-Provenance: der Merge-Commit und die Survivor-Node dokumentieren
   deletee-ID und Zeitpunkt; der Deletee-Status bleibt als Tombstone
@@ -40,10 +40,10 @@ from .brain import Brain
 
 # Intent-Kanten mit gerichteter Semantik: ein Redirect Deletee→X auf
 # Survivor→X würde die Aussage invertieren (Audit #9). Sie werden invalidiert
-# statt umgeleitet. Richtungsneutrale Kinds (ähnlich/erweitert/same_as/…)
+# statt umgeleitet. Direction-neutral kinds (similar/extends/same_as/…)
 # werden normal umgeleitet.
 DIRECTIONAL_KINDS = frozenset({
-    "supersedes", "ersetzt", "kontradiktorisch", "replaces", "obsoletes",
+    "supersedes", "ersetzt", "contradicts", "replaces", "obsoletes",
     "korrigiert", "widerspricht",
 })
 
