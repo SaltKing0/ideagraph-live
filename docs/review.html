@@ -57,8 +57,9 @@
     .card.active { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue); }
     .kind { display:inline-block; font-size:11px; padding:1px 8px; border-radius:10px;
             border:1px solid var(--border); color:var(--dim); margin-bottom:8px; }
-    .kind.aehnlich { color:var(--green); border-color:var(--green); }
-    .kind.erweitert { color:var(--blue); border-color:var(--blue); }
+    .kind[data-kind="aehnlich"] { color:var(--green); border-color:var(--green); }
+    .kind[data-kind="ähnlich"] { color:var(--green); border-color:var(--green); }
+    .kind[data-kind="erweitert"] { color:var(--blue); border-color:var(--blue); }
     .side-label { font-size:10px; color:var(--dim); margin:8px 0 2px; }
     .nodebox { background:var(--bg); border-radius:6px; padding:8px 10px; font-size:12px;
                max-height:88px; overflow-y:auto; }

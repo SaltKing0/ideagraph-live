@@ -1,4 +1,10 @@
 // IdeaGraph Review — Inbox-Arbeit + same_as-Verlinken, keyboard-first.
+//
+// Security (Audit #11/#12/#14): alle dynamischen Werte (ids, kinds, Text)
+// werden strikt escaped; Interaktion läuft über data-Attribute +
+// Event-Delegation statt inline onclick-Attributen mit String-Interpolation.
+// Ein manipuliertes Brain-Repo (geklontes Remote mit feindlichen ids/kinds)
+// kann keinen Code mehr in die Seite injizieren.
 const $ = id => document.getElementById(id);
 
 let nodes = {}, pending = [], sel = 0;
@@ -8,7 +14,11 @@ function short(id, n = 70) {
   const t = (nodes[id] || { text: id }).text.replace(/\n/g, " ");
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
-const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+// Strict escaping für Element-Content UND Attribut-Kontext (Audit #14:
+// die alte Version escaped nur & und < — unzureichend für Attribute).
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 function flash(msg, ok = true) {
   const f = $("flash");
@@ -38,26 +48,42 @@ function renderCards() {
   }
   box.innerHTML = pending.map((e, i) => `
     <div class="card ${i === sel ? "active" : ""}" data-i="${i}">
-      <span class="kind ${e.kind}">${e.kind}</span>
+      <span class="kind" data-kind="${esc(e.kind)}">${esc(e.kind)}</span>
       <div class="side-label">A</div>
-      <div class="nodebox pickable" onclick="pickFromCard('${e.source}', this)">
-        <span class="id">${e.source}</span><br>${esc(short(e.source))}</div>
+      <div class="nodebox pickable" data-pick="${esc(e.source)}">
+        <span class="id">${esc(e.source)}</span><br>${esc(short(e.source))}</div>
       <div class="side-label">B</div>
-      <div class="nodebox pickable" onclick="pickFromCard('${e.target}', this)">
-        <span class="id">${e.target}</span><br>${esc(short(e.target))}</div>
+      <div class="nodebox pickable" data-pick="${esc(e.target)}">
+        <span class="id">${esc(e.target)}</span><br>${esc(short(e.target))}</div>
       <div class="actions">
-        <button class="ok" onclick="resolve('${e.id}',true)">✓ akzeptieren ⏎</button>
-        <button class="no" onclick="resolve('${e.id}',false)">✗ verwerfen esc</button>
+        <button class="ok" data-resolve="${esc(e.id)}" data-accept="1">✓ accept ⏎</button>
+        <button class="no" data-resolve="${esc(e.id)}" data-accept="0">✗ reject esc</button>
       </div>
     </div>`).join("");
   const active = box.querySelector(".card.active");
   if (active) active.scrollIntoView({ block: "nearest" });
 }
 
+// Event-Delegation: kein inline onclick mit interpolierten ids mehr.
+document.addEventListener("click", ev => {
+  const resolveBtn = ev.target.closest("[data-resolve]");
+  if (resolveBtn) {
+    resolve(resolveBtn.dataset.resolve, resolveBtn.dataset.accept === "1");
+    return;
+  }
+  const pickable = ev.target.closest("[data-pick]");
+  if (pickable) pickable.blur();
+});
+
+document.addEventListener("click", ev => {
+  const box = ev.target.closest(".nodebox.pickable[data-pick]");
+  if (box) pick(box.dataset.pick);
+});
+
 async function resolve(id, accept) {
-  const r = await fetch(`/api/edge/${id}/${accept ? "accept" : "reject"}`, { method: "POST" });
+  const r = await fetch(`/api/edge/${encodeURIComponent(id)}/${accept ? "accept" : "reject"}`, { method: "POST" });
   if (!r.ok) return flash("Failed to resolve", false);
-  flash(accept ? "Edge akzeptiert" : "Edge verworfen");
+  flash(accept ? "Edge accepted" : "Edge rejected");
   await refresh();
 }
 
@@ -74,13 +100,13 @@ window.pickFromCard = (id, el) => { pick(id); el.blur(); };
 
 function renderPick() {
   const a = $("slotA"), b = $("slotB"), btn = $("linkbtn");
-  a.textContent = "A: " + (pickA ? short(pickA, 40) : "leer");
-  b.textContent = "B: " + (pickB ? short(pickB, 40) : "leer");
+  a.textContent = "A: " + (pickA ? short(pickA, 40) : "empty");
+  b.textContent = "B: " + (pickB ? short(pickB, 40) : "empty");
   a.classList.toggle("filled", !!pickA);
   b.classList.toggle("filled", !!pickB);
   btn.disabled = !(pickA && pickB);
   btn.textContent = pickA && pickB
-    ? `${short(pickA, 12)} ⇄ ${short(pickB, 12)} ⏎` : "verlinken ⏎";
+    ? `${short(pickA, 12)} ⇄ ${short(pickB, 12)} ⏎` : "link ⏎";
 }
 
 async function link() {
@@ -89,8 +115,8 @@ async function link() {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: pickA, target: pickB, kind: "same_as" }),
   });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); return flash(e.error || "Link fehlgeschlagen", false); }
-  flash("same_as verlinkt");
+  if (!r.ok) { const e = await r.json().catch(() => ({})); return flash(e.error || "Link failed", false); }
+  flash("same_as linked");
   pickA = pickB = null;
   renderPick();
   await refresh();
@@ -105,8 +131,9 @@ $("search").addEventListener("input", () => {
     .filter(n => n.text.toLowerCase().includes(q)).slice(0, 8);
   hits.innerHTML = found.map(n =>
     `<div class="hit ${n.id === pickA ? "pickedA" : ""} ${n.id === pickB ? "pickedB" : ""}"
-          onclick="searchPick('${n.id}')"><span class="id">${n.id.slice(0, 8)}</span>${esc(short(n.id, 55))}</div>`).join("");
+          data-pick="${esc(n.id)}"><span class="id">${esc(n.id.slice(0, 8))}</span>${esc(short(n.id, 55))}</div>`).join("");
 });
+
 window.searchPick = id => { pick(id); $("search").value = ""; $("hits").innerHTML = ""; };
 
 $("linkbtn").addEventListener("click", link);
