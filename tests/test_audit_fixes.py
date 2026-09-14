@@ -495,3 +495,24 @@ def test_knn_skips_foreign_dim_candidates():
     result = knn(query, candidates, k=3)
     assert [nid for nid, _ in result] == ["same", "other"]  # stray übersprungen
     assert result[0][1] == 1.0
+
+
+def test_link_allows_same_pair_different_kind_or_direction(tmp_path):
+    """Audit #23: link()-Dedupe ist kind-aware und richtungssensitiv —
+    same_as und ähnlich koexistieren, A→B blockiert B→A nicht; nur das
+    exakte Tripel blockiert."""
+    engine = make_engine(tmp_path)
+    n1, n2 = Node(id="aaaa1111", text="Erster Gedanke"), Node(id="bbbb2222", text="Zweiter Gedanke")
+    engine.brain.write_node(n1)
+    engine.brain.write_node(n2)
+    e1 = engine.link(n1.id, n2.id, kind="same_as")
+    assert e1.pending is False
+    # andere Kind, gleiches Paar → erlaubt
+    e2 = engine.link(n1.id, n2.id, kind="ähnlich")
+    assert e2.kind == "ähnlich"
+    # gleiche Kind, andere Richtung → erlaubt
+    e3 = engine.link(n2.id, n1.id, kind="same_as")
+    assert (e3.source, e3.target) == (n2.id, n1.id)
+    # exaktes Duplikat → blockiert
+    with pytest.raises(ValueError, match="existiert bereits"):
+        engine.link(n1.id, n2.id, kind="same_as")

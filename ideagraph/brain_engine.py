@@ -303,8 +303,13 @@ class BrainEngine:
             missing = [nid for nid in (source_id, target_id) if nid not in ids]
             if missing:
                 raise ValueError(f"Node(s) nicht gefunden: {', '.join(missing)}")
-            existing_pairs = {(e.source, e.target) for e in self.brain.read_edges()}
-            if (source_id, target_id) in existing_pairs:
+            # Audit #23: das Pair-Set war richtungslos und kind-blind — ein
+            # legitimes same_as UND ähnlich zwischen demselben Paar konnte nicht
+            # koexistieren, und A→B blockierte auch B→A. Dedupe ist jetzt
+            # kind-aware und richtungssensitiv; nur exakte Duplikate blockieren.
+            existing = [(e.source, e.target, e.kind) for e in self.brain.read_edges()
+                        if e.valid_to is None and not e.rejected]
+            if (source_id, target_id, kind) in existing:
                 raise ValueError("Diese Edge existiert bereits.")
             edge = Edge(source=source_id, target=target_id, kind=kind, pending=False)
             self.brain.add_edge(edge)
