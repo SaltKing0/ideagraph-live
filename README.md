@@ -58,6 +58,18 @@ undo records involving that node, while retaining unrelated decisions.
 
 ## Features (Roadmap V2, implemented)
 
+- **Self-evolving pipeline (`tools/`)** — a three-tier feedback loop: safe
+  mechanical ingest with per-run metrics (`ig_cycle`), an adaptive controller
+  that steers research toward the thinnest coverage gaps (`ig_adapt`), and a
+  self-extension harness that turns graph research into engine features via
+  red-spec eval cases (`ig_evolve`).
+- **Confidence floor** — `IG_EDGE_CONF_FLOOR` drops similarity-edge suggestions
+  below the floor instead of leaving them pending (default 0.0 = off).
+- **Coverage & gap analysis** — `ig gaps` classifies every node against a topic
+  taxonomy and flags under-covered areas to steer research.
+- **Hygiene reports** — `ig status` (islands, orphans, degree stats) and
+  `ig near-dup` (pairs below the auto-dedup threshold) drive the
+  consolidate-with-`ig merge` loop.
 - **Confidence + auto-accept band** — similarity edges ≥ 0.95 are accepted
   directly, otherwise pending (HITL); `IDEAGRAPH_AUTO_ACCEPT=1` forces it.
 - **Hybrid retrieval** — dense + BM25 via RRF fusion (`ig search`).
@@ -173,8 +185,9 @@ IG_BRAIN_REMOTE=<your-brain-repo> ig ingest "First idea ..."
 .venv/bin/python -m pytest tests/ -q
 ```
 
-85 tests — similarity, edge suggestion, intent, dedupe, memory hygiene,
-Markdown round-trip, brain FS, retrieval, evals (golden set), onboarding (`ig init`).
+116 tests — similarity, edge suggestion, intent, dedupe, memory hygiene,
+Markdown round-trip, brain FS, retrieval, evals (golden set), onboarding (`ig init`),
+hygiene reports (`ig status`/`ig near-dup`), merge, gaps.
 
 ## Open source / privacy
 
@@ -183,8 +196,8 @@ with your data. The engine contains no brain data.
 
 ## Status
 
-In development. Core features (UI, V2, OSS readiness) are implemented;
-release `v0.2.0` is published.
+In development. Core features (UI, V2, hygiene loop, self-evolving pipeline,
+OSS readiness) are implemented; release `v0.4.0` is published.
 
 ## License
 

@@ -4,24 +4,24 @@ All notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-14
 
 ### Added
-- **`ig status` — Konnektivitäts-/Hygiene-Report.** Reports node/edge counts,
+- **`ig status` — connectivity/hygiene report.** Reports node/edge counts,
   degree stats, orphans (0 edges), islands (≤1), weak (==2), and the status
   distribution (probation backlog). Read-only; `--json` for machine-readable.
-- **`ig near-dup` — Near-Duplikat-Erkennung.** Flags node pairs in the cosine
+- **`ig near-dup` — near-duplicate detection.** Flags node pairs in the cosine
   band [0.78, 0.92) — the near-duplicates below the auto-dedup threshold (0.92)
   that need a manual `ig merge` decision. Read-only; `--lo/--hi/--max/--json`.
   Complements `ig merge` by driving it with a report instead of manual digging.
-- **`ig merge <survivor> <deletee>` — Near-Duplikat-Konsolidierung.** Manually
+- **`ig merge <survivor> <deletee>` — near-duplicate consolidation.** Manually
   consolidates two closely-related nodes into one: all edges of the deletee are
   redirected to the survivor (deduped, self-loops dropped), the text is appended
   for information preservation, and the deletee's node file + vector are removed.
   `INDEX.md` is rebuilt and everything lands in a single commit. This is the
   manual complement to the automatic ingest dedup (cos ≥ 0.92): near-duplicates
   in the ~0.78–0.92 band stay under the auto threshold and need this.
-- **`ig gaps` — Coverage- & Gap-Analyse.** Classifies every node against a
+- **`ig gaps` — coverage & gap analysis.** Classifies every node against a
   topic taxonomy (area → keywords), reports coverage per area with a visual
   bar, and flags under-covered areas as gaps to steer research. Read-only;
   taxonomy is configurable via `--taxonomy tax.json`, threshold via `--min N`,
@@ -34,6 +34,29 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   edge kind, pending edges are dimmed, and non-pending edges show a subtle
   directional particle flow. Automatically falls back to the classic 2D d3
   force graph when WebGL is unavailable.
+- **Self-evolving pipeline tools (`tools/`)** — a three-tier feedback loop that
+  turns the engine into a self-improving system:
+  - `tools/ig_cycle.py` (Tier 1) — the safe mechanical ingest pipeline
+    (collect → marker-scan abort → dry-run on a copy → real ingest → accept
+    edges → report). Never ingests blind; appends one JSON metrics line per run
+    (nodes added, islands, duration, timeouts) to `~/.hermes/cron/ig_metrics.jsonl`.
+  - `tools/ig_adapt.py` (Tier 2) — the adaptive controller: reads the metrics,
+    writes `cycle_strategy.json` with topic weights (thin areas boosted, focus
+    areas weighted 2x), quality-driven findings rules, and an adaptive batch
+    size (timeouts shrink it, healthy runs grow it back).
+  - `tools/ig_evolve.py` (Tier 3) — the self-extension harness: turns
+    brain-researched improvements into engine features via the eval harness
+    (`--propose` registers a RED spec, `--flip` verifies case + full suite
+    green and records the ROADMAP→GOLDEN promotion in a history log).
+- **Confidence floor for auto-edges** — `ingest(..., env={"IG_EDGE_CONF_FLOOR": ...})`
+  (or the env var) drops similarity-edge suggestions below the floor instead of
+  leaving them pending; default `0.0` = no behavior change. Protects autonomous
+  ingest loops from low-confidence edge floods. Proven via the first
+  self-extension cycle (red spec → implemented → flipped to the golden set).
+
+### Changed
+- `BrainEngine.ingest()` accepts an optional `env` dict for per-call
+  environment overrides (used by eval tasks and the confidence floor).
 
 ## [0.3.1] - 2026-08-31
 
