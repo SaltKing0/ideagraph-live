@@ -1,6 +1,9 @@
-"""Embeddings: lokal via sentence-transformers (Default: all-MiniLM-L6-v2).
+"""Embeddings: local via sentence-transformers (default: all-MiniLM-L6-v2).
 
-Für Tests gibt es einen HashEmbedder — deterministisch, ohne Modell-Download.
+HashEmbedder is the deterministic test embedder — no model download.
+Audit #60: embedders expose embed_batch() so cold caches embed N nodes in
+ONE model call instead of N sequential calls (sentence-transformers
+encode() accepts lists natively).
 """
 
 from __future__ import annotations
@@ -25,6 +28,10 @@ class Embedder:
         model = self._ensure_model()
         return model.encode(text).tolist()
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        model = self._ensure_model()
+        return model.encode(texts).tolist()
+
 
 class HashEmbedder:
     """Deterministischer Test-Embedder: bag-of-words-Projektion auf feste Dim.
@@ -47,8 +54,12 @@ class HashEmbedder:
             vec = [v / norm for v in vec]
         return vec
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]
 
-def get_embedder(name: str = "st") -> Embedder | HashEmbedder:
+
+def get_embedder(name: str = "st", model: str | None = None) -> Embedder | HashEmbedder:
+    """Audit #60: model override is honored (default: all-MiniLM-L6-v2)."""
     if name == "hash":
         return HashEmbedder()
-    return Embedder()
+    return Embedder(model or "all-MiniLM-L6-v2")

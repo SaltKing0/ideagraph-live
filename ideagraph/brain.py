@@ -368,24 +368,33 @@ class Brain:
             for nid, vec in sorted(vectors.items()))
         _atomic_write(self.vectors_file, content)
 
-    def vectors_for(self, node_ids: set[str], embed_fn) -> dict[str, list[float]]:
-        """Vektoren aus dem Cache, fehlende werden via embed_fn berechnet und gespeichert.
+    def vectors_for(self, node_ids: set[str], embed_fn, batch_fn=None) -> dict[str, list[float]]:
+        """Vectors from cache; missing ones are computed and stored.
 
-        Audit #4: liest nodes/vectors EINMAL am Anfang statt pro fehlender ID
-        (vorher: read_nodes() pro fehlender Node → O(N) Datei-Lesezyklen,
-        gemessen 4,2 s für 300 kalte Nodes) und schreibt den Cache genau
-        einmal am Ende.
+        Audit #4: reads nodes/vectors ONCE up front instead of per missing ID
+        (previously: read_nodes() per missing node -> O(N) file-read cycles,
+        measured 4.2 s for 300 cold nodes) and writes the cache exactly once
+        at the end. Audit #60: when batch_fn is provided, all missing nodes
+        are embedded in ONE batch call instead of N sequential embed_fn calls
+        (sentence-transformers encodes lists natively).
         """
         nodes = {n.id: n for n in self.read_nodes()}
         cached = self.read_vectors()
-        dirty = False
-        for nid in node_ids:
-            if nid not in cached:
-                node = nodes.get(nid)
-                if node is None:
-                    continue
-                cached[nid] = embed_fn(node.text)
-                dirty = True
+        missing = [nid for nid in node_ids if nid not in cached and nid in nodes]
+        if missing and batch_fn is not None:
+            vecs = batch_fn([nodes[nid].text for nid in missing])
+            for nid, vec in zip(missing, vecs):
+                cached[nid] = vec
+            dirty = True
+        else:
+            dirty = False
+            for nid in node_ids:
+                if nid not in cached:
+                    node = nodes.get(nid)
+                    if node is None:
+                        continue
+                    cached[nid] = embed_fn(node.text)
+                    dirty = True
         if dirty:
             self.write_vectors(cached)
         return {nid: v for nid, v in cached.items() if nid in node_ids}

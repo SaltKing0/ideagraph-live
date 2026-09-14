@@ -52,7 +52,8 @@ def make_engine() -> BrainEngine:
     key = (brain_path, embedder_name)
     eng = _ENGINES.get(key)
     if eng is None:
-        eng = BrainEngine(make_brain(), get_embedder(embedder_name))
+        model = os.environ.get("IDEAGRAPH_EMBEDDER_MODEL")  # audit #60
+        eng = BrainEngine(make_brain(), get_embedder(embedder_name, model))
         _ENGINES[key] = eng
     return eng
 

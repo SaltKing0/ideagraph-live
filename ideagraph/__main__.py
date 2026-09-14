@@ -45,7 +45,9 @@ def make_engine() -> BrainEngine:
         remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
         mode=os.environ.get("IG_BRAIN_MODE", "git"),
     )
-    return BrainEngine(brain, get_embedder(os.environ.get("IDEAGRAPH_EMBEDDER", "st")))
+    _emb = os.environ.get("IDEAGRAPH_EMBEDDER", "st")
+    _model = os.environ.get("IDEAGRAPH_EMBEDDER_MODEL")  # audit #60
+    return BrainEngine(brain, get_embedder(_emb, _model))
 
 
 def _short(text: str, n: int = 70) -> str:

@@ -35,15 +35,28 @@ class NearDup:
     b_text: str
 
 
-def _load_vectors(brain: Brain) -> tuple[list[str], np.ndarray]:
-    """Liest vectors.jsonl; nutzt die dominante Dimension (384 real vs 64 Hash).
+_VEC_CACHE: dict[tuple[str, float, int], tuple[list[str], np.ndarray]] = {}
 
-    Audit #38: float32 rundet Band-Grenzfälle falsch (0.9199999990 float64 →
-    0.9200000167 float32 — das Paar fällt durch BEIDE Mechanismen: kein Dup
-    im Engine, aber auch nicht im Review-Band). Deshalb float64."""
+
+def _load_vectors(brain: Brain) -> tuple[list[str], np.ndarray]:
+    """Reads vectors.jsonl; uses the dominant dimension (384 real vs 64 hash).
+
+    Audit #38: float32 rounds band-boundary cases wrong (0.9199999990 float64
+    -> 0.9200000167 float32 — the pair falls through BOTH mechanisms: no dup
+    in the engine, but not in the review band either). Hence float64.
+    Audit #60: results are cached keyed by (path, mtime, size) — repeated
+    report calls within one process skip the re-parse; any write to the file
+    invalidates the entry automatically."""
     vec_file = brain.path / "vectors.jsonl"
     if not vec_file.exists():
         return [], np.zeros((0, 0), dtype=np.float64)
+    try:
+        st = vec_file.stat()
+        key = (str(vec_file), st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+    if key is not None and key in _VEC_CACHE:
+        return _VEC_CACHE[key]
     vecs: dict[str, list[float]] = {}
     lens: Counter = Counter()
     for l in vec_file.read_text(encoding="utf-8").splitlines():
@@ -61,6 +74,8 @@ def _load_vectors(brain: Brain) -> tuple[list[str], np.ndarray]:
     ids = [n for n, v in vecs.items() if len(v) == dom]
     V = np.array([vecs[n] for n in ids], dtype=np.float64)
     V = V / (np.linalg.norm(V, axis=1, keepdims=True) + 1e-12)
+    if key is not None:
+        _VEC_CACHE[key] = (ids, V)
     return ids, V
 
 

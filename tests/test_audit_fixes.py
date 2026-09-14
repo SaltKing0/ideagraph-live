@@ -705,3 +705,74 @@ def test_flip_gate_marker_required(tmp_path):
     from ideagraph.evals import ROADMAP_CASES
     if not ROADMAP_CASES:
         assert marker.exists(), "leere ROADMAP_CASES braucht den Marker-File"
+
+
+# ---------------------------------------------------------------------------
+# Audit #60 residuals: batch embedding, model override, hygiene vector cache
+# ---------------------------------------------------------------------------
+
+def test_embedder_batch_contract():
+    """embed_batch matches per-text embed() exactly (HashEmbedder determinism)."""
+    from ideagraph.embedder import HashEmbedder
+    e = HashEmbedder()
+    texts = ["alpha beta", "gamma delta", ""]
+    batch = e.embed_batch(texts)
+    assert batch == [e.embed(t) for t in texts]
+
+
+def test_vectors_for_batch_path(tmp_path):
+    """vectors_for with batch_fn embeds all missing nodes in one call."""
+    from ideagraph.brain import Brain, Node
+    calls = []
+
+    class CountingEmbedder:
+        def embed(self, t):
+            calls.append(1)
+            return [0.1, 0.2]
+
+        def embed_batch(self, ts):
+            calls.append(len(ts))
+            return [[0.1, 0.2] for _ in ts]
+
+    b = Brain(str(tmp_path / "brain"), mode="local")
+    b.write_node(Node(id="a", text="alpha"))
+    b.write_node(Node(id="b", text="beta"))
+    b.write_node(Node(id="c", text="gamma"))
+    emb = CountingEmbedder()
+    out = b.vectors_for({"a", "b", "c"}, emb.embed, batch_fn=emb.embed_batch)
+    assert set(out) == {"a", "b", "c"}
+    assert calls == [3]  # exactly ONE batch call, not three singles
+    # second call: fully cached, no embed calls
+    b.vectors_for({"a", "b", "c"}, emb.embed, batch_fn=emb.embed_batch)
+    assert calls == [3]
+
+
+def test_get_embedder_model_override():
+    """#60: get_embedder honors the model parameter."""
+    from ideagraph.embedder import get_embedder, Embedder
+    e = get_embedder("st", "paraphrase-MiniLM-L3-v2")
+    assert isinstance(e, Embedder)
+    assert e.model_name == "paraphrase-MiniLM-L3-v2"
+    e2 = get_embedder("st")
+    assert e2.model_name == "all-MiniLM-L6-v2"
+
+
+def test_hygiene_vector_cache_hit_and_invalidate(tmp_path):
+    """#60: _load_vectors caches by (path, mtime, size); a write invalidates."""
+    import time as _t
+    from ideagraph.brain import Brain, Node
+    from ideagraph import hygiene
+    b = Brain(str(tmp_path / "brain"), mode="local")
+    b.write_node(Node(id="a", text="alpha", ntype="fact"))
+    b.write_node(Node(id="b", text="beta", ntype="fact"))
+    b.write_vectors({"a": [1.0, 0.0], "b": [1.0, 0.0]})
+    ids1, V1 = hygiene._load_vectors(b)
+    ids2, V2 = hygiene._load_vectors(b)
+    assert ids1 == ids2 and V1.shape == V2.shape
+    # same object => cache hit
+    assert V1 is V2
+    # a rewrite (different content, same size is unlikely; force mtime bump)
+    _t.sleep(0.01)
+    b.write_vectors({"a": [0.0, 1.0], "b": [1.0, 0.0]})
+    ids3, V3 = hygiene._load_vectors(b)
+    assert V3 is not V1  # cache invalidated

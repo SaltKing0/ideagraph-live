@@ -63,7 +63,11 @@ class BrainEngine:
     def _find_duplicate(self, vec: list[float], exclude_id: str | None = None) -> Node | None:
         """Nächster Node über dem Dedupe-Threshold — oder None. Nutzt den Vektor-Cache."""
         node_ids = {n.id for n in self.brain.read_nodes() if n.id != exclude_id}
-        vectors = self.brain.vectors_for(node_ids, lambda t: self.embedder.embed(_normalize(t)))
+        vectors = self.brain.vectors_for(
+            node_ids,
+            lambda t: self.embedder.embed(_normalize(t)),
+            batch_fn=lambda ts: self.embedder.embed_batch([_normalize(t) for t in ts]),
+        )
         best: tuple[float, str] | None = None
         for nid, v in vectors.items():
             if len(v) != len(vec):
@@ -180,7 +184,11 @@ class BrainEngine:
             self.brain.write_node(node)
             # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
             others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
-            candidates = self.brain.vectors_for(others, lambda t: self.embedder.embed(_normalize(t)))
+            candidates = self.brain.vectors_for(
+                others,
+                lambda t: self.embedder.embed(_normalize(t)),
+                batch_fn=lambda ts: self.embedder.embed_batch([_normalize(t) for t in ts]),
+            )
             # V2#3 Intent-Edges + Admit-Rule: die neue Node tritt mit ihren Relationen ein.
             # Intent-Edges sind pending=False (automatisch akzeptiert), deshalb müssen
             # sie zusätzlich eine echte thematische Verwandtschaft nachweisen (ST-Kosinus
