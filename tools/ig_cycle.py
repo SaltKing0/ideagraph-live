@@ -11,6 +11,11 @@ orchestrator (agent / cron) around this script. This script is the reproducible,
 safety-checked mechanical core. It NEVER ingests blind: a marker hit or a failed
 dry-run aborts before anything touches the real brain.
 
+Audit #5: the marker scan normalizes Unicode (NFKD + homoglyph folding) and
+matches on word boundaries with span-scoped allowlist handling — a homoglyph
+swap ("nіcht" with a Cyrillic і) or an innocent word elsewhere in the line
+("Stätte" whitelisting a "statt" elsewhere) can no longer bypass the gate.
+
 Usage:
   python3 tools/ig_cycle.py [--glob '/tmp/dogfood_*.txt'] [--brain /home/ubuntu/ideagraph-brain]
                             [--engine /home/ubuntu/ideagraph-live] [--dry-run-only]
@@ -26,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 
 DEFAULT_METRICS = os.path.expanduser("~/.hermes/cron/ig_metrics.jsonl")
 
@@ -36,7 +42,89 @@ MARKERS = [
     "erweitert um", "uebersetzt", "ersetzbar", "verfeinerung",
 ]
 # Allowlisted innocent substrings that CONTAIN a marker (false positives).
+# Span-scoped: only the span of an allowlist match suppresses marker hits
+# INSIDE that span — never marker hits elsewhere in the finding (Audit #5b).
 ALLOW = ["stattet", "stätte", "Nichtabstreitbarkeit", "Unabstreitbarkeit"]
+
+# Homoglyph folding table: lookalike codepoints → ASCII lookalike. Anything
+# that NFKD doesn't already fold gets mapped here before matching.
+_HOMOGLYPHS = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x",
+    "і": "i", "ѕ": "s", "ј": "j", "һ": "h", "ԁ": "d", "ɡ": "g", "ⅼ": "l",
+    "ν": "v", "ν": "v", "о": "o", "ｎ": "n", "ｋ": "k", "ｔ": "t",
+    "０": "0", "１": "1", "３": "3", "５": "5",
+}
+
+
+def _fold(text: str) -> str:
+    """NFKD-normalize, strip combining marks, fold homoglyphs, casefold.
+
+    This is the CANONICAL form used for marker matching: any visually-plausible
+    disguise of a marker word (Cyrillic і, fullwidth chars, combining marks,
+    uppercase) folds to the same canonical string as the honest spelling.
+    """
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.translate(str.maketrans(_HOMOGLYPHS))
+    return text.casefold()
+
+
+def _marker_spans(folded: str, marker: str) -> list[tuple[int, int]]:
+    """Word-boundary spans of `marker` in the folded text.
+
+    Word-boundary on both ends (letter-class check) so substrings inside
+    unrelated words (e.g. a marker inside a longer technical term) don't fire —
+    the allowlist handles the legitimate compound-word exceptions instead.
+    """
+    spans = []
+    if not marker:
+        return spans
+    for m in re.finditer(re.escape(marker), folded):
+        a, b = m.start(), m.end()
+        before = folded[a - 1] if a > 0 else " "
+        after = folded[b] if b < len(folded) else " "
+        if not (before.isalnum() or after.isalnum()):
+            spans.append((a, b))
+    return spans
+
+
+def _allow_spans(folded: str) -> list[tuple[int, int]]:
+    spans = []
+    for a in ALLOW:
+        af = _fold(a)
+        start = 0
+        while True:
+            i = folded.find(af, start)
+            if i < 0:
+                break
+            spans.append((i, i + len(af)))
+            start = i + 1
+    return spans
+
+
+def _covered_by_allow(spans: list[tuple[int, int]], allow: list[tuple[int, int]]) -> bool:
+    for (a, b) in spans:
+        for (la, lb) in allow:
+            if a >= la and b <= lb:
+                break
+        else:
+            return False
+    return True
+
+
+def marker_scan(findings: list[tuple[str, str]]) -> list[str]:
+    bad = []
+    for src, finding in findings:
+        folded = _fold(finding)
+        allow_spans = _allow_spans(folded)
+        for m in MARKERS:
+            spans = _marker_spans(folded, _fold(m))
+            if not spans:
+                continue
+            if _covered_by_allow(spans, allow_spans):
+                continue  # every hit sits inside an allowlisted innocent word
+            bad.append(f"{src}: enthaelt Marker '{m}'")
+    return bad
 
 
 def collect(files: list[str]) -> list[tuple[str, str]]:
@@ -56,16 +144,6 @@ def collect(files: list[str]) -> list[tuple[str, str]]:
             seen.add(finding)
             out.append((src, finding))
     return out
-
-
-def marker_scan(findings: list[tuple[str, str]]) -> list[str]:
-    bad = []
-    for src, finding in findings:
-        low = finding.lower()
-        for m in MARKERS:
-            if m in low and not any(a in low for a in ALLOW):
-                bad.append(f"{src}: enthaelt Marker '{m}'")
-    return bad
 
 
 def run(cmd: list[str], env: dict, cwd: str) -> str:
@@ -88,7 +166,7 @@ def write_metrics(entry: dict, path: str = DEFAULT_METRICS) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--glob", default="/tmp/dogfood_*.txt")
-    ap.add_argument("--brain", default="/home/ubuntu/ideagraph-brain")
+    ap.add_argument("--brain", default=os.environ.get("IG_BRAIN_PATH", "/home/ubuntu/ideagraph-brain"))
     ap.add_argument("--engine", default="/home/ubuntu/ideagraph-live")
     ap.add_argument("--dry-run-only", action="store_true")
     ap.add_argument("--copy", default="/tmp/ig-brain-dryrun")
@@ -119,8 +197,10 @@ def main() -> int:
         write_metrics({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                        "aborted": "marker", "marker_fails": len(bad),
                        "marker_words": sorted({m for _, f in findings for m in MARKERS
-                                               if m in f.lower()
-                                               and not any(a in f.lower() for a in ALLOW)}),
+                                               if _marker_spans(_fold(f), _fold(m))
+                                               and not _covered_by_allow(
+                                                   _marker_spans(_fold(f), _fold(m)),
+                                                   _allow_spans(_fold(f)))}),
                        "findings": len(findings)})
         return 1
     print("marker-scan: CLEAN")
@@ -147,9 +227,11 @@ def main() -> int:
         print("dry-run-only: stopping (brain untouched)")
         return 0
 
-    # Real ingest (git, INTENT_PENDING safety net).
-    git_env = dict(os.environ, IG_BRAIN_MODE="git", IDEAGRAPH_INTENT_PENDING="1",
-                   IDEAGRAPH_EMBEDDER="st")
+    # Real ingest (git, INTENT_PENDING safety net). Audit #6: --brain/IG_BRAIN_PATH
+    # wird an den echten Ingest DURCHGEREICHT — vorher setzte git_env nur den Mode,
+    # der Ingest landete im Env-Default-Pfad während die Metriken args.brain zählten.
+    git_env = dict(os.environ, IG_BRAIN_MODE="git", IG_BRAIN_PATH=os.path.abspath(args.brain),
+                   IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
     real_islands = []
     for src, finding in findings:
         out = run([eng_py, "-m", "ideagraph", "ingest", finding, "--source", src],
