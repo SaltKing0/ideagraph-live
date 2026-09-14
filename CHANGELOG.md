@@ -4,6 +4,36 @@ All notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **BREAKING: canonical English edge kinds** — `ähnlich`→`similar`,
+  `erweitert`→`extends`, `kontradiktorisch`→`contradicts` everywhere (data
+  model, suggester/intent emission, evolution, merge directionality, demo
+  seed, fixtures, UI). Existing brains migrate with
+  `python tools/migrate_kinds.py [--apply]` (dry-run default, atomic write,
+  backup, idempotent).
+- Intent text markers ("erweitert um", "ersetzt", …) stay bilingual — they
+  match user prose, not the data format.
+
+### Fixed
+- Eval oracle matching: exact-match-beats-prefix node resolution, `no_edge`
+  oracle respects `valid_to`/`kind`, flip verification runs pass³ (#27).
+- Server: empty-text ingest returns a clean 400 instead of a 500 (#57).
+
+### Performance
+- Batch embedding (`embed_batch`) — cold vector cache embeds in ONE model
+  call instead of one call per node (#60).
+- Hygiene reports cache parsed vectors (mtime-keyed) (#60).
+
+### Added
+- `IDEAGRAPH_EMBEDDER_MODEL` / `get_embedder(name, model)` — embedder model
+  override (#60).
+- `ig_cycle --metrics` — route metrics output for tests/side-runs (#57).
+- Test coverage: CLI dispatch (15), pipeline tools (8), git mode +
+  crash-safety (5), server error paths (7), browser-level XSS regression
+  via Playwright (2) (#57).
+
 ## [0.4.0] - 2026-09-14
 
 ### Added
