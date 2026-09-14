@@ -9,6 +9,7 @@ Requires the playwright chromium cache (headless).
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import subprocess
 import time
@@ -68,6 +69,7 @@ def server():
     yield base
     proc.terminate()
     proc.wait(timeout=10)
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_hostile_node_text_is_inert(server):
