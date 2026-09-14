@@ -47,6 +47,34 @@ graph grows as visible history.
 - **Human in the loop** — similarity edges ≥ 0.95 auto-accept, the rest go
   pending for review (CLI `ig pending`/`ig accept` or the web UI)
 
+## Connect your agent
+
+The engine is built for agents — the web UI is the human side, the CLI/API is
+the agent side. Any agent that can run shell commands can own a brain:
+
+```bash
+# the agent ingests what it learns (source is logged per node)
+ig ingest "User prefers short answers over long essays" --source agent
+cat research-note.md | ig ingest - --source research   # from stdin
+
+# suggestions pile up in pending; the human reviews when they feel like it
+ig pending                     # what needs a decision
+ig accept <edge_id>            # or in the web UI, with one click
+```
+
+Because the brain is a git repo, the agent and the human can work from
+different machines: point the brain at a private remote (`ig init --remote`)
+and every ingest pulls, commits, and pushes — the graph syncs itself, and the
+git history shows exactly what the agent learned and when.
+
+Prefer HTTP? Run the server and `POST /api/ingest` with
+`{"text": "...", "source": "agent"}` — same dedupe, same pending flow,
+live updates in the web UI over WebSocket.
+
+A realistic loop: the agent ingests findings as it works, `ig gaps` tells it
+which topics are thin, `ig status`/`ig near-dup` flag hygiene work — the
+self-evolving pipeline below automates exactly that cycle.
+
 ## The self-evolving loop (`tools/`)
 
 The engine doesn't just store knowledge — it improves itself, in three tiers:
