@@ -7,6 +7,11 @@ Struktur im Brain-Repo:
 
 Sync-Modell: pull vor jedem Schreiben, commit+push danach.
 Für Tests: mode="local" arbeitet ohne git in einem temp dir.
+
+Crash-Sicherheit (Audit #2): alle ganzer-Datei-Schreibungen gehen über
+_atomic_write() — erst in eine Temp-Datei im selben Verzeichnis, dann
+os.replace(). Ein Crash mitten im Schreiben hinterlässt entweder die alte
+oder die neue Datei, nie eine halbe.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +31,21 @@ def _now_iso() -> str:
 
 
 VALID_STATUS = ("probation", "active", "tombstone")
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Schreibe content atomar: tmp-Datei im selben Verzeichnis + os.replace()."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex[:8])
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 class Node:
@@ -109,6 +130,10 @@ class Edge:
         return result
 
 
+def _jsonl_dumps(obj: dict) -> str:
+    return json.dumps(obj, ensure_ascii=False)
+
+
 class Brain:
     """Das private Repo als Speicher. mode="git" synced, mode="local" nur FS."""
 
@@ -116,6 +141,12 @@ class Brain:
         self.path = Path(path)
         self.remote = remote
         self.mode = mode
+        # Instanz-Lock: serialisiert RMW-Mutationen auch dann, wenn MEHRERE
+        # BrainEngine-Instanzen dasselbe Brain teilen (der Server baut pro
+        # Request eine neue Engine). Multi-Step-Chains (ingest) müssen über
+        # mehrere Aufrufe konsistent sein — dafür kombinieren sich der
+        # Engine-weite BRAIN_LOCK und dieser Instanz-Lock sauber (RLock).
+        self._lock = threading.RLock()
 
     # ---------- Git-Sync ----------
 
@@ -230,7 +261,7 @@ class Brain:
     def write_node(self, node: Node) -> None:
         nodes_dir = self.path / "nodes"
         nodes_dir.mkdir(parents=True, exist_ok=True)
-        self.node_path(node.id).write_text(node.to_markdown(), encoding="utf-8")
+        _atomic_write(self.node_path(node.id), node.to_markdown())
 
     def promote_node(self, node_id: str) -> Node | None:
         """Dual-Buffer (V2#2): probation -> active nach erfolgreicher Dedup-Prüfung."""
@@ -279,18 +310,25 @@ class Brain:
         return out
 
     def write_vectors(self, vectors: dict[str, list[float]]) -> None:
-        self.path.mkdir(parents=True, exist_ok=True)
-        with self.vectors_file.open("w", encoding="utf-8") as f:
-            for nid, vec in sorted(vectors.items()):
-                f.write(json.dumps({"id": nid, "vec": vec}) + "\n")
+        content = "".join(
+            _jsonl_dumps({"id": nid, "vec": vec}) + "\n"
+            for nid, vec in sorted(vectors.items()))
+        _atomic_write(self.vectors_file, content)
 
     def vectors_for(self, node_ids: set[str], embed_fn) -> dict[str, list[float]]:
-        """Vektoren aus dem Cache, fehlende werden via embed_fn berechnet und gespeichert."""
+        """Vektoren aus dem Cache, fehlende werden via embed_fn berechnet und gespeichert.
+
+        Audit #4: liest nodes/vectors EINMAL am Anfang statt pro fehlender ID
+        (vorher: read_nodes() pro fehlender Node → O(N) Datei-Lesezyklen,
+        gemessen 4,2 s für 300 kalte Nodes) und schreibt den Cache genau
+        einmal am Ende.
+        """
+        nodes = {n.id: n for n in self.read_nodes()}
         cached = self.read_vectors()
         dirty = False
         for nid in node_ids:
             if nid not in cached:
-                node = next((n for n in self.read_nodes() if n.id == nid), None)
+                node = nodes.get(nid)
                 if node is None:
                     continue
                 cached[nid] = embed_fn(node.text)
@@ -324,12 +362,10 @@ class Brain:
         return edges
 
     def write_edges(self, edges: list[Edge]) -> None:
-        with self.edges_file.open("w", encoding="utf-8") as f:
-            for e in edges:
-                f.write(json.dumps(e.to_dict(), ensure_ascii=False) + "\n")
+        content = "".join(_jsonl_dumps(e.to_dict()) + "\n" for e in edges)
+        _atomic_write(self.edges_file, content)
 
     def add_edge(self, edge: Edge) -> None:
-        self.path.mkdir(parents=True, exist_ok=True)
         edges = self.read_edges(include_rejected=True)
         edges.append(edge)
         self.write_edges(edges)
@@ -339,38 +375,41 @@ class Brain:
         """Kante invalidieren statt löschen (Zep-Lektion): valid_to wird gesetzt,
         die Kante bleibt mit voller Historie in der Datei. `by_edge_id` hält die
         Provenance, welche Kante/Event diese invalidiert hat (V1#1)."""
-        edges = self.read_edges(include_rejected=True)
-        edge = next((e for e in edges if e.id == edge_id and not e.rejected), None)
-        if edge is None or edge.valid_to is not None:
-            return None
-        edge.valid_to = _now_iso()
-        if by_edge_id:
-            edge.invalidated_by = by_edge_id
-        self.write_edges(edges)
-        return edge
+        with self._lock:
+            edges = self.read_edges(include_rejected=True)
+            edge = next((e for e in edges if e.id == edge_id and not e.rejected), None)
+            if edge is None or edge.valid_to is not None:
+                return None
+            edge.valid_to = _now_iso()
+            if by_edge_id:
+                edge.invalidated_by = by_edge_id
+            self.write_edges(edges)
+            return edge
 
     def resolve_edge(self, edge_id: str, accept: bool) -> Edge | None:
-        edges = self.read_edges(include_rejected=True)
-        edge = next((e for e in edges if e.id == edge_id and e.pending and not e.rejected
-                     and e.valid_to is None), None)
-        if edge is None:
-            return None
-        edge.pending = False
-        edge.rejected = not accept
-        self.write_edges(edges)
-        return edge
+        with self._lock:
+            edges = self.read_edges(include_rejected=True)
+            edge = next((e for e in edges if e.id == edge_id and e.pending and not e.rejected
+                         and e.valid_to is None), None)
+            if edge is None:
+                return None
+            edge.pending = False
+            edge.rejected = not accept
+            self.write_edges(edges)
+            return edge
 
     def restore_edge(self, edge_id: str) -> Edge | None:
         """Return a saved decision to the inbox without reviving invalidated facts."""
-        edges = self.read_edges(include_rejected=True)
-        edge = next((e for e in edges if e.id == edge_id and not e.pending
-                     and e.valid_to is None), None)
-        if edge is None:
-            return None
-        edge.pending = True
-        edge.rejected = False
-        self.write_edges(edges)
-        return edge
+        with self._lock:
+            edges = self.read_edges(include_rejected=True)
+            edge = next((e for e in edges if e.id == edge_id and not e.pending
+                         and e.valid_to is None), None)
+            if edge is None:
+                return None
+            edge.pending = True
+            edge.rejected = False
+            self.write_edges(edges)
+            return edge
 
     # ---------- Graph-State fürs Frontend ----------
 
@@ -383,8 +422,9 @@ class Brain:
     # ---------- Generiertes Inhaltsverzeichnis ----------
 
     def rebuild_index(self) -> None:
-        lines = ["# Index", "", "| Idee | Quelle | Erstellt |", "|---|---|---|"]
-        for n in self.read_nodes():
-            title = n.text.replace("|", "\\|")[:60]
-            lines.append(f"| [{title}](nodes/{n.id}.md) | {n.source} | {n.created} |")
-        (self.path / "INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with self._lock:
+            lines = ["# Index", "", "| Idee | Quelle | Erstellt |", "|---|---|---|"]
+            for n in self.read_nodes():
+                title = n.text.replace("|", "\\|")[:60]
+                lines.append(f"| [{title}](nodes/{n.id}.md) | {n.source} | {n.created} |")
+            _atomic_write(self.path / "INDEX.md", "\n".join(lines) + "\n")
