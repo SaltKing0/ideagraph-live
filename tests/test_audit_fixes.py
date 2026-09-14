@@ -669,3 +669,39 @@ def test_intent_marker_priority_deterministic():
     both = "Die neue API ersetzt die alte API, die alte Behauptung ist falsch"
     old = "Die alte API der Plattform"
     assert detect_intent(both, old) == "supersedes"
+
+
+# ---------- Fix-Welle 3: Robustheit (#31 #52) ----------
+
+def test_ingest_failed_commit_raises_actionable_error(tmp_path, monkeypatch, capsys):
+    """Audit #31: commit_and_push-Fehler → Index-Heal + klare Meldung statt
+    nackter CalledProcessError; der Node bleibt auf Disk (kein Fake-Rollback)."""
+    from ideagraph.brain import Brain
+    from ideagraph.brain_engine import BrainEngine
+    from ideagraph.embedder import HashEmbedder
+    eng = BrainEngine(Brain(str(tmp_path), mode="local"), HashEmbedder())
+    # commit_and_push is a no-op in local mode — force the failure path:
+    calls = {"n": 0}
+    def boom(msg, push=True):
+        calls["n"] += 1
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(eng.brain, "commit_and_push", boom)
+    import pytest
+    with pytest.raises(RuntimeError, match="disk full"):
+        eng.ingest("Alpha node text for commit failure", source="t")
+    # derived index was healed (rebuild_index ran during the handler)
+    assert (tmp_path / "INDEX.md").exists()
+    # node file is on disk (no fake rollback)
+    assert any(n.text.startswith("Alpha node text") for n in eng.brain.read_nodes())
+
+
+def test_flip_gate_marker_required(tmp_path):
+    """Audit #52: leere ROADMAP_CASES ohne Marker-File → der Gate-Test schlägt
+    fehl statt still zu passen. (Der Marker existiert im Repo — hier pruefen wir
+    die Logik direkt.)"""
+    from pathlib import Path
+    repo = Path(__file__).resolve().parent.parent
+    marker = repo / "ROADMAP_CASES_EMPTY"
+    from ideagraph.evals import ROADMAP_CASES
+    if not ROADMAP_CASES:
+        assert marker.exists(), "leere ROADMAP_CASES braucht den Marker-File"

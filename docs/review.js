@@ -37,8 +37,24 @@ function flash(msg, ok = true) {
   setTimeout(() => f.style.opacity = 0, 1800);
 }
 
+// Audit #30: a dead API previously left the page at "0 pending" forever —
+// refresh() now surfaces the failure and offers a retry.
 async function refresh() {
-  const g = await (await fetch("/api/graph")).json();
+  let g;
+  try {
+    const r = await fetch("/api/graph");
+    if (!r.ok) throw new Error(`API ${r.status}`);
+    g = await r.json();
+  } catch (err) {
+    $("count").textContent = "API unreachable";
+    $("cards").innerHTML =
+      `<div style="color:var(--red);font-size:13px;">` +
+      `Failed to load graph (${esc(String(err.message || err))}). ` +
+      `<button class="ok" id="retryBtn">retry</button></div>`;
+    const btn = document.getElementById("retryBtn");
+    if (btn) btn.addEventListener("click", refresh);
+    return;
+  }
   nodes = {};
   g.nodes.forEach(n => nodes[n.id] = n);
   pending = g.edges.filter(e => e.pending);
@@ -49,6 +65,10 @@ async function refresh() {
   $("count").textContent = `${pending.length} pending`;
   renderCards();
 }
+
+// Audit #30: in-flight lock — key-repeat or double-click spammed resolve POSTs
+// (each POST commits; the spam created noisy history and raced the refresh).
+let resolving = false;
 
 // ---------- Inbox ----------
 function renderCards() {
@@ -93,10 +113,22 @@ document.addEventListener("click", ev => {
 });
 
 async function resolve(id, accept) {
-  const r = await fetch(`/api/edge/${encodeURIComponent(id)}/${accept ? "accept" : "reject"}`, { method: "POST" });
-  if (!r.ok) return flash("Failed to resolve", false);
-  flash(accept ? "Edge accepted" : "Edge rejected");
-  await refresh();
+  if (resolving) return;
+  resolving = true;
+  try {
+    const r = await fetch(`/api/edge/${encodeURIComponent(id)}/${accept ? "accept" : "reject"}`, { method: "POST" });
+    if (!r.ok) return flash("Failed to resolve", false);
+    flash(accept ? "Edge accepted" : "Edge rejected");
+    await refresh();
+    // Audit #50: after accepting, focus landed on the next card's first button
+    // (the pickable nodebox) — keyboard users expect the Accept button.
+    const active = document.querySelector(".card.active button.ok");
+    if (active) active.focus();
+  } catch (err) {
+    flash("Network error: " + String(err.message || err), false);
+  } finally {
+    resolving = false;
+  }
 }
 
 // ---------- same_as-Picker ----------
@@ -153,6 +185,11 @@ $("linkbtn").addEventListener("click", link);
 // ---------- Keyboard ----------
 document.addEventListener("keydown", e => {
   const inField = ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
+  // Audit #30: key-repeat fired Enter/Escape once per auto-repeat tick —
+  // one held key spammed resolve POSTs. Auto-repeats are ignored.
+  if (e.repeat && (e.key === "Enter" || e.key === "Escape")) return;
+  // Audit #50: Ctrl/Meta/Alt chords must not trigger shortcuts (Ctrl+S hijacked).
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   switch (e.key) {
     case "s": if (!inField) { e.preventDefault(); $("search").focus(); } break;
     case "x": if (!inField && (pickA || pickB)) { pickA = pickB = null; renderPick(); } break;

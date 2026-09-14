@@ -5,7 +5,11 @@
   const colors = { "aehnlich": "#6ed5a0", "kontradiktorisch": "#ff9393", "erweitert": "#83b9ff", "same_as": "#bc8cff", "supersedes": "#f0883e", "continues": "#58a6ff" };
   const labels = { "aehnlich": "Similar", "kontradiktorisch": "Contradiction", "erweitert": "Extension", "same_as": "Same idea", "supersedes": "Supersedes", "continues": "Continues" };
   const esc = value => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const short = (text, length = 36) => text.length > length ? `${text.slice(0, length - 1)}…` : text;
+  // Audit #50: slice by code points — UTF-16 indexing split surrogate pairs (emoji).
+const short = (text, length = 36) => {
+  const chars = Array.from(text);
+  return chars.length > length ? `${chars.slice(0, length - 1).join("")}…` : text;
+};
   const idOf = value => typeof value === "object" ? value.id : value;
   const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let nodes = [], edges = [], links = [], pending = [];
@@ -309,6 +313,10 @@
         $("#empty-action").textContent = "Try again";
         $("#empty-action").onclick = refresh;
         $("#cards").innerHTML = '<div class="empty-inbox"><p>Suggestions are available once the connection is restored.</p></div>';
+        // Audit #50: the badge kept saying "Connecting …" forever when the very
+        // first load failed (WS had not flipped it yet).
+        $("#connection").dataset.state = "offline";
+        $("#connection").textContent = "Load failed";
       }
       notify("The graph could not be refreshed. Please try again.", true);
     } finally {

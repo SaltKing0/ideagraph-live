@@ -147,11 +147,20 @@ def test_roadmap_cases_registered():
 def test_roadmap_cases_are_not_yet_green(tmp_path):
     """Solange ein Roadmap-Feature nicht implementiert ist, schlägt sein Fall fehl.
 
-    Wenn ROADMAP_CASES leer ist, sind alle konkret geplanten V2-Features umgesetzt
-    (grün im GOLDEN_SET) — dann ist dieser Test trivial erfüllt.
+    Audit #52: sobald ROADMAP_CASES leer ist, war dieser Test still vacuous —
+    das Flip-Gate hätte sich silently deaktiviert. Jetzt erzwingt der Test die
+    bewusste Entscheidung: eine leere ROADMAP_CASES ist nur mit einem
+    Status-Marker-File legitim (der die letzte Flip-Aktion dokumentiert), sonst
+    FAIL mit Anleitung.
     """
+    marker = Path(__file__).resolve().parent.parent / "ROADMAP_CASES_EMPTY"
     if not ROADMAP_CASES:
-        return  # alles implementiert
+        assert marker.exists(), (
+            "ROADMAP_CASES ist leer: entweder eine neue roadmap-* EvalTask in "
+            "ideagraph/evals.py registrieren, oder die bewusste Entscheidung "
+            f"dokumentieren: touch {marker.name} (mit Datum + Grund im File)."
+        )
+        return  # dokumentiert leer
     counter = [0]
 
     def factory():

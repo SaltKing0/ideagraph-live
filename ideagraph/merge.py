@@ -184,9 +184,21 @@ def merge_nodes(
     brain.rebuild_index()
 
     if commit:
-        brain.commit_and_push(
-            f"merge: {deletee_id} consolidated into {survivor_id} "
-            f"({redirected} umgeleitet, {invalidated} invalidiert, {removed} entfernt)")
+        try:
+            brain.commit_and_push(
+                f"merge: {deletee_id} consolidated into {survivor_id} "
+                f"({redirected} redirected, {invalidated} invalidated, {removed} removed)")
+        except Exception:
+            # Audit #31: the merge mutations are on disk but uncommitted —
+            # heal the derived index and raise an actionable error.
+            try:
+                brain.rebuild_index()
+            except Exception:
+                pass
+            raise RuntimeError(
+                "merge applied but commit/push failed — changes are on disk "
+                "UNCOMMITTED. Recovery: `git -C <brain> add -A && git commit` "
+                "or retry the merge (it is idempotent against the merged state).") from None
 
     return MergeResult(
         survivor=survivor_id,

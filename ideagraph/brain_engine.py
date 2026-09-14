@@ -7,6 +7,7 @@ als sichtbare Commit-Historie.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 
 from .brain import Brain, Node, Edge
@@ -166,8 +167,14 @@ class BrainEngine:
                 if dup is not None:
                     self.brain.merge_node(dup, source=source)
                     self.brain.rebuild_index()
-                    self.brain.commit_and_push(
-                        f"ingest dup of {dup.id[:8]}: {_normalize(text)[:50]}…")
+                    # Audit #31: a failing commit must not look like data loss —
+                    # catch, heal the derived index, re-raise with guidance.
+                    try:
+                        self.brain.commit_and_push(
+                            f"ingest dup of {dup.id[:8]}: {_normalize(text)[:50]}…")
+                    except Exception:
+                        self._heal_after_failed_commit()
+                        raise
                     return dup, [], True
             node = Node(text=text, source=source, tags=tags, ntype=ntype)
             self.brain.write_node(node)
@@ -265,9 +272,28 @@ class BrainEngine:
                             evolved += 1
             self.brain.rebuild_index()
             suffix = f", {evolved} nodes evolved" if evolved else ""
-            self.brain.commit_and_push(
-                f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} suggestions{suffix})")
+            try:
+                self.brain.commit_and_push(
+                    f"ingest: {text[:50]}{'…' if len(text) > 50 else ''} (+{len(new_edges)} suggestions{suffix})")
+            except Exception:
+                # Audit #31: the mutation landed on disk but the commit/push
+                # failed. Heal the derived index and raise an actionable error
+                # instead of a bare CalledProcessError (no fake rollback — the
+                # next successful ingest commits whatever landed).
+                self._heal_after_failed_commit()
+                raise
             return node, new_edges, False
+
+    def _heal_after_failed_commit(self) -> None:
+        """Audit #31: after a failed commit, restore the derived state to a
+        consistent, rebuildable condition and tell the operator what happened."""
+        try:
+            self.brain.rebuild_index()
+        except Exception:
+            pass  # index rebuild is best-effort; nodes/edges/vectors are the truth
+        print("WARNING: brain mutated but commit/push failed — changes are on disk "
+              "UNCOMMITTED. Recovery: `git -C <brain> add -A && git commit`, or "
+              "retry the ingest (its commit will include these changes).", file=sys.stderr)
 
     @staticmethod
     def _now_short() -> str:

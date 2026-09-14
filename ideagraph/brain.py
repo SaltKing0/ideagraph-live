@@ -267,8 +267,15 @@ class Brain:
             ["git", "-C", str(self.path), "remote", "get-url", "origin"],
             capture_output=True).returncode == 0
         if has_origin:
-            subprocess.run(["git", "-C", str(self.path), "push", "--quiet",
-                            "origin", "main"], check=True)
+            # Audit #31: a failed push must not look like a failed ingest — the
+            # commit is already local and consistent; the next pull --rebase
+            # --autostash replays cleanly. Raise a precise, actionable error.
+            r = subprocess.run(["git", "-C", str(self.path), "push", "--quiet",
+                                "origin", "main"], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(
+                    f"git push failed (commit IS local, nothing lost): "
+                    f"{(r.stderr or r.stdout).strip()[-300:]}")
 
     # ---------- Nodes ----------
 
