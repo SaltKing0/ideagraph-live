@@ -26,12 +26,12 @@
 
   // Keep the rest of the page understandable if the graph library cannot load.
   if (!window.d3) {
-    $("#graph-empty h2").textContent = "Der Graph konnte nicht geladen werden";
+    $("#graph-empty h2").textContent = "The graph could not be loaded";
     $("#graph-empty p").textContent = "Check your connection and reload the page.";
     $("#stats").textContent = "Graph unavailable";
-    $("#connection").textContent = "Laden fehlgeschlagen";
+    $("#connection").textContent = "Load failed";
     $("#empty-action").hidden = false;
-    $("#empty-action").textContent = "Erneut laden";
+    $("#empty-action").textContent = "Reload";
     $("#empty-action").onclick = () => location.reload();
     $("#ingest-button").disabled = true;
     $("#bar").addEventListener("submit", event => event.preventDefault());
@@ -104,18 +104,18 @@
   function highlight() {
     const selected = edges.find(edge => edge.id === selectedEdge);
     const ids = new Set(selected ? [selected.source, selected.target] : selectedNode ? [selectedNode] : []);
-    const searching = $("#search").value.trim().toLocaleLowerCase("de");
+    const searching = $("#search").value.trim().toLowerCase();
     if (graph3D) {
-      graph3D.nodeColor(node => (ids.size ? !ids.has(node.id) : searching && !node.text.toLocaleLowerCase("de").includes(searching)) ? "#303b49" : ids.has(node.id) ? "#83b9ff" : "#eaf0f7");
+      graph3D.nodeColor(node => (ids.size ? !ids.has(node.id) : searching && !node.text.toLowerCase().includes(searching)) ? "#303b49" : ids.has(node.id) ? "#83b9ff" : "#eaf0f7");
       for (const [id, sprite] of sprites) {
-        sprite.material.opacity = (ids.size ? !ids.has(id) : searching && !sprite.text.toLocaleLowerCase("de").includes(searching)) ? .2 : 1;
+        sprite.material.opacity = (ids.size ? !ids.has(id) : searching && !sprite.text.toLowerCase().includes(searching)) ? .2 : 1;
       }
       graph3D.linkColor(edge => ids.size && !(selected ? edge.id === selectedEdge : ids.has(idOf(edge.source)) || ids.has(idOf(edge.target))) ? "#202a36" : colors[edge.kind] || "#a0afc1");
       graph3D.linkWidth(edge => edge.id === selectedEdge ? 2.5 : edge.pending ? .4 : 1);
     }
     nodeLayer.selectAll(".node")
       .classed("selected", node => ids.has(node.id))
-      .classed("dimmed", node => ids.size ? !ids.has(node.id) : searching ? !node.text.toLocaleLowerCase("de").includes(searching) : false);
+      .classed("dimmed", node => ids.size ? !ids.has(node.id) : searching ? !node.text.toLowerCase().includes(searching) : false);
     linkLayer.selectAll("line")
       .attr("stroke-width", edge => edge.id === selectedEdge ? 3 : 1.5)
       .attr("opacity", edge => ids.size ? (selected ? edge.id === selectedEdge : ids.has(idOf(edge.source)) || ids.has(idOf(edge.target))) ? 1 : .08 : edge.pending ? .5 : .75);
@@ -143,7 +143,9 @@
     svg.attr("viewBox", `0 0 ${width} ${height}`);
     simulation.force("center").x(width / 2).y(height / 2);
     simulation.alpha(.2).restart();
-    if (loaded) {
+    // Audit #45: auto-fit only until the user pans/zooms themselves — otherwise
+    // every resize oscillation (mobile URL bar) clobbers the user's view.
+    if (loaded && initialFit) {
       const edge = edges.find(item => item.id === selectedEdge);
       const targets = edge ? nodes.filter(node => node.id === edge.source || node.id === edge.target) : selectedNode ? nodes.filter(node => node.id === selectedNode) : nodes;
       fitNodes(targets);
@@ -256,7 +258,16 @@
     return response.json();
   }
 
+  // Audit #46: one action triggered two full /api/graph fetches (explicit +
+  // the actor's own WS broadcast). A 100ms trailing debounce collapses both into one.
+  let refreshTimer = null;
+  function scheduleRefresh(delay = 100) {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(refresh, delay);
+  }
+
   async function refresh() {
+    clearTimeout(refreshTimer);
     const version = ++refreshVersion;
     try {
       const graph = await request("/api/graph");
@@ -295,11 +306,11 @@
         $("#graph-empty h2").textContent = "Your ideas could not be loaded";
         $("#graph-empty p").textContent = "Check the connection and try again.";
         $("#empty-action").hidden = false;
-        $("#empty-action").textContent = "Erneut versuchen";
+        $("#empty-action").textContent = "Try again";
         $("#empty-action").onclick = refresh;
         $("#cards").innerHTML = '<div class="empty-inbox"><p>Suggestions are available once the connection is restored.</p></div>';
       }
-      notify("Der Graph konnte nicht aktualisiert werden. Bitte versuche es erneut.", true);
+      notify("The graph could not be refreshed. Please try again.", true);
     } finally {
       $("#cards").setAttribute("aria-busy", "false");
     }
@@ -391,7 +402,7 @@
     if (!text || saving) return;
     saving = true;
     $("#ingest-button").disabled = true;
-    $("#ingest-button").textContent = "Wird gespeichert …";
+    $("#ingest-button").textContent = "Saving …";
     try {
       const result = await request("/api/ingest", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ text, source:$("#source").value }) });
       if (input.value.trim() === text) input.value = "";
@@ -418,10 +429,10 @@
     const date = new Date(node.created);
     $("#detail-meta").textContent = [node.source, Number.isNaN(date.getTime()) ? null : date.toLocaleDateString("en-US"), ...(node.tags || []).map(tag => `#${tag}`)].filter(Boolean).join(" · ");
     const relations = edges.filter(edge => edge.source === id || edge.target === id);
-    $("#detail-relations").innerHTML = `<h3>Verbindungen (${relations.length})</h3>${relations.map(edge => {
+    $("#detail-relations").innerHTML = `<h3>Connections (${relations.length})</h3>${relations.map(edge => {
       const target = edge.source === id ? edge.target : edge.source;
       return `<button class="relation quiet" data-node="${esc(target)}"><span>${esc(labels[edge.kind] || edge.kind)}${edge.pending ? " · Suggestion" : " · Accepted"}</span>${esc(short(textOf(target), 160))}</button>`;
-    }).join("") || '<p style="color:var(--dim)">Noch keine Verbindungen.</p>'}`;
+    }).join("") || '<p style="color:var(--dim)">No connections yet.</p>'}`;
   }
   function showDetail(id) {
     if (!nodeById(id)) return;
@@ -444,11 +455,11 @@
 
   function closeSearch() { $("#search-results").hidden = true; $("#search").setAttribute("aria-expanded", "false"); }
   function renderSearch() {
-    const query = $("#search").value.trim().toLocaleLowerCase("de");
+    const query = $("#search").value.trim().toLowerCase();
     highlight();
     if (!query) { closeSearch(); return; }
-    const matches = nodes.filter(node => node.text.toLocaleLowerCase("de").includes(query)).slice(0, 12);
-    $("#search-results").innerHTML = matches.map(node => `<li><button data-node="${esc(node.id)}">${esc(short(node.text, 100))}</button></li>`).join("") || '<li class="no-results">Keine passende Idee gefunden.</li>';
+    const matches = nodes.filter(node => node.text.toLowerCase().includes(query)).slice(0, 12);
+    $("#search-results").innerHTML = matches.map(node => `<li><button data-node="${esc(node.id)}">${esc(short(node.text, 100))}</button></li>`).join("") || '<li class="no-results">No matching idea found.</li>';
     $("#search-results").hidden = false;
     $("#search").setAttribute("aria-expanded", "true");
   }
@@ -502,18 +513,53 @@
     }
   });
 
+  // Audit #44: a half-open connection (laptop sleep, NAT timeout) kept showing
+  // "Live connected" while updates silently stopped. Ping every 25 s; if no
+  // reply arrives, the connection is considered dead and the reconnect (now
+  // exponential backoff + jitter instead of a fixed 5 s) takes over.
+  let attempts = 0, heartbeatTimer = null, awaitingPong = false;
+  function stopHeartbeat() { clearInterval(heartbeatTimer); }
+  // Stale check: send() on a half-open connection does not throw immediately —
+  // the server never answers, but the state machine stays OPEN. If 10 s after
+  // the ping neither a message nor a close arrived, close hard; onclose
+  // handles the backoff reconnect.
+  function startHeartbeatWithStaleCheck() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      awaitingPong = true;
+      try { socket.send("ping"); } catch { socket.close(); return; }
+      setTimeout(() => {
+        if (awaitingPong && socket?.readyState === WebSocket.OPEN) socket.close(); // stale → onclose reconnects
+      }, 10000);
+    }, 25000);
+  }
+
   function connect() {
     clearTimeout(reconnectTimer);
+    stopHeartbeat();
     socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-    socket.onopen = () => { $("#connection").dataset.state = "live"; $("#connection").textContent = "Live connected"; refresh(); };
+    socket.onopen = () => {
+      attempts = 0;
+      $("#connection").dataset.state = "live";
+      $("#connection").textContent = "Live connected";
+      startHeartbeatWithStaleCheck();
+      refresh();
+    };
     socket.onmessage = event => {
-      try { if (["ingested", "edge_resolved", "edge_restored", "edge_linked"].includes(JSON.parse(event.data).type)) refresh(); } catch { /* Ignore unknown live messages. */ }
+      awaitingPong = false;
+      try { if (["ingested", "edge_resolved", "edge_restored", "edge_linked"].includes(JSON.parse(event.data).type)) scheduleRefresh(); } catch { /* Ignore unknown live messages. */ }
     };
     socket.onerror = () => socket.close();
     socket.onclose = () => {
+      stopHeartbeat();
       $("#connection").dataset.state = "offline";
-      $("#connection").textContent = "Live-Verbindung unterbrochen";
-      reconnectTimer = setTimeout(connect, 5000);
+      $("#connection").textContent = "Live connection lost";
+      // Exponential backoff with jitter: 1s, 2s, 4s … max 60s — a downed server
+      // is no longer hammered on a fixed 5s cadence.
+      const delay = Math.min(60000, 1000 * 2 ** attempts) * (0.75 + Math.random() * 0.5);
+      attempts += 1;
+      reconnectTimer = setTimeout(connect, delay);
     };
   }
   refresh(); connect();

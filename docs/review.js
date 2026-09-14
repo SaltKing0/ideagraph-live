@@ -1,4 +1,4 @@
-// IdeaGraph Review — Inbox-Arbeit + same_as-Verlinken, keyboard-first.
+// IdeaGraph Review — inbox work + same_as linking, keyboard-first.
 //
 // Security (Audit #11/#12/#14): alle dynamischen Werte (ids, kinds, Text)
 // werden strikt escaped; Interaktion läuft über data-Attribute +
@@ -7,8 +7,16 @@
 // kann keinen Code mehr in die Seite injizieren.
 const $ = id => document.getElementById(id);
 
-let nodes = {}, pending = [], sel = 0;
+let nodes = {}, pending = [], selectedId = null;
 let pickA = null, pickB = null;
+
+// Audit #47: die Selection war positional (Index in pending) und sprang nach
+// jedem Refresh auf eine andere Edge. Jetzt wird die Edge-ID gemerkt; der
+// Index wird nur noch als Fallback beim ersten Rendern hergeleitet.
+function currentIndex() {
+  const i = pending.findIndex(e => e.id === selectedId);
+  return i >= 0 ? i : 0;
+}
 
 function short(id, n = 70) {
   const t = (nodes[id] || { text: id }).text.replace(/\n/g, " ");
@@ -34,7 +42,10 @@ async function refresh() {
   nodes = {};
   g.nodes.forEach(n => nodes[n.id] = n);
   pending = g.edges.filter(e => e.pending);
-  if (sel >= pending.length) sel = Math.max(0, pending.length - 1);
+  if (selectedId == null && pending.length) selectedId = pending[0].id;
+  if (selectedId != null && !pending.some(e => e.id === selectedId)) {
+    selectedId = pending.length ? pending[0].id : null;
+  }
   $("count").textContent = `${pending.length} pending`;
   renderCards();
 }
@@ -46,6 +57,7 @@ function renderCards() {
     box.innerHTML = `<div style="color:var(--dim);font-size:13px;">No open suggestions. 🎉</div>`;
     return;
   }
+  const sel = currentIndex();
   box.innerHTML = pending.map((e, i) => `
     <div class="card ${i === sel ? "active" : ""}" data-i="${i}">
       <span class="kind" data-kind="${esc(e.kind)}">${esc(e.kind)}</span>
@@ -89,10 +101,10 @@ async function resolve(id, accept) {
 
 // ---------- same_as-Picker ----------
 function pick(id) {
-  if (pickA === id || pickB === id) return; // gleiche Node nicht mit sich selbst
+  if (pickA === id || pickB === id) return; // never link a node to itself
   if (!pickA) pickA = id;
   else if (!pickB) pickB = id;
-  else { pickA = id; pickB = null; } // dritter Klick startet neu
+  else { pickA = id; pickB = null; } // third click restarts the pick
   renderPick();
 }
 
@@ -122,7 +134,7 @@ async function link() {
   await refresh();
 }
 
-// Suche
+// Search
 $("search").addEventListener("input", () => {
   const q = $("search").value.trim().toLowerCase();
   const hits = $("hits");
@@ -144,16 +156,16 @@ document.addEventListener("keydown", e => {
   switch (e.key) {
     case "s": if (!inField) { e.preventDefault(); $("search").focus(); } break;
     case "x": if (!inField && (pickA || pickB)) { pickA = pickB = null; renderPick(); } break;
-    case "j": if (!inField && pending.length) { sel = Math.min(sel + 1, pending.length - 1); renderCards(); } break;
-    case "k": if (!inField && pending.length) { sel = Math.max(sel - 1, 0); renderCards(); } break;
+    case "j": if (!inField && pending.length) { selectedId = pending[Math.min(currentIndex() + 1, pending.length - 1)].id; renderCards(); } break;
+    case "k": if (!inField && pending.length) { selectedId = pending[Math.max(currentIndex() - 1, 0)].id; renderCards(); } break;
     case "Enter":
       if (inField) break;
       if (pickA && pickB) link();
-      else if (pending[sel]) resolve(pending[sel].id, true);
+      else if (pending[currentIndex()]) resolve(pending[currentIndex()].id, true);
       break;
     case "Escape":
       if (inField) { document.activeElement.blur(); }
-      else if (pending[sel]) resolve(pending[sel].id, false);
+      else if (pending[currentIndex()]) resolve(pending[currentIndex()].id, false);
       break;
   }
 });
