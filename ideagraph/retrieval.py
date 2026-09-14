@@ -83,13 +83,22 @@ def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30) ->
     top-`k`. Ohne Reranker (Default) bleibt das Verhalten identisch.
     """
     nodes = engine.brain.read_nodes()
+    # Audit #7: Tombstones sind "vergessen" — sie dürfen nicht als Suchantworten
+    # zurückkommen (consolidate/_find_duplicate excluden sie bereits).
+    nodes = [n for n in nodes if n.status != "tombstone"]
     if not nodes:
         return []
     node_ids = [n.id for n in nodes]
     qvec = engine.embedder.embed(query)
 
     vecs = engine.brain.vectors_for(set(node_ids), lambda t: engine.embedder.embed(t))
-    dense = [(nid, cosine(qvec, vecs.get(nid, []))) for nid in node_ids]
+    # Audit #8 (Folgefix): Vektoren mit fremder Dimension sind nicht vergleichbar
+    # mit der Query (anderer Embedder im selben Brain, z. B. Demo-Seed mit
+    # vorberechneten ST-Vektoren + HashEmbedder-Engine). Statt still zu truncieren
+    # (alter cosine-Bug) werden sie übersprungen — die Dense-Stufe degradiert,
+    # BM25 bleibt voll wirksam.
+    dense = [(nid, cosine(qvec, vecs[nid])) for nid in node_ids
+             if nid in vecs and len(vecs[nid]) == len(qvec)]
 
     bm = BM25([n.text for n in nodes])
     bm_scores = bm.scores(tokenize(query))

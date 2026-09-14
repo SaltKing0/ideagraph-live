@@ -65,6 +65,8 @@ class BrainEngine:
         vectors = self.brain.vectors_for(node_ids, lambda t: self.embedder.embed(_normalize(t)))
         best: tuple[float, str] | None = None
         for nid, v in vectors.items():
+            if len(v) != len(vec):
+                continue  # Audit #8: fremde Dimension = nicht vergleichbar, überspringen
             sim = cosine(vec, v)
             if sim >= self.dedupe_threshold and (best is None or sim > best[0]):
                 best = (sim, nid)

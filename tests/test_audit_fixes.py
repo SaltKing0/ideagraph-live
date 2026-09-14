@@ -174,3 +174,53 @@ def test_vectors_for_persists_new_vectors(tmp_path):
     brain.vectors_for({n.id}, lambda t: [0.5] * 4)
     cached = brain.read_vectors()
     assert cached[n.id] == [0.5] * 4
+
+
+# ---------- Audit #7/#8: Retrieval-Korrektheit ----------
+
+def test_retrieve_excludes_tombstones(tmp_path):
+    """Audit #7: getombstonete Nodes kommen nicht als Suchantworten zurück."""
+    from ideagraph.retrieval import retrieve
+    engine = make_engine(tmp_path)
+    engine.ingest("Transformer Architektur Grundlagen", source="test")
+    engine.ingest("KV-Cache Optimierung Details", source="test")
+    target = engine.brain.read_nodes()[0]
+    engine.brain.tombstone_node(target.id)
+    hits = retrieve(engine, "Transformer Architektur")
+    hit_ids = {h[0] for h in hits}
+    assert target.id not in hit_ids, "tombstoned node returned as search answer"
+
+
+def test_cosine_rejects_dimension_mismatch():
+    """Audit #8: cosine darf bei fremden Dimensionen nicht still truncieren."""
+    from ideagraph.similarity import cosine
+    import pytest
+    with pytest.raises(ValueError):
+        cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0, 4.0])
+
+
+def test_find_duplicate_skips_foreign_dimensions(tmp_path):
+    """Mixed-dim Brain: Dedupe vergleicht nur gleich-dimensionale Vektoren."""
+    engine = make_engine(tmp_path)
+    engine.ingest("Einzigartiger Text über Flussdelfine", source="test")
+    # Verfälsche einen Cache-Eintrag auf fremde Dimension
+    vecs = engine.brain.read_vectors()
+    nid = next(iter(vecs))
+    vecs[nid] = [0.0] * 7  # HashEmbedder nutzt 64
+    engine.brain.write_vectors(vecs)
+    # Kein Crash, kein falscher Match:
+    dup = engine._find_duplicate([0.5] * 64)
+    assert dup is None or dup.id != nid
+
+
+def test_retrieve_degrades_gracefully_on_mixed_dims(tmp_path):
+    """Demo-artiges Brain (fremde Vektor-Dimension): BM25-Stufe bleibt wirksam."""
+    from ideagraph.retrieval import retrieve
+    engine = make_engine(tmp_path)
+    engine.ingest("RAG grounding mit Retrieval-Augmented Generation", source="test")
+    vecs = engine.brain.read_vectors()
+    for k in vecs:
+        vecs[k] = [0.1] * 384  # fremde Dimension
+    engine.brain.write_vectors(vecs)
+    hits = retrieve(engine, "RAG grounding")
+    assert hits, "BM25 should still return hits when dense stage degrades"
