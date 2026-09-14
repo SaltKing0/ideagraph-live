@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -35,8 +36,25 @@ def make_brain() -> Brain:
     )
 
 
+# Audit #16: pro Request eine frische Engine zu bauen re-instantiiert das
+# sentence-transformers-Modell pro Request (Sekunden CPU, Memory-Churn).
+# Ein prozessweiter Cache teilt das Modell + den Vektor-Cache; die
+# Schreibkonsistenz liefert der Brain-Instanz-Lock (alle RMW-Mutationen
+# laufen unter brain._lock bzw. BRAIN_LOCK). Der Cache ist an
+# (Brain-Pfad, Embedder) gekoppelt: ein geändertes Env (Tests, Multi-Brain-
+# Setups) bekommt korrekt eine frische Engine statt der fremden Instanz.
+_ENGINES: dict[tuple[str, str], BrainEngine] = {}
+
+
 def make_engine() -> BrainEngine:
-    return BrainEngine(make_brain(), get_embedder(os.environ.get("IDEAGRAPH_EMBEDDER", "st")))
+    brain_path = str(Path(os.environ.get("IG_BRAIN_PATH", str(Path.home() / "ideagraph-brain"))).expanduser())
+    embedder_name = os.environ.get("IDEAGRAPH_EMBEDDER", "st")
+    key = (brain_path, embedder_name)
+    eng = _ENGINES.get(key)
+    if eng is None:
+        eng = BrainEngine(make_brain(), get_embedder(embedder_name))
+        _ENGINES[key] = eng
+    return eng
 
 
 class ConnectionManager:
@@ -99,9 +117,13 @@ class IngestBody(BaseModel):
 
 @app.post("/api/ingest")
 async def ingest(body: IngestBody):
+    # Audit #16: git pull/push + Embedding-Inferenz sind Blocking-I/O — sie
+    # laufen im Threadpool, nicht auf dem Event-Loop (sonst stallt ein
+    # langsamer Ingest alle Requests und WS-Broadcasts).
     engine = make_engine()
-    node, edges, is_dup = engine.ingest(body.text, body.source, body.tags,
-                                        allow_duplicates=body.allow_duplicates)
+    node, edges, is_dup = await run_in_threadpool(
+        engine.ingest, body.text, body.source, body.tags,
+        body.allow_duplicates)
     await manager.broadcast({
         "type": "ingested",
         "node": node.to_dict(),
@@ -114,7 +136,7 @@ async def ingest(body: IngestBody):
 
 @app.post("/api/edge/{edge_id}/accept")
 async def accept_edge(edge_id: str):
-    edge = make_engine().resolve(edge_id, accept=True)
+    edge = await run_in_threadpool(make_engine().resolve, edge_id, True)
     if edge is None:
         return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": True})
@@ -123,7 +145,7 @@ async def accept_edge(edge_id: str):
 
 @app.post("/api/edge/{edge_id}/reject")
 async def reject_edge(edge_id: str):
-    edge = make_engine().resolve(edge_id, accept=False)
+    edge = await run_in_threadpool(make_engine().resolve, edge_id, False)
     if edge is None:
         return JSONResponse({"error": "edge nicht gefunden oder nicht pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": False})
@@ -138,10 +160,14 @@ class LinkBody(BaseModel):
 
 @app.post("/api/edge")
 async def link_edge(body: LinkBody):
-    try:
-        edge = make_engine().link(body.source, body.target, body.kind)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    def _link():
+        try:
+            return make_engine().link(body.source, body.target, body.kind), None
+        except ValueError as exc:
+            return None, str(exc)
+    edge, err = await run_in_threadpool(_link)
+    if err is not None or edge is None:
+        return JSONResponse({"error": err or "link failed"}, status_code=400)
     await manager.broadcast({"type": "edge_linked", "edge": edge.to_dict()})
     return edge.to_dict()
 
@@ -151,14 +177,23 @@ async def ws_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:
         while True:
+            # Audit #29: nur WebSocketDisconnect zu fangen ließ Zombies zurück
+            # (Binary-Frame → KeyError, TCP-Reset → RuntimeError) — die Socket
+            # blieb forever in manager.active und wurde nie geschlossen.
             await ws.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(ws)
+    except Exception:
+        manager.disconnect(ws)
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 
 @app.post("/api/edge/{edge_id}/undo")
 async def undo_edge(edge_id: str):
-    edge = make_engine().undo(edge_id)
+    edge = await run_in_threadpool(make_engine().undo, edge_id)
     if edge is None:
         return JSONResponse({"error": "edge nicht gefunden oder bereits pending"}, status_code=409)
     await manager.broadcast({"type": "edge_restored", "edge": edge.to_dict()})

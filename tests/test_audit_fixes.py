@@ -406,3 +406,77 @@ def test_near_dup_max_zero_means_zero(tmp_path_factory):
     brain.write_vectors({a.id: [1.0] * 4, b.id: [0.99] * 4})
     pairs = near_dup_pairs(brain, max_pairs=0)
     assert pairs == []
+
+
+# ---------- Fix-Welle 2: Server (#16 #20 #29) ----------
+
+def test_server_engine_cache_follows_env(tmp_path, monkeypatch):
+    """Audit #16: Engine-Cache ist an (IG_BRAIN_PATH, IDEAGRAPH_EMBEDDER) gekoppelt —
+    Env-Wechsel liefern die passende Engine, gleiche Env-Werte die gecachte Instanz."""
+    from ideagraph import server
+    monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
+    monkeypatch.setenv("IG_BRAIN_MODE", "local")
+    monkeypatch.setenv("IDEAGRAPH_EMBEDDER", "hash")
+    e1 = server.make_engine()
+    assert server.make_engine() is e1  # Cache-Treffer
+    monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "b"))
+    e2 = server.make_engine()
+    assert e2 is not e1  # neues Brain → neue Engine
+    assert e2.brain.path == tmp_path / "b"
+    monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
+    assert server.make_engine() is e1  # zurück → wieder die erste
+
+def test_pull_without_origin_is_noop(tmp_path):
+    """Audit #20: lokales Repo ohne origin — pull darf nicht crashen."""
+    brain = make_brain(tmp_path)
+    brain.pull()  # kein Remote, kein Fehler
+
+def test_pull_rebase_autostash_survives_local_changes(tmp_path):
+    """Audit #20: lokales Repo MIT origin (bare remote): autostash-pull übersteht
+    uncommittete lokale Änderungen statt hart zu failen."""
+    import subprocess as sp
+    origin = tmp_path / "origin.git"
+    sp.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+    brain = make_brain(tmp_path / "clone")
+    brain.remote = str(origin)
+    brain.clone_if_missing()
+    (brain.path / "nodes").mkdir(exist_ok=True)
+    (brain.path / "uncommitted.md").write_text("dirty")
+    brain.pull()  # dirty tree + autostash → kein Fehler
+
+def test_clone_refuses_nonempty_nonrepo_dir(tmp_path):
+    """Audit #20: halbes/nicht-leeres Verzeichnis ohne .git → klare Fehlermeldung
+    statt Clone-Crash oder stiller Überschreibung."""
+    d = tmp_path / "brain"
+    d.mkdir()
+    (d / "loose.txt").write_text("x")
+    brain = Brain(str(d), mode="git")
+    brain.remote = str(tmp_path / "origin.git")  # existiert nicht — egal, wir kommen nie zum Clone
+    with pytest.raises(RuntimeError, match="kein Brain-Repo"):
+        brain.clone_if_missing()
+
+def test_conf_floor_non_numeric_clear_error(tmp_path):
+    """Audit #20: IG_EDGE_CONF_FLOOR=abc → verständlicher ValueError, kein nackter float()-Crash."""
+    engine = make_engine(tmp_path)
+    n1 = engine.brain.write_node(Node(text="Alpha Grundlage"))
+    n2 = engine.brain.write_node(Node(text="Alpha Grundlage anders formuliert"))
+    with pytest.raises(ValueError, match="IG_EDGE_CONF_FLOOR"):
+        engine.ingest("Alpha Grundlage nochmal", env={"IG_EDGE_CONF_FLOOR": "abc"})
+
+def test_ws_zombie_binary_frame_disconnects(tmp_path):
+    """Audit #29: ein Binary-Frame (KeyError-Pfad) wirft den Client aus der
+    Connection-Liste statt einen Zombie zu hinterlassen."""
+    from fastapi.testclient import TestClient
+    from ideagraph import server as srv
+    brain = make_brain(tmp_path)
+    with TestClient(srv.app) as client:
+        with client.websocket_connect("/ws") as ws:
+            # Binary-Frame senden → alter Code: KeyError → Zombie blieb in active
+            with client.websocket_connect("/ws") as ws2:
+                ws2.send_bytes(b"\x00\x01")
+                # Server-Task braucht einen Tick zum Exception-Handling; poll statt blindem Sleep.
+                import time
+                deadline = time.time() + 5
+                while time.time() < deadline and len(srv.manager.active) != 1:
+                    time.sleep(0.05)
+                assert len(srv.manager.active) == 1  # nur der erste lebt noch

@@ -164,10 +164,16 @@ class Brain:
     # ---------- Git-Sync ----------
 
     def clone_if_missing(self) -> None:
+        # Audit #20: crashed-clone detection — ein halbes Clone-Verzeichnis
+        # (ohne .git) blockierte jeden weiteren Clone-Versuch forever.
         if self.path.exists() and (self.path / ".git").exists():
             return
         if not self.remote:
             raise ValueError("Kein remote angegeben und kein Clone vorhanden.")
+        if self.path.exists() and any(self.path.iterdir()) and not (self.path / ".git").exists():
+            raise RuntimeError(
+                f"{self.path} existiert, ist aber kein Brain-Repo (kein .git) und "
+                "nicht leer — bitte manuell prüfen/entfernen, statt es zu überschreiben.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "clone", "--quiet", self.remote, str(self.path)], check=True)
 
@@ -223,8 +229,20 @@ class Brain:
             capture_output=True).returncode == 0
         if not has_origin:
             return
-        subprocess.run(["git", "-C", str(self.path), "pull", "--quiet",
-                        "origin", "main"], check=True)
+        # Audit #20: ein plain `pull origin main` bleibt an einem Merge-Konflikt
+        # hängen oder failt nach einem misslungenen Push hart — danach 500t
+        # jeder Request bis zur manuellen Reparatur. `--rebase --autostash`
+        # stasht lokale Änderungen, rebased auf origin/main und stellt sie
+        # wieder her; nur echte Konflikte bleiben als Fehler sichtbar.
+        r = subprocess.run(
+            ["git", "-C", str(self.path), "pull", "--quiet", "--rebase",
+             "--autostash", "origin", "main"],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(
+                "git pull fehlgeschlagen (Brain-Repo braucht manuelle Aufmerksamkeit; "
+                "lokale Änderungen wurden per autostash gesichert):\n"
+                + (r.stderr or r.stdout)[-500:])
 
     def commit_and_push(self, message: str, push: bool = True) -> None:
         if self.mode != "git":

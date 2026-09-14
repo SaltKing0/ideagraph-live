@@ -202,8 +202,16 @@ class BrainEngine:
             # Floor (per-Call env IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) werden
             # verworfen statt pending zu landen — schuetzt autonome Zyklen vor
             # Low-Confidence-Edge-Flut.
-            floor = float((env or {}).get("IG_EDGE_CONF_FLOOR",
-                                          os.environ.get("IG_EDGE_CONF_FLOOR", "0.0")))
+            # Tier-3 Confidence-Floor: nicht-numerische Werte bekommen einen
+            # verständlichen Fehler statt eines nackten float()-ValueError
+            # (Audit #20: "unexplained 500s").
+            _floor_raw = (env or {}).get("IG_EDGE_CONF_FLOOR",
+                                         os.environ.get("IG_EDGE_CONF_FLOOR", "0.0"))
+            try:
+                floor = float(_floor_raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"IG_EDGE_CONF_FLOOR muss eine Zahl sein, bekommen: {_floor_raw!r}")
             sim_edges = [Edge(source=s.source, target=s.target, kind=s.kind,
                               pending=not (is_auto_accept(s.confidence) or auto_accept),
                               confidence=s.confidence)
