@@ -1,17 +1,17 @@
-"""Brain-Layer: das private Git-Repo als Gedächtnis.
+"""Brain layer: the private git repo as memory.
 
-Struktur im Brain-Repo:
-  nodes/<id>.md     — eine Idee pro Datei (YAML-Frontmatter + Text)
-  edges.jsonl       — eine Edge pro Zeile (maschinell, pending-Flag)
-  INDEX.md          — generiertes Inhaltsverzeichnis (Menschen + GitHub-Suche)
+Structure inside the brain repo:
+  nodes/<id>.md     — one idea per file (YAML frontmatter + text)
+  edges.jsonl       — one edge per line (machine-written, pending flag)
+  INDEX.md          — generated table of contents (humans + GitHub search)
 
-Sync-Modell: pull vor jedem Schreiben, commit+push danach.
-Für Tests: mode="local" arbeitet ohne git in einem temp dir.
+Sync model: pull before every write, commit+push after.
+For tests: mode="local" works without git in a temp dir.
 
-Crash-Sicherheit (Audit #2): alle ganzer-Datei-Schreibungen gehen über
-_atomic_write() — erst in eine Temp-Datei im selben Verzeichnis, dann
-os.replace(). Ein Crash mitten im Schreiben hinterlässt entweder die alte
-oder die neue Datei, nie eine halbe.
+Crash safety (Audit #2): all whole-file writes go through
+_atomic_write() — first to a temp file in the same directory, then
+os.replace(). A crash mid-write leaves either the old or the new
+file, never a half-written one.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ VALID_STATUS = ("probation", "active", "tombstone")
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Schreibe content atomar: tmp-Datei im selben Verzeichnis + os.replace()."""
+    """Write content atomically: temp file in the same directory + os.replace()."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex[:8])
     try:
@@ -58,16 +58,16 @@ class Node:
         self.created = created or _now_iso()
         self.source = source
         self.tags = tags or []
-        # Audit #54 (Churn-Fix): neue Nodes tragen ihre Quelle SOFORT in
-        # `sources` (und to_markdown schreibt die Liste immer) — sonst gewinnt
-        # die Datei beim ersten Dup-Ingest eine rein kosmetische
-        # sources:-Zeile. from_markdown übergibt explizit [] → alte Dateien
-        # ohne die Zeile bleiben unverändert, bis sie real mutieren.
+        # Audit #54 (churn fix): new nodes record their source IMMEDIATELY in
+        # `sources` (and to_markdown always writes the list) — otherwise the
+        # file gains a purely cosmetic sources: line on the first dup ingest.
+        # from_markdown passes [] explicitly → old files without the line
+        # stay unchanged until they really mutate.
         self.sources = sources if sources is not None else [source]
-        # Taxonomie (LangGraph/Survey-Lektion): semantic | episodic | procedural
+        # Taxonomy (LangGraph/survey lesson): semantic | episodic | procedural
         self.ntype = ntype if ntype in ("semantic", "episodic", "procedural") else "semantic"
-        # V2#2 Memory-Hygiene: Dual-Buffer — neue Nodes starten in probation,
-        # werden nach Dedup/Verification promoted, oder landen als tombstone.
+        # V2#2 memory hygiene: dual buffer — new nodes start in probation,
+        # get promoted after dedup/verification, or end up as tombstones.
         self.status = status if status in VALID_STATUS else "probation"
 
     def to_markdown(self) -> str:
@@ -75,10 +75,10 @@ class Node:
         lines = [f"id: {self.id}", f"created: {self.created}",
                  f"source: {self.source}", f"type: {self.ntype}",
                  f"status: {self.status}"]
-        # sources immer schreiben (auch leer) — sonst gewinnt die Datei beim
-        # ersten Dup-Ingest eine rein kosmetische sources:-Zeile (History-Churn,
-        # Audit #54): from_markdown liefert [], merge_node fügt node.source ein,
-        # der Rewrite "ändert" die Datei ohne inhaltlichen Gewinn.
+        # always write sources (even empty) — otherwise the file gains a
+        # purely cosmetic sources: line on the first dup ingest (history churn,
+        # Audit #54): from_markdown returns [], merge_node inserts node.source,
+        # the rewrite "changes" the file without any content gain.
         lines.append("sources: [" + ", ".join(self.sources) + "]")
         lines.append(f"tags: {tags}")
         return "---\n" + "\n".join(lines) + "\n---\n\n" + f"{self.text}\n"
@@ -87,18 +87,18 @@ class Node:
     def from_markdown(cls, raw: str) -> "Node":
         m = re.match(r"^---\n(.*?)\n---\n\n?(.*)$", raw, re.DOTALL)
         if not m:
-            raise ValueError("Kein Frontmatter gefunden")
+            raise ValueError("No frontmatter found")
         meta_raw, text = m.group(1), m.group(2)
         meta: dict = {}
         for line in meta_raw.splitlines():
             if ":" in line:
                 key, _, val = line.partition(":")
                 meta[key.strip()] = val.strip()
-        # Audit #56: eine Hand-editierte Datei ohne id: soll einen verständlichen
-        # Fehler werfen (mit Pfad-Kontext kann der Aufrufer sie überspringen),
-        # kein nackter KeyError.
+        # Audit #56: a hand-edited file without id: should raise an
+        # understandable error (with path context so the caller can skip it),
+        # not a bare KeyError.
         if "id" not in meta:
-            raise ValueError("Frontmatter ohne 'id:' — Datei überspringen")
+            raise ValueError("Frontmatter without 'id:' — skipping file")
         tags = [t.strip() for t in meta.get("tags", "[]").strip("[]").split(",") if t.strip()]
         sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
@@ -122,13 +122,13 @@ class Edge:
         self.kind = kind
         self.pending = pending
         self.id = id or uuid.uuid4().hex[:12]
-        # Bi-Temporalität (Zep/Graphiti-Lektion): Fakt-Gültigkeit getrennt
-        # von der Commit-Zeit (die liefert die Git-Historie gratis).
+        # Bi-temporality (Zep/Graphiti lesson): fact validity kept separate
+        # from commit time (which the git history provides for free).
         self.valid_from = valid_from or _now_iso()
-        self.valid_to = valid_to  # None = aktuell gültig; gesetzt = invalidiert
-        # V2#3: Confidence (Kosinus) der Auto-Vorschläge; None bei manuellen Links.
+        self.valid_to = valid_to  # None = currently valid; set = invalidated
+        # V2#3: confidence (cosine) of auto suggestions; None for manual links.
         self.confidence = confidence
-        # V1#1: Provenance — welche Kante/Event diese Kante invalidiert hat.
+        # V1#1: provenance — which edge/event invalidated this edge.
         self.invalidated_by = invalidated_by
         self.rejected = rejected
 
@@ -148,42 +148,42 @@ def _jsonl_dumps(obj: dict) -> str:
 
 
 class Brain:
-    """Das private Repo als Speicher. mode="git" synced, mode="local" nur FS."""
+    """The private repo as storage. mode="git" syncs, mode="local" is FS-only."""
 
     def __init__(self, path: str, remote: str | None = None, mode: str = "local"):
         self.path = Path(path)
         self.remote = remote
         self.mode = mode
-        # Instanz-Lock: serialisiert RMW-Mutationen auch dann, wenn MEHRERE
-        # BrainEngine-Instanzen dasselbe Brain teilen (der Server baut pro
-        # Request eine neue Engine). Multi-Step-Chains (ingest) müssen über
-        # mehrere Aufrufe konsistent sein — dafür kombinieren sich der
-        # Engine-weite BRAIN_LOCK und dieser Instanz-Lock sauber (RLock).
+        # Instance lock: serializes RMW mutations even when MULTIPLE
+        # BrainEngine instances share the same brain (the server builds a new
+        # engine per request). Multi-step chains (ingest) must stay consistent
+        # across several calls — the engine-wide BRAIN_LOCK and this instance
+        # lock combine cleanly for that (RLock).
         self._lock = threading.RLock()
 
-    # ---------- Git-Sync ----------
+    # ---------- Git sync ----------
 
     def clone_if_missing(self) -> None:
-        # Audit #20: crashed-clone detection — ein halbes Clone-Verzeichnis
-        # (ohne .git) blockierte jeden weiteren Clone-Versuch forever.
+        # Audit #20: crashed-clone detection — a half-cloned directory
+        # (without .git) blocked every further clone attempt forever.
         if self.path.exists() and (self.path / ".git").exists():
             return
         if not self.remote:
-            raise ValueError("Kein remote angegeben und kein Clone vorhanden.")
+            raise ValueError("No remote given and no clone present.")
         if self.path.exists() and any(self.path.iterdir()) and not (self.path / ".git").exists():
             raise RuntimeError(
-                f"{self.path} existiert, ist aber kein Brain-Repo (kein .git) und "
-                "nicht leer — bitte manuell prüfen/entfernen, statt es zu überschreiben.")
+                f"{self.path} exists but is not a brain repo (no .git) and "
+                "not empty — please inspect/remove it manually instead of overwriting it.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["git", "clone", "--quiet", self.remote, str(self.path)], check=True)
 
     def init(self, remote: str | None = None, commit: bool = True) -> None:
-        """Erstellt ein frisches Brain-Repo am Pfad (Onboarding: `ig init`).
+        """Creates a fresh brain repo at the path (onboarding: `ig init`).
 
-        Legt die Struktur (nodes/, edges.jsonl, vectors.jsonl, INDEX.md) an,
-        `git init` + Branch main, optional ein origin-Remote, und committet den
-        Startzustand. Idempotent: ein bereits existierendes Repo wird nicht
-        überschrieben. Ohne Remote bleibt der erste Commit lokal (push=False).
+        Sets up the structure (nodes/, edges.jsonl, vectors.jsonl, INDEX.md),
+        `git init` + branch main, optionally an origin remote, and commits the
+        initial state. Idempotent: an existing repo is not overwritten. Without
+        a remote the first commit stays local (push=False).
         """
         self.path.mkdir(parents=True, exist_ok=True)
         (self.path / "nodes").mkdir(parents=True, exist_ok=True)
@@ -201,14 +201,14 @@ class Brain:
                 subprocess.run(["git", "-C", str(self.path), "remote", "add",
                                 "origin", remote], check=True)
         if commit:
-            # Mit Remote → initialen Commit pushen; ohne → nur lokal committen.
-            self.commit_and_push("init: Brain-Repo angelegt", push=bool(remote))
+            # With remote → push the initial commit; without → commit locally only.
+            self.commit_and_push("init: brain repo created", push=bool(remote))
 
     def ensure_ready(self) -> None:
-        """Stellt sicher, dass das Brain-Repo existiert (init oder clone).
+        """Make sure the brain repo exists (init or clone).
 
-        Wird am Anfang jedes Schreibpfads aufgerufen, damit `ig ingest` auf
-        einer frischen Maschine ohne manuelles Setup sofort funktioniert.
+        Called at the start of every write path so `ig ingest` works
+        immediately on a fresh machine without manual setup.
         """
         if self.mode != "git":
             self.path.mkdir(parents=True, exist_ok=True)
@@ -223,32 +223,32 @@ class Brain:
     def pull(self) -> None:
         if self.mode != "git":
             return
-        # Ohne origin (frisch `ig init`-ed, lokal) ist pull ein No-op.
+        # Without origin (freshly `ig init`-ed, local) pull is a no-op.
         has_origin = subprocess.run(
             ["git", "-C", str(self.path), "remote", "get-url", "origin"],
             capture_output=True).returncode == 0
         if not has_origin:
             return
-        # Audit #20: ein plain `pull origin main` bleibt an einem Merge-Konflikt
-        # hängen oder failt nach einem misslungenen Push hart — danach 500t
-        # jeder Request bis zur manuellen Reparatur. `--rebase --autostash`
-        # stasht lokale Änderungen, rebased auf origin/main und stellt sie
-        # wieder her; nur echte Konflikte bleiben als Fehler sichtbar.
+        # Audit #20: a plain `pull origin main` hangs on a merge conflict or
+        # fails hard after a failed push — afterwards every request 500s
+        # until manual repair. `--rebase --autostash` stashes local changes,
+        # rebases onto origin/main and restores them; only real conflicts
+        # remain visible as errors.
         r = subprocess.run(
             ["git", "-C", str(self.path), "pull", "--quiet", "--rebase",
              "--autostash", "origin", "main"],
             capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(
-                "git pull fehlgeschlagen (Brain-Repo braucht manuelle Aufmerksamkeit; "
-                "lokale Änderungen wurden per autostash gesichert):\n"
+                "git pull failed (brain repo needs manual attention; "
+                "local changes were stashed via autostash):\n"
                 + (r.stderr or r.stdout)[-500:])
 
     def commit_and_push(self, message: str, push: bool = True) -> None:
         if self.mode != "git":
             return
-        # Bot-Identität ist konfigurierbar (IG_BOT_NAME/IG_BOT_EMAIL); keine
-        # fest verdrahtete persönliche Identität mehr.
+        # Bot identity is configurable (IG_BOT_NAME/IG_BOT_EMAIL); no longer
+        # a hard-wired personal identity.
         bot_name = os.environ.get("IG_BOT_NAME", "ideagraph-bot")
         bot_email = os.environ.get("IG_BOT_EMAIL", "bot@ideagraph.local")
         env_user = ["-c", f"user.name={bot_name}", "-c", f"user.email={bot_email}"]
@@ -256,13 +256,13 @@ class Brain:
         diff = subprocess.run(["git", "-C", str(self.path), *env_user,
                                "diff", "--cached", "--quiet"], capture_output=True)
         if diff.returncode == 0:
-            return  # nichts zu committen
+            return  # nothing to commit
         subprocess.run(["git", "-C", str(self.path), *env_user,
                         "commit", "--quiet", "-m", message], check=True)
         if not push:
             return
-        # Nur pushen, wenn ein origin existiert (frisch `ig init`-ed ohne Remote
-        # hat keinen — dann bleibt der erste Commit lokal).
+        # Only push when an origin exists (freshly `ig init`-ed without a
+        # remote has none — then the first commit stays local).
         has_origin = subprocess.run(
             ["git", "-C", str(self.path), "remote", "get-url", "origin"],
             capture_output=True).returncode == 0
@@ -280,23 +280,22 @@ class Brain:
     # ---------- Nodes ----------
 
     def node_path(self, node_id: str) -> Path:
-        # Audit #18: Node-IDs landen unverifiziert in Pfaden — eine crafted ID
-        # mit '/'/'..' könnte nodes/ verlassen (Arbitrary Read/Write mit
-        # .md-Suffix). Die Schranke ist Pfad-Sicherheit, nicht die 12-Hex-
-        # Konvention: kurze/lesbare IDs (Fixtures, Hand-Builds) bleiben gültig,
-        # alles was nodes/ verlassen oder Dotfiles anlegen könnte, wird
-        # abgewiesen.
+        # Audit #18: node IDs land unverified in paths — a crafted ID with
+        # '/'/'..' could escape nodes/ (arbitrary read/write with the
+        # .md suffix). The guard is path safety, not the 12-hex convention:
+        # short/readable IDs (fixtures, hand-built brains) stay valid;
+        # anything that could escape nodes/ or create dotfiles is rejected.
         if (not node_id or "/" in node_id or "\\" in node_id
                 or node_id in (".", "..") or node_id.startswith(".")
                 or "\x00" in node_id or len(node_id) > 200):
-            raise ValueError(f"Ungültige Node-ID: {node_id!r} (Pfad-unsafe)")
+            raise ValueError(f"Invalid node ID: {node_id!r} (path-unsafe)")
         return self.path / "nodes" / f"{node_id}.md"
 
     def merge_node(self, node: Node, source: str | None = None) -> None:
-        """Duplikat-Ingest: bestehende Node behalten, Quelle protokollieren.
+        """Duplicate ingest: keep the existing node, log the source.
 
-        tags/created bleiben unberührt; die neue source wird ins Frontmatter
-        als `sources:`-Liste aufgenommen (ohne Duplikate)."""
+        tags/created stay untouched; the new source is added to the
+        frontmatter as a `sources:` list (without duplicates)."""
         sources = list(getattr(node, "sources", []) or [])
         if node.source not in sources:
             sources.insert(0, node.source)
@@ -311,7 +310,7 @@ class Brain:
         _atomic_write(self.node_path(node.id), node.to_markdown())
 
     def promote_node(self, node_id: str) -> Node | None:
-        """Dual-Buffer (V2#2): probation -> active nach erfolgreicher Dedup-Prüfung."""
+        """Dual buffer (V2#2): probation -> active after successful dedup check."""
         node = next((n for n in self.read_nodes() if n.id == node_id), None)
         if node is None:
             return None
@@ -320,7 +319,7 @@ class Brain:
         return node
 
     def tombstone_node(self, node_id: str) -> Node | None:
-        """Graceful Degradation (V2#2): Node als vergessen markieren (nie hart löschen)."""
+        """Graceful degradation (V2#2): mark the node as forgotten (never hard-delete)."""
         node = next((n for n in self.read_nodes() if n.id == node_id), None)
         if node is None:
             return None
@@ -337,7 +336,7 @@ class Brain:
             try:
                 out.append(Node.from_markdown(p.read_text(encoding="utf-8")))
             except (ValueError, KeyError):
-                continue  # kaputte Datei überspringen statt crashen
+                continue  # skip broken files instead of crashing
         return out
 
     # ---------- Embedding-Cache ----------
@@ -353,8 +352,8 @@ class Brain:
         for line in self.vectors_file.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            # Audit #17: eine korrupte Zeile darf den ganzen Store-Lesevorgang
-            # nicht dauerhaft crashen (read_nodes skipped kaputte Files ebenso).
+            # Audit #17: a corrupt line must not permanently crash the whole
+            # store read (read_nodes skips broken files the same way).
             try:
                 d = json.loads(line)
                 out[d["id"]] = d["vec"]
@@ -412,8 +411,8 @@ class Brain:
         for line in self.edges_file.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            # Audit #17: skip-bad-line wie in read_nodes — eine korrupte Zeile
-            # (Crash-Rest, Hand-Edit) macht nicht den ganzen Graph API-tot.
+            # Audit #17: skip-bad-line as in read_nodes — a corrupt line
+            # (crash leftover, hand edit) must not make the whole graph API-dead.
             try:
                 d = json.loads(line)
                 edge = Edge(d["source"], d["target"], d["kind"],
@@ -441,9 +440,9 @@ class Brain:
 
     def invalidate_edge(self, edge_id: str, reason: str | None = None,
                         by_edge_id: str | None = None) -> Edge | None:
-        """Kante invalidieren statt löschen (Zep-Lektion): valid_to wird gesetzt,
-        die Kante bleibt mit voller Historie in der Datei. `by_edge_id` hält die
-        Provenance, welche Kante/Event diese invalidiert hat (V1#1)."""
+        """Invalidate the edge instead of deleting it (Zep lesson): valid_to is set,
+        the edge stays in the file with its full history. `by_edge_id` records
+        the provenance of which edge/event invalidated it (V1#1)."""
         with self._lock:
             edges = self.read_edges(include_rejected=True)
             edge = next((e for e in edges if e.id == edge_id and not e.rejected), None)
@@ -480,7 +479,7 @@ class Brain:
             self.write_edges(edges)
             return edge
 
-    # ---------- Graph-State fürs Frontend ----------
+    # ---------- Graph state for the frontend ----------
 
     def graph_state(self) -> dict:
         return {
@@ -488,17 +487,17 @@ class Brain:
             "edges": [e.to_dict() for e in self.read_edges()],
         }
 
-    # ---------- Generiertes Inhaltsverzeichnis ----------
+    # ---------- Generated table of contents ----------
 
     def rebuild_index(self) -> None:
         with self._lock:
-            lines = ["# Index", "", "| Idee | Quelle | Erstellt |", "|---|---|---|"]
+            lines = ["# Index", "", "| Idea | Source | Created |", "|---|---|---|"]
             for n in self.read_nodes():
                 if n.status == "tombstone":
-                    continue  # vergessene Nodes gehören nicht ins Inhaltsverzeichnis
-                # Audit #55: erst auf 60 Zeichen kürzen, DANN escapen — umgekehrt
-                # kann der Slice ein \|-Escape halbieren und die Tabellenzeile
-                # kaputt machen.
+                    continue  # forgotten nodes don't belong in the table of contents
+                # Audit #55: truncate to 60 chars FIRST, THEN escape — the
+                # other way around the slice can cut a \| escape in half and
+                # break the table row.
                 title = n.text[:60].replace("|", "\\|")
                 lines.append(f"| [{title}](nodes/{n.id}.md) | {n.source} | {n.created} |")
             _atomic_write(self.path / "INDEX.md", "\n".join(lines) + "\n")

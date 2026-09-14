@@ -1,8 +1,8 @@
-"""Tests für die Near-Duplikat-Konsolidierung (`ig merge`).
+"""Tests for near-duplicate consolidation (`ig merge`).
 
-Definieren das erwartete Verhalten von merge_nodes: Kanten-Umleitung,
-Dedup, Selbstschleifen-Entfernung, Text-Zusammenführung, Vektor-Cleanup,
-INDEX-Rebuild — bevor weiter darauf aufgebaut wird.
+Define the expected behavior of merge_nodes: edge redirection,
+dedup, self-loop removal, text merging, vector cleanup,
+INDEX rebuild — before building further on top of it.
 """
 import json
 import sys
@@ -30,10 +30,10 @@ def test_merge_redirects_edges_and_removes_node(tmp_path):
     _add_edge(b, "d", "t")  # deletee -> target
     r = merge_nodes(b, "s", "d", commit=False)
     nodes = {n.id: n for n in b.read_nodes()}
-    # Audit #3-Fix: deletee wird getombstoned statt hart gelöscht
+    # Audit #3 fix: deletee is tombstoned instead of hard-deleted
     assert nodes["d"].status == "tombstone" and "s" in nodes and "t" in nodes
     edges = b.read_edges()
-    # d->t wurde zu s->t umgeleitet
+    # d->t was redirected to s->t
     assert any(e.source == "s" and e.target == "t" for e in edges)
     assert not any(e.source == "d" or e.target == "d" for e in edges)
     assert r.edges_redirected == 1
@@ -56,7 +56,7 @@ def test_merge_removes_self_loop(tmp_path):
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee"))
-    _add_edge(b, "s", "d")  # gegenseitige Kante -> Selbstschleife nach Merge
+    _add_edge(b, "s", "d")  # mutual edge -> self loop after merge
     r = merge_nodes(b, "s", "d", commit=False)
     edges = b.read_edges()
     assert not any(e.source == e.target for e in edges)
@@ -92,7 +92,7 @@ def test_merge_rebuilds_index(tmp_path):
     b.write_node(Node(id="d", text="Deletee"))
     merge_nodes(b, "s", "d", commit=False)
     index = (b.path / "INDEX.md").read_text(encoding="utf-8")
-    assert "nodes/d.md" not in index and "nodes/s.md" in index  # Tombstone nicht im Index
+    assert "nodes/d.md" not in index and "nodes/s.md" in index  # tombstone not in index
 
 
 def test_merge_missing_node_raises(tmp_path):
@@ -100,7 +100,7 @@ def test_merge_missing_node_raises(tmp_path):
     b.write_node(Node(id="s", text="Survivor"))
     try:
         merge_nodes(b, "s", "missing", commit=False)
-        assert False, "sollte ValueError werfen"
+        assert False, "should raise ValueError"
     except ValueError:
         pass
 
@@ -110,7 +110,7 @@ def test_merge_identical_raises(tmp_path):
     b.write_node(Node(id="s", text="Survivor"))
     try:
         merge_nodes(b, "s", "s", commit=False)
-        assert False, "sollte ValueError werfen"
+        assert False, "should raise ValueError"
     except ValueError:
         pass
 
@@ -130,10 +130,10 @@ def test_merge_preserves_only_undo_records_with_surviving_nodes(tmp_path):
     assert brain.restore_edge(deleted.id) is None
 
 
-# ---------- Audit #3/#9/#41: Merge-Semantik ----------
+# ---------- Audit #3/#9/#41: merge semantics ----------
 
 def test_merge_tombstones_instead_of_resurrecting(tmp_path):
-    """Audit #3: deletee wurde auf probation gesetzt und lebte weiter — jetzt Tombstone."""
+    """Audit #3: deletee was put on probation and lived on — now tombstone."""
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee", status="active"))
@@ -143,7 +143,7 @@ def test_merge_tombstones_instead_of_resurrecting(tmp_path):
 
 
 def test_merge_no_dangling_edges(tmp_path):
-    """Audit #3: deletee->third blieb auf die deletee-ID zeigen (dangling)."""
+    """Audit #3: deletee->third kept pointing at the deletee ID (dangling)."""
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee"))
@@ -156,10 +156,10 @@ def test_merge_no_dangling_edges(tmp_path):
 
 
 def test_merge_does_not_invert_directional_intent(tmp_path):
-    """Audit #9: deletee->X supersedes wurde zu survivor->X supersedes invertiert.
+    """Audit #9: deletee->X supersedes was inverted into survivor->X supersedes.
 
-    Der Survivor erbt die Aussage "supersedes X" nicht — die Kante wird
-    invalidiert (valid_to gesetzt, Historie bleibt) statt invertiert.
+    The survivor does not inherit the claim "supersedes X" — the edge is
+    invalidated (valid_to set, history preserved) instead of inverted.
     """
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
@@ -169,12 +169,12 @@ def test_merge_does_not_invert_directional_intent(tmp_path):
     r = merge_nodes(b, "s", "d", commit=False)
     edges = b.read_edges()
     assert not any(e.kind == "supersedes" and e.source == "s" for e in edges), \
-        "Intent-Kante darf nicht auf den Survivor umgeschrieben werden"
+        "intent edge must not be rewritten onto the survivor"
     assert r.edges_invalidated == 1
-    # Historie erhalten: mit include_rejected/pending-Rohdaten prüfen
+    # preserve history: check via include_rejected/pending raw data
     raw = [json.loads(l) for l in (b.path / "edges.jsonl").read_text().splitlines() if l.strip()]
     sup = [e for e in raw if e["kind"] == "supersedes"]
-    assert sup and sup[0]["valid_to"] is not None  # invalidiert, nicht gelöscht
+    assert sup and sup[0]["valid_to"] is not None  # invalidated, not deleted
 
 
 def test_merge_redirects_neutral_kinds(tmp_path):
@@ -194,7 +194,7 @@ def test_merge_redirects_neutral_kinds(tmp_path):
 
 
 def test_merge_records_provenance(tmp_path):
-    """Audit #41: Merge-Provenance in Survivor-Text + Commit-Message."""
+    """Audit #41: merge provenance in survivor text + commit message."""
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee-Text"))
@@ -205,12 +205,12 @@ def test_merge_records_provenance(tmp_path):
 
 
 def test_merge_survivor_vector_refreshed_is_out_of_scope_here(tmp_path):
-    """Audit #41 (Teil): der Survivor-Text wächst — der gecachte Vektor ist jetzt
-    stale. Der Merge dokumentiert das; Neuerung folgt in Batch 5 (Retrieval)."""
+    """Audit #41 (part): the survivor text grows — the cached vector is now
+    stale. The merge documents this; the fix follows in batch 5 (retrieval)."""
     b = _brain(tmp_path)
     b.write_node(Node(id="s", text="Survivor"))
     b.write_node(Node(id="d", text="Deletee-Text"))
     b.write_vectors({"s": [1.0, 2.0], "d": [3.0, 4.0]})
     merge_nodes(b, "s", "d", commit=False)
     vecs = b.read_vectors()
-    assert "d" not in vecs and "s" in vecs  # deletee-Vektor weg, survivor bleibt
+    assert "d" not in vecs and "s" in vecs  # deletee vector gone, survivor stays

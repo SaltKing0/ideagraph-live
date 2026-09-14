@@ -1,9 +1,9 @@
-"""Hybrid-Retrieval: dense (Kosinus) + BM25, fusioniert via Reciprocal Rank Fusion.
+"""Hybrid retrieval: dense (cosine) + BM25, fused via Reciprocal Rank Fusion.
 
-Roadmap V2#1: "zuerst Hybrid dense+BM25 mit getuntem Fusion (hoechster ROI)".
-BM25 ist reine Textstatistik — keine Dependency, kein Modell. Die Fusion über
-RRF kombiniert beide Rankings robust (unabhängig von ihrer Skala), bevor
-später ein Cross-Encoder-Reranking der Top-K dazukommt.
+Roadmap V2#1: "first hybrid dense+BM25 with tuned fusion (highest ROI)".
+BM25 is pure text statistics — no dependency, no model. The RRF fusion
+combines both rankings robustly (independent of their scale) before a
+cross-encoder reranking of the top-K is added later.
 """
 
 from __future__ import annotations
@@ -21,10 +21,9 @@ def tokenize(text: str) -> list[str]:
 
 
 class BM25:
-    """BM25-Scorer. Der Index (df, doc_len, per-doc tf) wird EINMAL im
-    Konstruktor gebaut — `scores()` schaut nur noch nach (Audit #10: die alte
-    Version re-tokenisierte das gesamte Corpus bei jedem Query zweimal,
-    0,225 s/Query @2k Docs)."""
+    """BM25 scorer. The index (df, doc_len, per-doc tf) is built ONCE in the
+    constructor — `scores()` only looks it up (Audit #10: the old version
+    re-tokenized the entire corpus twice per query, 0.225 s/query @2k docs)."""
 
     def __init__(self, corpus: list[str], k1: float = 1.2, b: float = 0.75):
         self.k1 = k1
@@ -49,7 +48,7 @@ class BM25:
         return math.log(1.0 + (self.N - df + 0.5) / (df + 0.5))
 
     def scores(self, query_tokens: list[str]) -> list[float]:
-        """BM25-Score je Dokument (gleiche Reihenfolge wie corpus)."""
+        """BM25 score per document (same order as corpus)."""
         if self.N == 0:
             return []
         out: list[float] = []
@@ -66,10 +65,10 @@ class BM25:
 
 
 def rrf_fuse(ranked_lists: list[list[tuple[str, float]]], k: int = 60) -> list[tuple[str, float]]:
-    """Reciprocal Rank Fusion: vereint mehrere (id, score)-Rankings zu einem.
+    """Reciprocal Rank Fusion: merges multiple (id, score) rankings into one.
 
-    Jedes Ranking wird nach Score absteigend sortiert; jeder Rang trägt
-    1/(k + rank) bei. k=60 ist der übliche RRF-Standard.
+    Each ranking is sorted by score descending; each rank contributes
+    1/(k + rank). k=60 is the usual RRF standard.
     """
     fused: dict[str, float] = {}
     for rl in ranked_lists:
@@ -80,10 +79,10 @@ def rrf_fuse(ranked_lists: list[list[tuple[str, float]]], k: int = 60) -> list[t
 
 
 def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> tuple[list[str], dict[str, str], list[tuple[str, float]]]:
-    """Gemeinsame Kandidatenbeschaffung für retrieve()/Rerank-Pfad."""
+    """Shared candidate retrieval for the retrieve()/rerank path."""
     nodes = engine.brain.read_nodes()
-    # Audit #7: Tombstones sind "vergessen" — sie dürfen nicht als Suchantworten
-    # zurückkommen (consolidate/_find_duplicate excluden sie bereits).
+    # Audit #7: tombstones are "forgotten" — they must not come back as
+    # search answers (consolidate/_find_duplicate already exclude them).
     nodes = [n for n in nodes if n.status != "tombstone"]
     if not nodes:
         return [], {}, []
@@ -91,14 +90,14 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> 
     qvec = engine.embedder.embed(query)
 
     vecs = engine.brain.vectors_for(set(node_ids), lambda t: engine.embedder.embed(t))
-    # Audit #8 (Folgefix): Vektoren mit fremder Dimension sind nicht vergleichbar
-    # mit der Query (anderer Embedder im selben Brain, z. B. Demo-Seed mit
-    # vorberechneten ST-Vektoren + HashEmbedder-Engine). Statt still zu truncieren
-    # (alter cosine-Bug) werden sie übersprungen — die Dense-Stufe degradiert,
-    # BM25 bleibt voll wirksam.
-    # Audit #60: die Dense-Stufe läuft als numpy-Matmul über L2-normalisierte
-    # Vektoren statt als pure-Python-cosine-Loop (0,150 s/Query @2k×384-dim →
-    # sub-2 ms). Fremd-dimensionale/leere Vektoren bleiben ausgeschlossen.
+    # Audit #8 (follow-up fix): vectors with a foreign dimension are not
+    # comparable with the query (different embedder in the same brain, e.g.
+    # demo seed with precomputed ST vectors + HashEmbedder engine). Instead of
+    # silently truncating (old cosine bug) they are skipped — the dense stage
+    # degrades, BM25 stays fully effective.
+    # Audit #60: the dense stage runs as a numpy matmul over L2-normalized
+    # vectors instead of a pure-Python cosine loop (0.150 s/query @2k×384-dim →
+    # sub-2 ms). Foreign-dimension/empty vectors remain excluded.
     dense_ids = [nid for nid in node_ids
                  if nid in vecs and vecs[nid] and len(vecs[nid]) == len(qvec)]
     if dense_ids:
@@ -115,10 +114,10 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> 
     bm_scores = bm.scores(tokenize(query))
     bm_rank = [(nid, s) for nid, s in zip(node_ids, bm_scores) if s > 0.0]
 
-    # Audit #37: eine Nonsense-Query lieferte sonst 5 "Ergebnisse" mit
-    # RRF-Scores ≈ 0.033 — beide Ränge bedeutungslos, aber als Ranking
-    # präsentiert. Knoten ohne jede Überlappung (dense 0.0 UND BM25 0.0)
-    # fliegen vor der Fusion raus.
+    # Audit #37: a nonsense query otherwise returned 5 "results" with
+    # RRF scores ≈ 0.033 — both ranks meaningless, but presented as a
+    # ranking. Nodes without any overlap (dense 0.0 AND BM25 0.0)
+    # are dropped before the fusion.
     dense_ids = {nid for nid, s in dense if s > 0.0}
     bm_ids = {nid for nid, s in bm_rank}
     overlap = dense_ids | bm_ids
@@ -132,14 +131,14 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> 
 
 
 def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30) -> list[tuple[str, float]]:
-    """Hybrid-Retrieval über den Brain. Liefert top-k (node_id, rrf_score).
+    """Hybrid retrieval over the brain. Returns top-k (node_id, rrf_score).
 
-    Dense: Kosinus der Query-Embedding gegen die gecachten Node-Vektoren.
-    BM25: lexikalische Überlappung gegen die Node-Texte.
-    Fusion: RRF über die beiden Rangfolgen.
-    Rerank (V2#1, optional): Hybrid liefert top-`rerank_k` Kandidaten; ein auf
-    dem Engine gesetzter `reranker` (Cross-Encoder o. Stub) sortiert sie neu auf
-    top-`k`. Ohne Reranker (Default) bleibt das Verhalten identisch.
+    Dense: cosine of the query embedding against the cached node vectors.
+    BM25: lexical overlap against the node texts.
+    Fusion: RRF over the two rankings.
+    Rerank (V2#1, optional): hybrid yields top-`rerank_k` candidates; a
+    `reranker` set on the engine (cross-encoder or stub) re-sorts them to
+    top-`k`. Without a reranker (default) the behavior is identical.
     """
     node_ids, text_by_id, candidates = retrieve_candidates(engine, query, rerank_k)
     if not candidates:

@@ -1,4 +1,4 @@
-"""Tests für Similarity + Edge-Vorschlag (HashEmbedder — deterministisch, ohne Netz)."""
+"""Tests for similarity + edge suggestion (HashEmbedder — deterministic, no network)."""
 
 import sys
 from pathlib import Path

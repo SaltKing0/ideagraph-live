@@ -13,9 +13,9 @@ def test_supersedes_replacement_marker():
 
 
 def test_supersedes_requires_shared_subject():
-    # Marker vorhanden, aber über ein anderes Thema → kein supersedes.
-    # (Regression: ohne diese Prüfung markierte eine Node mit Marker-Wort
-    #  JEDE bestehende Node als supersedes.)
+    # marker present, but about a different subject → no supersedes.
+    # (Regression: without this check, a node containing a marker word marked
+    #  EVERY existing node as supersedes.)
     assert detect_intent("API v2 ersetzt v1", "Die Erde ist eine Scheibe") is None
 
 
@@ -30,7 +30,7 @@ def test_contradiction_negation():
 
 
 def test_contradiction_requires_shared_subject():
-    # Negation vorhanden, aber über ein anderes Thema → kein Kontradiktorisch
+    # negation present, but about a different subject → no contradicts
     assert detect_intent("Katzen sind keine Hunde", "Die Erde ist eine Scheibe") is None
 
 
@@ -46,5 +46,5 @@ def test_no_intent_for_unrelated():
 
 
 def test_no_intent_for_plain_similarity():
-    # Ohne Intent-Signal → None (Similarity entscheidet weiterhin)
+    # no intent signal → None (similarity still decides)
     assert detect_intent("katze hund tier futter", "katze hund tier spiel") is None

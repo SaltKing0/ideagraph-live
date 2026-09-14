@@ -1,16 +1,16 @@
-"""Edge-Vorschläge: aus den k nächsten Nachbarn werden getypte Vorschläge.
+"""Edge suggestions: the k nearest neighbors become typed suggestions.
 
-Regeln (V2#3 — Confidence-Bänder statt nur Schwellen):
+Rules (V2#3 — confidence bands instead of bare thresholds):
 - sim >= 0.95            → "similar", AUTO-ACCEPT (pending=False), confidence=sim
 - 0.75 <= sim < 0.95     → "similar", pending
 - 0.45 <= sim < 0.75     → "extends", pending
-- sim < 0.45             → kein Vorschlag
+- sim < 0.45             → no suggestion
 
-Jeder Vorschlag trägt einen confidence (die Kosinus-Ähnlichkeit). Der Aufrufer
-(BrainEngine) entscheidet anhand des Bands + Env-Override, ob pending bleibt.
+Every suggestion carries a confidence (the cosine similarity). The caller
+(BrainEngine) decides from the band + env override whether it stays pending.
 
-"same_as" wird nie automatisch vorgeschlagen — er entsteht manuell
-(CLI `link`, Cockpit) für Übersetzungs-/Alias-Paare.
+"same_as" is never suggested automatically — it is created manually
+(CLI `link`, cockpit) for translation/alias pairs.
 """
 
 from __future__ import annotations
@@ -51,11 +51,11 @@ def suggest(source_id: str, query_vec: list[float],
 
 
 def is_auto_accept(confidence: float) -> bool:
-    """Confidence-Band: >=0.95 wird ohne HITL akzeptiert."""
+    """Confidence band: >=0.95 is accepted without HITL."""
     return confidence >= AUTO_ACCEPT_CONFIDENCE
 
 
-# Rückwärtskompatibel für die JSONL-Engine (v0.0.1)
+# Backwards-compatible for the JSONL engine (v0.0.1)
 def suggest_edges(source_id: str, query_vec: list[float],
                   candidates: dict[str, list[float]], k: int = 3):
     from .model import Edge

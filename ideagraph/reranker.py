@@ -1,15 +1,15 @@
-"""Cross-Encoder-Reranking (Roadmap V2#1) — optionaler zweiter Retrieval-Pass.
+"""Cross-encoder reranking (roadmap V2#1) — optional second retrieval pass.
 
-Hybrid (dense+BM25, RRF) liefert die Top-K Kandidaten. Ein Cross-Encoder
-bewertet jedes (query, Kandidat)-Paar GEMEINSAM — statt Kosinus auf getrennten
-Embeddings — und re-sortiert die Top-K auf die Top-N. Laut Roadmap ist das der
-einzeln größte gemessene Add-on (minus ein Drittel Residual-Failures).
+Hybrid (dense+BM25, RRF) delivers the top-K candidates. A cross-encoder
+scores each (query, candidate) pair JOINTLY — instead of cosine on separate
+embeddings — and re-sorts the top-K down to the top-N. Per the roadmap this
+is the single largest measured add-on (minus one third of residual failures).
 
-Kein neuer Pflicht-Dependency: Default ist `None`/Identity, das Verhalten ist
-also unverändert. Ein echtes Modell wird nur geladen, wenn angefragt
-(`IDEAGRAPH_RERANKER=st` für sentence-transformers CrossEncoder, oder ein
-Modellname/-Pfad als Wert). `ReverseReranker` ist ein deterministischer Test-
-Stub, der beweist, dass der Rerank-Pass die finale Rangfolge bestimmt.
+No new mandatory dependency: the default is `None`/identity, so behavior is
+unchanged. A real model is loaded only when requested (`IDEAGRAPH_RERANKER=st`
+for a sentence-transformers CrossEncoder, or a model name/path as the value).
+`ReverseReranker` is a deterministic test stub proving that the rerank pass
+determines the final ranking.
 """
 
 from __future__ import annotations
@@ -18,19 +18,19 @@ import os
 
 
 class Reranker:
-    """Protocol: re-sortiert (query, Kandidaten) auf die Top-k."""
+    """Protocol: re-sorts (query, candidates) down to the top-k."""
 
     def rerank(self, query: str, candidates, k: int):
         # candidates: list[(node_id, text, rrf_score)]
-        # returns:    list[(node_id, text, rrf_score)] — top-k in Rerank-Reihenfolge
+        # returns:    list[(node_id, text, rrf_score)] — top-k in rerank order
         raise NotImplementedError
 
 
 class ReverseReranker(Reranker):
-    """Deterministischer Test-Stub: kehrt die Kandidaten-Reihenfolge um.
+    """Deterministic test stub: reverses the candidate order.
 
-    Zweck: beweisen, dass der Rerank-Pass die finale Rangfolge bestimmt
-    (Pipeline-Integration) — nicht, dass das Modell qualitativ besser ist.
+    Purpose: prove that the rerank pass determines the final ranking
+    (pipeline integration) — not that the model is qualitatively better.
     """
 
     def rerank(self, query: str, candidates, k: int):
@@ -38,14 +38,14 @@ class ReverseReranker(Reranker):
 
 
 class CrossEncoderReranker(Reranker):
-    """Echtes Cross-Encoder-Modell (sentence-transformers), optional geladen."""
+    """Real cross-encoder model (sentence-transformers), loaded on demand."""
 
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         try:
             from sentence_transformers import CrossEncoder
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "IDEAGRAPH_RERANKER=st benötigt 'sentence-transformers' "
+                "IDEAGRAPH_RERANKER=st requires 'sentence-transformers' "
                 "(pip install sentence-transformers)."
             ) from exc
         self.model = CrossEncoder(model_name)
@@ -58,7 +58,7 @@ class CrossEncoderReranker(Reranker):
 
 
 def get_reranker():
-    """Factory aus IDEAGRAPH_RERANKER: 'none' (Default) | 'st' | Modellname/Pfad."""
+    """Factory from IDEAGRAPH_RERANKER: 'none' (default) | 'st' | model name/path."""
     mode = os.environ.get("IDEAGRAPH_RERANKER", "none").strip().lower()
     if not mode or mode == "none":
         return None

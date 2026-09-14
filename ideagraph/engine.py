@@ -1,4 +1,4 @@
-"""Ingest: Text rein → Node + Embedding + Edge-Vorschläge raus."""
+"""Ingest: text in → node + embedding + edge suggestions out."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .suggester import suggest_edges
 
 
 class Engine:
-    """Der Wachstums-Loop als Klasse — Store + Embedder gebündelt."""
+    """The growth loop as a class — store + embedder bundled."""
 
     def __init__(self, store: Store, embedder=None):
         self.store = store
@@ -18,7 +18,7 @@ class Engine:
     def ingest(self, text: str) -> tuple[Node, list]:
         text = text.strip()
         if not text:
-            raise ValueError("Leerer Text kann nicht ingestiert werden.")
+            raise ValueError("Empty text cannot be ingested.")
         node = Node(text=text)
         vec = self.embedder.embed(text)
         self.store.add_node(node)
@@ -44,14 +44,14 @@ def main() -> None:
     else:
         text = " ".join(args)
     if not text.strip():
-        print("Nichts zu ingestieren. Nutzung: python -m ideagraph <text|->")
+        print("Nothing to ingest. Usage: python -m ideagraph <text|->")
         sys.exit(1)
     store = Store()
     engine = Engine(store, get_embedder(embedder_name))
     node, edges = engine.ingest(text)
     print(f"Node {node.id}: {node.text}")
     for e in edges:
-        print(f"  Vorschlag: --[{e.kind}]--> {e.target} (pending)")
+        print(f"  Suggestion: --[{e.kind}]--> {e.target} (pending)")
 
 
 if __name__ == "__main__":

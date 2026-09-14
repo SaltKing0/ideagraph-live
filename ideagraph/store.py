@@ -1,4 +1,4 @@
-"""JSONL-Store: eine JSON-Zeile pro Objekt. Kein DB-Overhead."""
+"""JSONL store: one JSON line per object. No DB overhead."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .model import Node, Edge
 
 
 class Store:
-    """Hält Nodes und Edges als JSONL (getrennte Dateien)."""
+    """Holds nodes and edges as JSONL (separate files)."""
 
     def __init__(self, path: str | Path = "data.jsonl"):
         self.path = Path(path)
@@ -39,7 +39,7 @@ class Store:
             f.write(json.dumps(edge.to_dict(), ensure_ascii=False) + "\n")
 
     def resolve_edge(self, edge_id: str, accept: bool) -> Edge | None:
-        """Pending-Edge akzeptieren (pending=False) oder verwerfen (entfernen)."""
+        """Accept a pending edge (pending=False) or discard it (remove)."""
         edge = next((e for e in self.edges if e.id == edge_id), None)
         if edge is None or not edge.pending:
             return None

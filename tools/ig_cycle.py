@@ -124,7 +124,7 @@ def marker_scan(findings: list[tuple[str, str]]) -> list[str]:
                 continue
             if _covered_by_allow(spans, allow_spans):
                 continue  # every hit sits inside an allowlisted innocent word
-            bad.append(f"{src}: enthaelt Marker '{m}'")
+            bad.append(f"{src}: contains marker '{m}'")
     return bad
 
 
@@ -247,8 +247,8 @@ def main() -> int:
         return 0
 
     # Real ingest (git, INTENT_PENDING safety net). Audit #6: --brain/IG_BRAIN_PATH
-    # wird an den echten Ingest DURCHGEREICHT — vorher setzte git_env nur den Mode,
-    # der Ingest landete im Env-Default-Pfad während die Metriken args.brain zählten.
+    # is passed THROUGH to the real ingest — before, git_env only set the mode,
+    # the ingest landed in the env default path while the metrics counted args.brain.
     git_env = dict(os.environ, IG_BRAIN_MODE="git", IG_BRAIN_PATH=os.path.abspath(args.brain),
                    IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
     real_islands = []

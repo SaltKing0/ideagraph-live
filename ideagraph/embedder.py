@@ -12,7 +12,7 @@ import hashlib
 
 
 class Embedder:
-    """Lädt sentence-transformers lazy — erst beim ersten echten Embedding."""
+    """Loads sentence-transformers lazily — only on the first real embedding."""
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         self.model_name = model_name
@@ -34,10 +34,10 @@ class Embedder:
 
 
 class HashEmbedder:
-    """Deterministischer Test-Embedder: bag-of-words-Projektion auf feste Dim.
+    """Deterministic test embedder: bag-of-words projection onto a fixed dim.
 
-    Kein Modell, kein Netzwerk — gleicher Text → gleicher Vektor,
-    ähnlicher Text (Wortüberlappung) → ähnlicher Vektor.
+    No model, no network — same text → same vector,
+    similar text (word overlap) → similar vector.
     """
 
     DIM = 64

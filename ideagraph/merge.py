@@ -1,33 +1,33 @@
-"""Manuelle Near-Duplikat-Konsolidierung (`ig merge`).
+"""Manual near-duplicate consolidation (`ig merge`).
 
-Konsolidiert zwei eng verwandte Nodes zu einem: Alle Kanten des zu
-entfernenden Nodes werden auf den Survivor umgeleitet (dedupliziert, ohne
-Selbstschleifen), der Text wird zur Informationserhaltung angehängt, und der
-entfernte Node wird als Tombstone markiert (nie hart gelöscht — der
-Graph bleibt eine append-only Historie). INDEX.md wird neu gebaut und alles
-in EINEM Commit geschrieben.
+Consolidates two closely related nodes into one: all edges of the node
+being removed are redirected to the survivor (deduplicated, no
+self-loops), the text is appended to preserve information, and the
+removed node is marked as a tombstone (never hard-deleted — the
+graph remains an append-only history). INDEX.md is rebuilt and everything
+is written in ONE commit.
 
-Audit #3/#9/#41-Fixes:
-- Der Deletee wird getombstoned statt auf probation gesetzt und seine Datei
-  wird nicht mehr vor dem Edge-Rewrite gelöscht (halb-geschriebener Zustand
-  bei Crash mid-merge).
-- Kanten mit Intent-Semantik (`supersedes`, `kontradiktorisch`, `continues`,
-  `ersetzt`, …) werden NICHT blind umgeleitet: eine Deletee→X `supersedes`
-  Kante sagt "der Deletee ersetzt X" — nach dem Merge ist der Survivor die
-  Fortsetzung des Deletee-Inhalts, also wird die Kante zu
-  Survivor→X umgeleitet NUR wenn die Richtung semantisch erhalten bleibt.
-  Für supersedes/ersetzt/kontradiktorisch (Deletee als Quelle) wird die
-  Kante stattdessen invalidiert (valid_to gesetzt) statt eine möglicherweise
-  falsche Aussage über den Survivor zu machen; extends/similar/linked-
-  Kanten sind richtungsneutral genug für einen Redirect.
-- Merge-Provenance: der Merge-Commit und die Survivor-Node dokumentieren
-  deletee-ID und Zeitpunkt; der Deletee-Status bleibt als Tombstone
-  nachvollziehbar.
+Audit #3/#9/#41 fixes:
+- The deletee is tombstoned instead of being set to probation, and its file
+  is no longer deleted before the edge rewrite (half-written state
+  on a crash mid-merge).
+- Edges with intent semantics (`supersedes`, `contradicts`, `continues`,
+  `replaces`, …) are NOT blindly redirected: a deletee→X `supersedes`
+  edge says "the deletee supersedes X" — after the merge the survivor is the
+  continuation of the deletee's content, so the edge is redirected to
+  survivor→X ONLY if the direction stays semantically valid.
+  For supersedes/replaces/contradicts (deletee as source) the edge
+  is invalidated instead (valid_to set) rather than making a possibly
+  wrong statement about the survivor; extends/similar/linked edges
+  are direction-neutral enough for a redirect.
+- Merge provenance: the merge commit and the survivor node document
+  the deletee ID and timestamp; the deletee's status remains traceable
+  as a tombstone.
 
-Dies ist die manuelle Ergänzung zur automatischen Ingest-Dedup (cos >= 0.92):
-Near-Duplikate im Bereich ~0.78–0.92 bleiben unter der Auto-Schwelle und
-brauchen diese Konsolidierung. Destruktiv — nur mit Bedacht, am besten nach
-einem Dry-Run auf einer Brain-Kopie.
+This is the manual complement to automatic ingest dedup (cos >= 0.92):
+near-duplicates in the ~0.78–0.92 range stay below the auto threshold and
+need this consolidation. Destructive — use with care, ideally after
+a dry run on a brain copy.
 """
 from __future__ import annotations
 
@@ -38,10 +38,10 @@ from pathlib import Path
 
 from .brain import Brain
 
-# Intent-Kanten mit gerichteter Semantik: ein Redirect Deletee→X auf
-# Survivor→X würde die Aussage invertieren (Audit #9). Sie werden invalidiert
-# statt umgeleitet. Direction-neutral kinds (similar/extends/same_as/…)
-# werden normal umgeleitet.
+# Intent edges with directed semantics: a redirect deletee→X to
+# survivor→X would invert the statement (Audit #9). They are invalidated
+# instead of redirected. Direction-neutral kinds (similar/extends/same_as/…)
+# are redirected normally.
 DIRECTIONAL_KINDS = frozenset({
     "supersedes", "ersetzt", "contradicts", "replaces", "obsoletes",
     "korrigiert", "widerspricht",
@@ -53,19 +53,19 @@ class MergeResult:
     survivor: str
     deletee: str
     edges_redirected: int
-    edges_removed: int  # Selbstschleifen + Duplikat-Paare
-    edges_invalidated: int = 0  # gerichtete Intent-Kanten (nicht redirect-fähig)
+    edges_removed: int  # self-loops + duplicate pairs
+    edges_invalidated: int = 0  # directed intent edges (not redirectable)
     redirected_ids: list[str] = field(default_factory=list)
     invalidated_ids: list[str] = field(default_factory=list)
 
 
 def _redirect_edges(edges: list, survivor: str, deletee: str,
                     now_iso: str) -> tuple[list, int, int, int, list[str], list[str]]:
-    """Leitet Kanten des deletee auf den survivor um; entfernt Selbstschleifen + Duplikate.
+    """Redirect the deletee's edges to the survivor; removes self-loops + duplicates.
 
-    Gerichtete Intent-Kanten (DIRECTIONAL_KINDS) mit deletee als Quelle werden
-    invalidiert (valid_to gesetzt) statt umgeleitet — der Survivor hat die
-    Aussage "ersetzt X" nicht unbedingt geerbt (Audit #9).
+    Directed intent edges (DIRECTIONAL_KINDS) with the deletee as source are
+    invalidated (valid_to set) instead of redirected — the survivor has not
+    necessarily inherited the statement "supersedes X" (Audit #9).
     """
     new_edges: list = []
     seen: set[tuple] = set()
@@ -78,7 +78,7 @@ def _redirect_edges(edges: list, survivor: str, deletee: str,
         s, t = e.source, e.target
         if s == deletee or t == deletee:
             if e.kind in DIRECTIONAL_KINDS and s == deletee:
-                # Aussage gilt über den Survivor nicht mehr — Kante historisieren.
+                # The statement no longer holds about the survivor — historicize the edge.
                 if e.valid_to is None:
                     e.valid_to = now_iso
                     invalidated += 1
@@ -94,11 +94,11 @@ def _redirect_edges(edges: list, survivor: str, deletee: str,
                 t = survivor
                 redirected += 1
             redirected_ids.append(e.id)
-        if s == t:  # Selbstschleife nach Merge
+        if s == t:  # self-loop after merge
             removed += 1
             continue
         key = tuple(sorted((s, t)))
-        if key in seen:  # Duplikat-Paar (Survivor hatte das Ziel schon)
+        if key in seen:  # duplicate pair (survivor already had that target)
             removed += 1
             continue
         seen.add(key)
@@ -123,18 +123,18 @@ def merge_nodes(
     commit: bool = True,
     embedder=None,
 ) -> MergeResult:
-    """Konsolidiert deletee in survivor. Destruktiv; ein Commit.
+    """Consolidates the deletee into the survivor. Destructive; one commit.
 
-    embedder (optional): wenn gesetzt, wird der Survivor-Vektor nach dem
-    Text-Append neu berechnet — ohne ihn bliebe der alte Vektor stehen und
-    die Suche deduped/ranke gegen den VOR-Merge-Text (Audit-Befund
-    "survivor vector stale"). Der CLI übergibt immer den Engine-Embedder.
+    embedder (optional): when given, the survivor vector is recomputed after
+    the text append — without it the old vector would remain and search
+    would dedupe/rank against the PRE-merge text (audit finding
+    "survivor vector stale"). The CLI always passes the engine embedder.
     """
     if survivor_id == deletee_id:
-        raise ValueError("Survivor und Deletee sind identisch.")
-    # Git-Modus: Repo-Existenz + frischer Pull VOR der Mutation — sonst kann
-    # der Merge auf einem stale Stand arbeiten und die History divergiert
-    # (Audit-Befund "merge_nodes macht kein pull()").
+        raise ValueError("Survivor and deletee are identical.")
+    # Git mode: repo existence + fresh pull BEFORE the mutation — otherwise
+    # the merge can work on a stale state and the history diverges
+    # (audit finding "merge_nodes makes no pull()").
     brain.ensure_ready()
     brain.pull()
     nodes = {n.id: n for n in brain.read_nodes()}
@@ -145,10 +145,10 @@ def merge_nodes(
     survivor, deletee = nodes[survivor_id], nodes[deletee_id]
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Kanten umleiten + deduplizieren — VOR dem Löschen des Deletee-Files
-    # (Audit #3: vorher wurde die Node-Datei zuerst unlinkt; ein Crash
-    # zwischen unlink und Edge-Rewrite hinterließ einen halb-gemergten
-    # Zustand mit dangling Edges auf eine nicht mehr existierende Node).
+    # Redirect + deduplicate edges — BEFORE deleting the deletee file
+    # (Audit #3: previously the node file was unlinked first; a crash
+    # between unlink and edge rewrite left a half-merged state with
+    # dangling edges pointing to a no-longer-existing node).
     edges = brain.read_edges(include_rejected=False)
     new_edges, removed, redirected, invalidated, redirected_ids, invalidated_ids = \
         _redirect_edges(edges, survivor_id, deletee_id, now_iso)
@@ -158,29 +158,29 @@ def merge_nodes(
                 if e.rejected and deletee_id not in (e.source, e.target)]
     brain.write_edges(new_edges + rejected)
 
-    # Text zusammenführen (Informationserhalt) — mit Merge-Provenance (Audit #41)
+    # Merge text (information preservation) — with merge provenance (Audit #41)
     survivor.text = (
         survivor.text.rstrip()
         + f"\n\n[consolidated from {deletee_id} on {now_iso}: {deletee.text.strip()}]"
     )
     brain.write_node(survivor)
 
-    # Deletee tombstonen (nie hart löschen — Audit #3: vorher unlink + Status
-    # verloren, dangling Edges konnten auf eine "lebende" Probation-Node zeigen)
+    # Tombstone the deletee (never hard-delete — Audit #3: previously unlink
+    # + status loss, dangling edges could point to a "living" probation node)
     brain.tombstone_node(deletee_id)
 
-    # Vektor entfernen
+    # Remove vector
     _drop_vector(brain, deletee_id)
 
-    # Survivor-Vektor auffrischen: der Text ist gewachsen, der alte Vektor
-    # repräsentiert den Vor-Merge-Text (Audit: "survivor vector stale").
+    # Refresh the survivor vector: the text has grown, the old vector
+    # represents the pre-merge text (audit finding: "survivor vector stale").
     if embedder is not None:
         normalized = " ".join(survivor.text.lower().split())
         vecs = brain.read_vectors()
         vecs[survivor_id] = list(embedder.embed(normalized))
         brain.write_vectors(vecs)
 
-    # INDEX neu bauen
+    # Rebuild INDEX
     brain.rebuild_index()
 
     if commit:

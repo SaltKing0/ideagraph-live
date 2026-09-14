@@ -1,14 +1,14 @@
-"""Hygiene-/Status-Analyse (`ig status`, `ig near-dup`).
+"""Hygiene/status analysis (`ig status`, `ig near-dup`).
 
-Read-only Berichte, die die Pflege des Brains unterstützen:
+Read-only reports that support brain maintenance:
 
-- `near_dup_pairs` — findet Near-Duplikat-Paare im Kosinus-Band unterhalb der
-  Auto-Dedup-Schwelle (0.92). Diese Paare brauchen eine manuelle
-  `ig merge`-Entscheidung (siehe `ideagraph.merge`).
-- `connectivity` / `status_counts` — Inseln, schwache Nodes, Orphans und
-  Status-Verteilung, damit Unterbesetzung und Hygiene-Backlog sichtbar werden.
+- `near_dup_pairs` — finds near-duplicate pairs in the cosine band below the
+  auto-dedup threshold (0.92). These pairs need a manual
+  `ig merge` decision (see `ideagraph.merge`).
+- `connectivity` / `status_counts` — islands, weak nodes, orphans and
+  status distribution, so underpopulation and the hygiene backlog become visible.
 
-Alles read-only — es wird nichts am Brain verändert.
+Everything is read-only — nothing on the brain is modified.
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ import numpy as np
 
 from .brain import Brain
 
-# Auto-Dedup-Schwelle in brain_engine (cos >= 0.92 -> merge). Paare darunter,
-# aber nah genug, sind Kandidaten für die manuelle Konsolidierung.
+# Auto-dedup threshold in brain_engine (cos >= 0.92 -> merge). Pairs below it,
+# but close enough, are candidates for manual consolidation.
 DEFAULT_DEDUP_THRESHOLD = 0.92
 DEFAULT_NEAR_LO = 0.78
 
@@ -65,7 +65,7 @@ def _load_vectors(brain: Brain) -> tuple[list[str], np.ndarray]:
         try:
             o = json.loads(l)
         except json.JSONDecodeError:
-            continue  # Audit #17-Familie: korrupte Zeile killt nicht den Report
+            continue  # Audit #17 family: a corrupt line does not kill the report
         vecs[o["id"]] = o["vec"]
         lens[len(o["vec"])] += 1
     if not vecs:
@@ -85,14 +85,14 @@ def near_dup_pairs(
     hi: float = DEFAULT_DEDUP_THRESHOLD,
     max_pairs: int | None = None,
 ) -> list[NearDup]:
-    """Findet Near-Duplikat-Paare im Kosinus-Band [lo, hi), absteigend nach Score.
+    """Finds near-duplicate pairs in the cosine band [lo, hi), descending by score.
 
-    Audit #38: das obere Band-Ende ist inklusiv-versus-Engine konsistent — ein
-    float64-cos 0.9199999990 ist im Engine KEIN Dup (0.92-Schwelle), muss also
-    im Review-Band erscheinen. Ein epsilon-Puffer an `hi` verhindert, dass
-    Rundung solche Paare aus beiden Mechanismen fallen lässt.
-    Audit #39: die Paar-Iteration läuft vektorisiert (triu-Maske) statt in
-    O(N²)-Python-Schleifen (4M Iterationen @2k, ~50 s @20k)."""
+    Audit #38: the upper band end is inclusive-consistent with the engine — a
+    float64 cos of 0.9199999990 is NOT a dup in the engine (0.92 threshold),
+    so it must appear in the review band. An epsilon buffer at `hi` prevents
+    rounding from dropping such pairs out of both mechanisms.
+    Audit #39: the pair iteration runs vectorized (triu mask) instead of in
+    O(N²) Python loops (4M iterations @2k, ~50 s @20k)."""
     ids, V = _load_vectors(brain)
     if len(ids) < 2:
         return []
@@ -108,8 +108,8 @@ def near_dup_pairs(
              for i, j in zip(ii, jj)]
     pairs.sort(key=lambda p: p.score, reverse=True)
     if max_pairs is not None:
-        # Audit #60: `if max_pairs:` behandelte max_pairs=0 als "unbegrenzt" —
-        # 0 heißt Limit 0 (keine Paare).
+        # Audit #60: `if max_pairs:` treated max_pairs=0 as "unbounded" —
+        # 0 means limit 0 (no pairs).
         pairs = pairs[:max_pairs]
     return pairs
 
@@ -128,9 +128,9 @@ class Connectivity:
 def connectivity(brain: Brain) -> Connectivity:
     nodes = brain.read_nodes()
     edges = brain.read_edges()
-    # Audit #40: invalidierte Edges (valid_to gesetzt) zählen nicht mehr zur
-    # Konnektivität — sonst widerspricht der Status-Report der Admit-Rule-Logik
-    # (_has_relation ignoriert sie korrekt).
+    # Audit #40: invalidated edges (valid_to set) no longer count toward
+    # connectivity — otherwise the status report would contradict the
+    # admit-rule logic (_has_relation correctly ignores them).
     live_edges = [e for e in edges if e.valid_to is None]
     deg: Counter = Counter()
     for e in live_edges:
@@ -163,23 +163,23 @@ def render_status(brain: Brain) -> str:
     c = connectivity(brain)
     st = status_counts(brain)
     lines = [
-        f"Status ({c.total} Nodes / {c.edges} Edges):",
-        f"  Grad: max={c.max_degree} mean={c.mean_degree:.1f}",
-        f"  Orphans (0 Kanten): {len(c.orphans)}",
-        f"  Inseln (<=1 Kante): {len(c.islands)}",
-        f"  Schwach (==2 Kanten): {len(c.weak)}",
+        f"Status ({c.total} nodes / {c.edges} edges):",
+        f"  Degree: max={c.max_degree} mean={c.mean_degree:.1f}",
+        f"  Orphans (0 edges): {len(c.orphans)}",
+        f"  Islands (<=1 edge): {len(c.islands)}",
+        f"  Weak (==2 edges): {len(c.weak)}",
         f"  Status: {dict(st)}",
     ]
     if c.islands:
-        lines.append("  Insel-Nodes: " + ", ".join(c.islands[:15]) + (" …" if len(c.islands) > 15 else ""))
+        lines.append("  Island nodes: " + ", ".join(c.islands[:15]) + (" …" if len(c.islands) > 15 else ""))
     if c.orphans:
-        lines.append("  Orphan-Nodes: " + ", ".join(c.orphans[:15]) + (" …" if len(c.orphans) > 15 else ""))
+        lines.append("  Orphan nodes: " + ", ".join(c.orphans[:15]) + (" …" if len(c.orphans) > 15 else ""))
     return "\n".join(lines)
 
 
 def render_near_dup(pairs: list[NearDup]) -> str:
     if not pairs:
-        return "Keine Near-Duplikate im Band."
+        return "No near-duplicates in the band."
     lines = [f"{len(pairs)} near-duplicate pairs (review consolidation via `ig merge`):"]
     for p in pairs:
         lines.append(f"[{p.score:.3f}] {p.a} ↔ {p.b}")

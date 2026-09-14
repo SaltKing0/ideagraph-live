@@ -1,4 +1,4 @@
-"""Unit-Tests für das Hybrid-Retrieval (BM25 + RRF-Fusion, V2#1)."""
+"""Unit tests for hybrid retrieval (BM25 + RRF fusion, V2#1)."""
 
 import sys
 from pathlib import Path

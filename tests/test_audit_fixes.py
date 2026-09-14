@@ -1,7 +1,7 @@
-"""Regressionstests für die Audit-Fix-Batches 1+2 (Datenverlust-Klasse).
+"""Regression tests for audit-fix batches 1+2 (data-loss class).
 
-Batch 1: Locks + atomare Writes + Vektor-Read-once (Audit #1, #2, #4, #15).
-Jeder Test reproduziert zuerst den Audit-Befund und verifiziert dann die Fix.
+Batch 1: locks + atomic writes + read-once vectors (audits #1, #2, #4, #15).
+Each test first reproduces the audit finding and then verifies the fix.
 """
 
 import json
@@ -27,17 +27,17 @@ def make_engine(tmp_path):
 
 
 def _write_garbage_mid_file(path: Path, good_lines: list[str]) -> None:
-    """Simuliert den Crash-Zustand: Datei existiert, Inhalt ist trunciert."""
+    """Simulates the crash state: file exists, content is truncated."""
     path.write_text("\n".join(good_lines[: max(1, len(good_lines) - 2)]) + "\n", encoding="utf-8")
 
 
-# ---------- Audit #2: atomare Writes ----------
+# ---------- Audit #2: atomic writes ----------
 
 def test_crash_mid_write_leaves_no_truncated_edges(tmp_path):
-    """Ein Crash mitten in write_edges darf edges.jsonl nie halb kürzen.
+    """A crash in the middle of write_edges must never half-truncate edges.jsonl.
 
-    Audit-Probe: buffered write + Crash kürzte edges.jsonl stumm von 5 auf 2
-    Edges. Mit tmp+os.replace ist die Datei entweder alt oder neu, nie halb.
+    Audit probe: buffered write + crash truncated edges.jsonl silently from 5
+    to 2 edges. With tmp+os.replace the file is either old or new, never half.
     """
     brain = make_brain(tmp_path)
     edges = [Edge(source="a", target="b", kind="similar", pending=False,
@@ -45,15 +45,15 @@ def test_crash_mid_write_leaves_no_truncated_edges(tmp_path):
     brain.write_edges(edges)
     before = brain.read_edges()
     assert len(before) == 5
-    # Kein Crash mehr möglich: der Write ist atomar. Verifiziere, dass die
-    # Datei nach 100 Rewrites immer vollständig ist (kein Truncation-Fenster).
+    # No crash possible anymore: the write is atomic. Verify that the
+    # file is always complete after 100 rewrites (no truncation window).
     for i in range(100):
         edges.append(Edge(source="x", target="y", kind="extends", pending=True,
                           id=f"{100 + i:012x}"))
         brain.write_edges(edges)
         got = brain.read_edges()
         assert len(got) == len(edges), f"truncated after write {i}"
-    # Keine .tmp-Reste
+    # No .tmp leftovers
     leftovers = list((tmp_path / "brain").glob("*.tmp-*"))
     assert leftovers == []
 
@@ -70,16 +70,16 @@ def test_crash_mid_write_leaves_no_truncated_vectors(tmp_path):
 def test_atomic_write_replaces_not_appends(tmp_path):
     brain = make_brain(tmp_path)
     brain.write_edges([Edge(source="a", target="b", kind="similar")])
-    brain.write_edges([])  # kompletter Rewrite auf leer
+    brain.write_edges([])  # full rewrite to empty
     assert brain.read_edges() == []
 
 
-# ---------- Audit #1/#15: Lock + Ingest-Chain-Serialisierung ----------
+# ---------- Audit #1/#15: lock + ingest-chain serialization ----------
 
 def test_concurrent_resolves_do_not_lose_updates(tmp_path):
-    """20 parallele Resolves auf 20 verschiedenen Edges: alle müssen ankommen.
+    """20 parallel resolves on 20 different edges: all must land.
 
-    Vor dem Fix loste der last-writer-wins Rewrite Schreibungen des anderen.
+    Before the fix, the last-writer-wins rewrite lost the other's writes.
     """
     brain = make_brain(tmp_path)
     brain.write_edges([Edge(source="a", target="b", kind="similar",
@@ -106,13 +106,13 @@ def test_concurrent_resolves_do_not_lose_updates(tmp_path):
 
 
 def test_concurrent_ingests_do_not_duplicate_nodes(tmp_path):
-    """Parallele Ingests desselben Texts: dedupe muss greifen, keine Dup-Nodes.
+    """Parallel ingests of the same text: dedupe must apply, no duplicate nodes.
 
-    Audit #15: parallele Ingests duplizierten Nodes UND Edges (RMW-Chain
-    unsynchronisiert). Mit dem Prozess-Lock serialisiert der Chain.
+    Audit #15: parallel ingests duplicated nodes AND edges (unsynchronized
+    RMW chain). With the process lock the chain is serialized.
     """
     engine = make_engine(tmp_path)
-    engine.ingest("Basis-Idee über Graph-Speicher", source="test")  # Seed
+    engine.ingest("Basis-Idee über Graph-Speicher", source="test")  # seed
     results = []
     errors = []
 
@@ -130,26 +130,26 @@ def test_concurrent_ingests_do_not_duplicate_nodes(tmp_path):
     assert errors == []
     nodes = engine.brain.read_nodes()
     assert len(nodes) == 1, f"dedupe failed under concurrency: {len(nodes)} nodes"
-    # Alle Threads bekommen dasselbe Dup-Ergebnis
+    # All threads get the same duplicate result
     assert all(is_dup for _, _, is_dup in results)
 
 
 def test_brain_lock_is_reentrant():
-    """Der Lock muss RLock sein: ingest ruft vectors_for etc. im selben Thread."""
+    """The lock must be an RLock: ingest calls vectors_for etc. in the same thread."""
     with BRAIN_LOCK:
-        with BRAIN_LOCK:  # würde mit einem plain Lock deadlocken
+        with BRAIN_LOCK:  # would deadlock with a plain Lock
             pass
 
 
-# ---------- Audit #4: vectors_for liest einmal ----------
+# ---------- Audit #4: vectors_for reads once ----------
 
 def test_vectors_for_reads_nodes_once(tmp_path, monkeypatch):
-    """vectors_for darf read_nodes nicht pro fehlender ID aufrufen (Audit #4:
-    4,2 s für 300 kalte Nodes durch O(N) Datei-Lesezyklen)."""
+    """vectors_for must not call read_nodes per missing ID (audit #4:
+    4.2 s for 300 cold nodes through O(N) file-read cycles)."""
     brain = make_brain(tmp_path)
     ids = []
     for i in range(30):
-        n = Node(text=f"Node Nummer {i} über Embedding-Caches")
+        n = Node(text=f"Node number {i} about embedding caches")
         brain.write_node(n)
         ids.append(n.id)
     calls = []
@@ -161,7 +161,7 @@ def test_vectors_for_reads_nodes_once(tmp_path, monkeypatch):
 
 def test_vectors_for_skips_unknown_ids(tmp_path):
     brain = make_brain(tmp_path)
-    n = Node(text="existierende Node")
+    n = Node(text="existing node")
     brain.write_node(n)
     got = brain.vectors_for({n.id, "deadbeefdead"}, lambda t: [1.0] * 4)
     assert n.id in got and "deadbeefdead" not in got
@@ -169,17 +169,17 @@ def test_vectors_for_skips_unknown_ids(tmp_path):
 
 def test_vectors_for_persists_new_vectors(tmp_path):
     brain = make_brain(tmp_path)
-    n = Node(text="wird gecacht")
+    n = Node(text="gets cached")
     brain.write_node(n)
     brain.vectors_for({n.id}, lambda t: [0.5] * 4)
     cached = brain.read_vectors()
     assert cached[n.id] == [0.5] * 4
 
 
-# ---------- Audit #7/#8: Retrieval-Korrektheit ----------
+# ---------- Audit #7/#8: retrieval correctness ----------
 
 def test_retrieve_excludes_tombstones(tmp_path):
-    """Audit #7: getombstonete Nodes kommen nicht als Suchantworten zurück."""
+    """Audit #7: tombstoned nodes must not come back as search answers."""
     from ideagraph.retrieval import retrieve
     engine = make_engine(tmp_path)
     engine.ingest("Transformer Architektur Grundlagen", source="test")
@@ -192,7 +192,7 @@ def test_retrieve_excludes_tombstones(tmp_path):
 
 
 def test_cosine_rejects_dimension_mismatch():
-    """Audit #8: cosine darf bei fremden Dimensionen nicht still truncieren."""
+    """Audit #8: cosine must not silently truncate on foreign dimensions."""
     from ideagraph.similarity import cosine
     import pytest
     with pytest.raises(ValueError):
@@ -200,37 +200,37 @@ def test_cosine_rejects_dimension_mismatch():
 
 
 def test_find_duplicate_skips_foreign_dimensions(tmp_path):
-    """Mixed-dim Brain: Dedupe vergleicht nur gleich-dimensionale Vektoren."""
+    """Mixed-dim brain: dedupe compares only same-dimensional vectors."""
     engine = make_engine(tmp_path)
-    engine.ingest("Einzigartiger Text über Flussdelfine", source="test")
-    # Verfälsche einen Cache-Eintrag auf fremde Dimension
+    engine.ingest("Unique text about river dolphins", source="test")
+    # corrupt one cache entry to a foreign dimension
     vecs = engine.brain.read_vectors()
     nid = next(iter(vecs))
-    vecs[nid] = [0.0] * 7  # HashEmbedder nutzt 64
+    vecs[nid] = [0.0] * 7  # HashEmbedder uses 64
     engine.brain.write_vectors(vecs)
-    # Kein Crash, kein falscher Match:
+    # no crash, no false match:
     dup = engine._find_duplicate([0.5] * 64)
     assert dup is None or dup.id != nid
 
 
 def test_retrieve_degrades_gracefully_on_mixed_dims(tmp_path):
-    """Demo-artiges Brain (fremde Vektor-Dimension): BM25-Stufe bleibt wirksam."""
+    """Demo-like brain (foreign vector dimension): BM25 stage stays effective."""
     from ideagraph.retrieval import retrieve
     engine = make_engine(tmp_path)
     engine.ingest("RAG grounding mit Retrieval-Augmented Generation", source="test")
     vecs = engine.brain.read_vectors()
     for k in vecs:
-        vecs[k] = [0.1] * 384  # fremde Dimension
+        vecs[k] = [0.1] * 384  # foreign dimension
     engine.brain.write_vectors(vecs)
     hits = retrieve(engine, "RAG grounding")
     assert hits, "BM25 should still return hits when dense stage degrades"
 
 
-# ---------- Fix-Welle 2: Brain-Datenintegrität ----------
+# ---------- Fix wave 2: brain data integrity ----------
 
 def test_corrupt_edges_line_does_not_kill_reads(tmp_path):
-    """Audit #17: eine korrupte Zeile in edges.jsonl darf die API nicht permanent
-    crashen — read_nodes skipped kaputte Files ebenso."""
+    """Audit #17: a corrupt line in edges.jsonl must not permanently crash the
+    API — read_nodes skips broken files the same way."""
     brain = make_brain(tmp_path)
     brain.write_edges([Edge(source="a", target="b", kind="similar", pending=False,
                             id="aaaaaaaaaaaa")])
@@ -252,27 +252,27 @@ def test_corrupt_vectors_line_does_not_kill_reads(tmp_path):
 
 
 def test_node_path_rejects_traversal_ids(tmp_path):
-    """Audit #18: IDs mit '/'/'..' dürfen nodes/ nicht verlassen können.
-    Die Schranke ist Pfad-Sicherheit — kurze Fixture-IDs bleiben gültig."""
+    """Audit #18: IDs with '/'/'..' must not be able to escape nodes/.
+    The guard is path security — short fixture IDs stay valid."""
     brain = make_brain(tmp_path)
     for evil in ("../../etc/passwd", "a/b/c", "..", ".", ".hidden", "", "\x00bad"):
         with pytest.raises(ValueError):
             brain.node_path(evil)
-    # Gültige IDs (kurz UND 12-Hex) gehen durch:
+    # Valid IDs (short AND 12-hex) pass through:
     assert brain.node_path("a").name == "a.md"
     assert brain.node_path("0a1b2c3d4e5f").name == "0a1b2c3d4e5f.md"
 
 
 def test_from_markdown_missing_id_raises_valueerror():
-    """Audit #56: Hand-editierte Datei ohne id: → verständlicher ValueError
-    (der von read_nodes geskippt wird), kein nackter KeyError."""
+    """Audit #56: hand-edited file without id: → understandable ValueError
+    (which read_nodes skips), no bare KeyError."""
     with pytest.raises(ValueError):
         Node.from_markdown("---\ntext: foo\n---\n\nHallo ohne id\n")
 
 
 def test_evolved_rewrite_preserves_status(tmp_path):
-    """Audit #22: Status-Erosion — active Node durfte durch die Evolution-
-    Rewrite nicht auf probation zurückfallen."""
+    """Audit #22: status erosion — an active node must not fall back to
+    probation through the evolution rewrite."""
     engine = make_engine(tmp_path)
     n1, _, _ = engine.ingest("x x x x x y y y y y z z z z z", source="test")
     n2, _, _ = engine.ingest("x x x x x y y y y y z z z z z w", source="test",
@@ -296,51 +296,51 @@ def test_evolved_rewrite_preserves_status(tmp_path):
 
 
 def test_evolved_annotation_cap(tmp_path):
-    """Audit #19: [evolved]-Annotationen wachsen unbegrenzt → Cap bei 5."""
+    """Audit #19: [evolved] annotations grow unbounded → cap at 5."""
     engine = make_engine(tmp_path)
     base = "q w e r t y u i o p"
     n1, _, _ = engine.ingest(base, source="test")
     for i in range(10):
-        engine.ingest(f"{base} variant nummer {i}", source="test",
+        engine.ingest(f"{base} variant number {i}", source="test",
                       allow_duplicates=True)
     target = next(n for n in engine.brain.read_nodes() if n.id == n1.id)
     assert target.text.count("[evolved ") <= 5, "evolved annotations exceed cap"
 
 
 def test_merge_node_no_cosmetic_sources_churn(tmp_path):
-    """Audit #54: erster Dup-Ingest mit bereits bekannter Quelle darf die
-    Node-Datei nicht kosmetisch verändern. Gelöst via Symmetrie: to_markdown
-    schreibt sources IMMER (auch leer), merge_node fügt node.source ein —
-    der erste Rewrite ist dann ein No-op."""
+    """Audit #54: a first duplicate ingest with an already-known source must not
+    cosmetically rewrite the node file. Solved via symmetry: to_markdown always
+    writes sources (even empty), merge_node inserts node.source — so the first
+    rewrite becomes a no-op."""
     brain = make_brain(tmp_path)
     n = Node(text="Dup-Test", source="bot")
     brain.write_node(n)
     before = brain.node_path(n.id).read_text()
-    brain.merge_node(n, source="bot")  # gleiche Quelle → identischer Inhalt
+    brain.merge_node(n, source="bot")  # same source → identical content
     after = brain.node_path(n.id).read_text()
     assert before == after, f"cosmetic churn:\n--- before\n{before}\n--- after\n{after}"
-    # Neue Quelle wird weiterhin protokolliert:
+    # New source is still recorded:
     brain.merge_node(n, source="agent")
     after2 = brain.node_path(n.id).read_text()
     assert "sources: [bot, agent]" in after2
 
 
 def test_index_escapes_pipe_after_truncation(tmp_path):
-    """Audit #55: Kürzen VOR dem Escapen — ein |-Escape darf nicht halbiert werden."""
+    """Audit #55: truncate BEFORE escaping — a |-escape must not be halved."""
     brain = make_brain(tmp_path)
-    n = Node(text="A" * 59 + "|")  # Pipe genau an der 60er-Grenze
+    n = Node(text="A" * 59 + "|")  # pipe exactly at the 60-char boundary
     brain.write_node(n)
     brain.rebuild_index()
     idx = (tmp_path / "brain" / "INDEX.md").read_text()
     line = [l for l in idx.splitlines() if "nodes/" in l and n.id in l][0]
-    # Titel-Anteil darf keinen einzelnen (halbierten) Backslash am Ende haben:
+    # title part must not end with a single (halved) backslash:
     title = line.split("](nodes/")[0].lstrip("| ")
-    assert not title.endswith("\\"), f"halbierter Escape: {title!r}"
+    assert not title.endswith("\\"), f"halved escape: {title!r}"
 
 
 def test_merge_refreshes_survivor_vector(tmp_path):
-    """Audit: survivor vector stale — nach dem Merge muss der Survivor-Vektor
-    den NEUEN (angehängten) Text repräsentieren."""
+    """Audit: survivor vector stale — after the merge the survivor vector must
+    represent the NEW (appended) text."""
     engine = make_engine(tmp_path)
     n1, _, _ = engine.ingest("Thema A über Quantenfehlerkorrektur", source="test")
     n2, _, _ = engine.ingest("Thema A über Quantenfehlerkorrektur und Surface Codes",
@@ -354,10 +354,10 @@ def test_merge_refreshes_survivor_vector(tmp_path):
     assert engine.brain.read_vectors().get(n1.id) is None
 
 
-# ---------- Fix-Welle 2: CLI-Robustheit (#24 #26 #32 #33 #58) ----------
+# ---------- Fix wave 2: CLI robustness (#24 #26 #32 #33 #58) ----------
 
 def test_cli_accept_without_arg_prints_usage():
-    """Audit #26: 'ig accept' ohne Edge-ID → Usage-Zeile, kein IndexError."""
+    """Audit #26: 'ig accept' without edge ID → usage line, no IndexError."""
     import subprocess, os, tempfile
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, IG_BRAIN_PATH=tmp, IG_BRAIN_MODE="local",
@@ -368,11 +368,11 @@ def test_cli_accept_without_arg_prints_usage():
             cwd=str(Path(__file__).resolve().parent.parent), timeout=60)
     assert r.returncode == 1
     assert "Traceback" not in r.stderr
-    assert "Nutzung: ig accept" in r.stdout
+    assert "Usage: ig accept" in r.stdout
 
 
 def test_cli_ingest_stdin_marker_rejects_mixed_args():
-    """Audit #32: 'ig ingest - extra' darf keinen Node mit Text '- extra' anlegen."""
+    """Audit #32: 'ig ingest - extra' must not create a node with text '- extra'."""
     import subprocess, os, tempfile
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, IG_BRAIN_PATH=tmp, IG_BRAIN_MODE="local",
@@ -387,20 +387,20 @@ def test_cli_ingest_stdin_marker_rejects_mixed_args():
 
 
 def test_gaps_render_empty_brain_no_zero_division(tmp_path_factory):
-    """Audit #24: leerer Brain (alle Counts 0) → Report, kein ZeroDivisionError."""
+    """Audit #24: empty brain (all counts 0) → report, no ZeroDivisionError."""
     from ideagraph.gaps import analyze_coverage, render
     brain = make_brain(tmp_path_factory.mktemp("empty"))
     cov = analyze_coverage(brain)
     out = render(cov, threshold=10)
-    assert "Coverage" in out  # kein Crash
+    assert "Coverage" in out  # no crash
 
 
 def test_near_dup_max_zero_means_zero(tmp_path_factory):
-    """Audit #60 (Teil): max_pairs=0 limitiert auf 0, nicht auf unbegrenzt."""
+    """Audit #60 (part): max_pairs=0 limits to 0, not to unbounded."""
     from ideagraph.hygiene import near_dup_pairs
     brain = make_brain(tmp_path_factory.mktemp("maxzero"))
-    a = Node(text="Alpha Knoten")
-    b = Node(text="Alpha Knoten zwei")
+    a = Node(text="Alpha node")
+    b = Node(text="Alpha node two")
     brain.write_node(a)
     brain.write_node(b)
     brain.write_vectors({a.id: [1.0] * 4, b.id: [0.99] * 4})
@@ -408,32 +408,32 @@ def test_near_dup_max_zero_means_zero(tmp_path_factory):
     assert pairs == []
 
 
-# ---------- Fix-Welle 2: Server (#16 #20 #29) ----------
+# ---------- Fix wave 2: server (#16 #20 #29) ----------
 
 def test_server_engine_cache_follows_env(tmp_path, monkeypatch):
-    """Audit #16: Engine-Cache ist an (IG_BRAIN_PATH, IDEAGRAPH_EMBEDDER) gekoppelt —
-    Env-Wechsel liefern die passende Engine, gleiche Env-Werte die gecachte Instanz."""
+    """Audit #16: the engine cache is keyed on (IG_BRAIN_PATH, IDEAGRAPH_EMBEDDER) —
+    env changes deliver the matching engine, same env values the cached instance."""
     from ideagraph import server
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
     monkeypatch.setenv("IG_BRAIN_MODE", "local")
     monkeypatch.setenv("IDEAGRAPH_EMBEDDER", "hash")
     e1 = server.make_engine()
-    assert server.make_engine() is e1  # Cache-Treffer
+    assert server.make_engine() is e1  # cache hit
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "b"))
     e2 = server.make_engine()
-    assert e2 is not e1  # neues Brain → neue Engine
+    assert e2 is not e1  # new brain → new engine
     assert e2.brain.path == tmp_path / "b"
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
-    assert server.make_engine() is e1  # zurück → wieder die erste
+    assert server.make_engine() is e1  # back → the first one again
 
 def test_pull_without_origin_is_noop(tmp_path):
-    """Audit #20: lokales Repo ohne origin — pull darf nicht crashen."""
+    """Audit #20: local repo without origin — pull must not crash."""
     brain = make_brain(tmp_path)
-    brain.pull()  # kein Remote, kein Fehler
+    brain.pull()  # no remote, no error
 
 def test_pull_rebase_autostash_survives_local_changes(tmp_path):
-    """Audit #20: lokales Repo MIT origin (bare remote): autostash-pull übersteht
-    uncommittete lokale Änderungen statt hart zu failen."""
+    """Audit #20: local repo WITH origin (bare remote): autostash pull survives
+    uncommitted local changes instead of failing hard."""
     import subprocess as sp
     origin = tmp_path / "origin.git"
     sp.run(["git", "init", "--bare", "-q", str(origin)], check=True)
@@ -442,21 +442,21 @@ def test_pull_rebase_autostash_survives_local_changes(tmp_path):
     brain.clone_if_missing()
     (brain.path / "nodes").mkdir(exist_ok=True)
     (brain.path / "uncommitted.md").write_text("dirty")
-    brain.pull()  # dirty tree + autostash → kein Fehler
+    brain.pull()  # dirty tree + autostash → no error
 
 def test_clone_refuses_nonempty_nonrepo_dir(tmp_path):
-    """Audit #20: halbes/nicht-leeres Verzeichnis ohne .git → klare Fehlermeldung
-    statt Clone-Crash oder stiller Überschreibung."""
+    """Audit #20: half-created/non-empty directory without .git → clear error
+    message instead of a clone crash or silent overwrite."""
     d = tmp_path / "brain"
     d.mkdir()
     (d / "loose.txt").write_text("x")
     brain = Brain(str(d), mode="git")
-    brain.remote = str(tmp_path / "origin.git")  # existiert nicht — egal, wir kommen nie zum Clone
-    with pytest.raises(RuntimeError, match="kein Brain-Repo"):
+    brain.remote = str(tmp_path / "origin.git")  # doesn't exist — irrelevant, we never reach the clone
+    with pytest.raises(RuntimeError, match="not a brain repo"):
         brain.clone_if_missing()
 
 def test_conf_floor_non_numeric_clear_error(tmp_path):
-    """Audit #20: IG_EDGE_CONF_FLOOR=abc → verständlicher ValueError, kein nackter float()-Crash."""
+    """Audit #20: IG_EDGE_CONF_FLOOR=abc → understandable ValueError, no bare float() crash."""
     engine = make_engine(tmp_path)
     n1 = engine.brain.write_node(Node(text="Alpha Grundlage"))
     n2 = engine.brain.write_node(Node(text="Alpha Grundlage anders formuliert"))
@@ -464,78 +464,78 @@ def test_conf_floor_non_numeric_clear_error(tmp_path):
         engine.ingest("Alpha Grundlage nochmal", env={"IG_EDGE_CONF_FLOOR": "abc"})
 
 def test_ws_zombie_binary_frame_disconnects(tmp_path):
-    """Audit #29: ein Binary-Frame (KeyError-Pfad) wirft den Client aus der
-    Connection-Liste statt einen Zombie zu hinterlassen."""
+    """Audit #29: a binary frame (KeyError path) throws the client out of the
+    connection list instead of leaving a zombie behind."""
     from fastapi.testclient import TestClient
     from ideagraph import server as srv
     brain = make_brain(tmp_path)
     with TestClient(srv.app) as client:
         with client.websocket_connect("/ws") as ws:
-            # Binary-Frame senden → alter Code: KeyError → Zombie blieb in active
+            # send a binary frame → old code: KeyError → zombie stayed in active
             with client.websocket_connect("/ws") as ws2:
                 ws2.send_bytes(b"\x00\x01")
-                # Server-Task braucht einen Tick zum Exception-Handling; poll statt blindem Sleep.
+                # the server task needs a tick for exception handling; poll instead of a blind sleep.
                 import time
                 deadline = time.time() + 5
                 while time.time() < deadline and len(srv.manager.active) != 1:
                     time.sleep(0.05)
-                assert len(srv.manager.active) == 1  # nur der erste lebt noch
+                assert len(srv.manager.active) == 1  # only the first one is still alive
 
 
 def test_knn_skips_foreign_dim_candidates():
-    """Audit #8-Follow-up: knn überspringt fremd-dimensionale Kandidaten statt zu
-    crashen — ein Brain mit Alt-Vektoren falscher Dimension degradiert sauber."""
+    """Audit #8 follow-up: knn skips foreign-dimensional candidates instead of
+    crashing — a brain with legacy vectors of the wrong dimension degrades cleanly."""
     from ideagraph.similarity import knn
     query = [1.0, 0.0, 0.0]
     candidates = {
         "same": [1.0, 0.0, 0.0],
         "other": [0.0, 1.0, 0.0],
-        "stray64": [1.0] * 64,   # Alt-Vektor falscher Dimension
+        "stray64": [1.0] * 64,   # legacy vector of the wrong dimension
     }
     result = knn(query, candidates, k=3)
-    assert [nid for nid, _ in result] == ["same", "other"]  # stray übersprungen
+    assert [nid for nid, _ in result] == ["same", "other"]  # stray skipped
     assert result[0][1] == 1.0
 
 
 def test_link_allows_same_pair_different_kind_or_direction(tmp_path):
-    """Audit #23: link()-Dedupe ist kind-aware und richtungssensitiv —
+    """Audit #23: link() dedupe is kind-aware and direction-sensitive —
     same_as and similar coexist; A→B does not block B→A; only the
-    exakte Tripel blockiert."""
+    exact triple is blocked."""
     engine = make_engine(tmp_path)
-    n1, n2 = Node(id="aaaa1111", text="Erster Gedanke"), Node(id="bbbb2222", text="Zweiter Gedanke")
+    n1, n2 = Node(id="aaaa1111", text="First thought"), Node(id="bbbb2222", text="Second thought")
     engine.brain.write_node(n1)
     engine.brain.write_node(n2)
     e1 = engine.link(n1.id, n2.id, kind="same_as")
     assert e1.pending is False
-    # andere Kind, gleiches Paar → erlaubt
+    # different kind, same pair → allowed
     e2 = engine.link(n1.id, n2.id, kind="similar")
     assert e2.kind == "similar"
-    # gleiche Kind, andere Richtung → erlaubt
+    # same kind, other direction → allowed
     e3 = engine.link(n2.id, n1.id, kind="same_as")
     assert (e3.source, e3.target) == (n2.id, n1.id)
-    # exaktes Duplikat → blockiert
-    with pytest.raises(ValueError, match="existiert bereits"):
+    # exact duplicate → blocked
+    with pytest.raises(ValueError, match="already exists"):
         engine.link(n1.id, n2.id, kind="same_as")
 
 
-# ---------- Fix-Welle 3: Retrieval/Analyse (#10 #37 #38 #39 #40 #60-Reste) ----------
+# ---------- Fix wave 3: retrieval/analysis (#10 #37 #38 #39 #40 #60 leftovers) ----------
 
 def test_bm25_scores_after_index_build(tmp_path):
-    """Audit #10: scores() schaut im vorgebauten Index nach — identische Scores
-    wie die Referenz-Formel, aber ohne Re-Tokenisierung pro Query."""
+    """Audit #10: scores() looks up the prebuilt index — identical scores to the
+    reference formula, but without re-tokenizing per query."""
     from ideagraph.retrieval import BM25
     bm = BM25(["alpha beta gamma", "alpha alpha delta", "epsilon"])
     s = bm.scores(["alpha", "delta"])
-    # alpha alpha delta hat doppeltes alpha + delta → höher als doc 1
+    # alpha alpha delta has double alpha + delta → higher than doc 1
     assert s[1] > s[0] > 0.0
     assert s[2] == 0.0
-    # zweite Query ist O(lookup) — keine Korpus-Re-Tokenisierung mehr
+    # second query is O(lookup) — no corpus re-tokenization anymore
     s2 = bm.scores(["epsilon"])
     assert s2[2] > 0.0 and s2[0] == 0.0
 
 def test_retrieve_nonsense_query_returns_no_garbage(tmp_path):
-    """Audit #37: eine Query ohne jede Überlappung liefert [] statt
-    confident-aussehender RRF-Garbage."""
+    """Audit #37: a query with no overlap at all returns [] instead of
+    confident-looking RRF garbage."""
     engine = make_engine(tmp_path)
     engine.brain.write_node(Node(text="Vektordatenbanken und ANN-Indizes"))
     engine.brain.write_node(Node(text="Transformer-Architektur Grundlagen"))
@@ -549,18 +549,19 @@ def test_retrieve_nonsense_query_returns_no_garbage(tmp_path):
     assert results == []
 
 def test_near_dup_float64_band_boundary(tmp_path):
-    """Audit #38: ein Paar knapp unter der 0.92-Schwelle (float64 0.91999...)
-    erscheint im Review-Band, statt durch Rundung aus beiden Mechanismen zu fallen."""
+    """Audit #38: a pair just below the 0.92 threshold (float64 0.91999...)
+    shows up in the review band instead of falling out of both mechanisms
+    through rounding."""
     import json as _json
     import math
     from ideagraph.hygiene import near_dup_pairs
     brain = make_brain(tmp_path)
-    a = brain.write_node(Node(id="vecaaa1", text="Alpha Dokument"))
-    b = brain.write_node(Node(id="vecbbb2", text="Alpha Dokument zwei"))
-    # exakt 0.9199999990 float64 konstruieren: fast parallele Vektoren
+    a = brain.write_node(Node(id="vecaaa1", text="Alpha document"))
+    b = brain.write_node(Node(id="vecbbb2", text="Alpha document two"))
+    # construct exactly 0.9199999990 float64: nearly parallel vectors
     with open(brain.path / "vectors.jsonl", "w") as f:
         base = [1.0] + [0.0] * 7
-        # cos = cos(theta): theta so wählen, dass cos ≈ 0.9199999990
+        # cos = cos(theta): choose theta so that cos ≈ 0.9199999990
         theta = math.acos(0.9199999990)
         f.write(_json.dumps({"id": "vecaaa1", "vec": base}) + "\n")
         f.write(_json.dumps({"id": "vecbbb2",
@@ -570,8 +571,8 @@ def test_near_dup_float64_band_boundary(tmp_path):
     assert 0.78 <= pairs[0].score < 0.9200001
 
 def test_connectivity_ignores_invalidated_edges(tmp_path):
-    """Audit #40: eine Edge mit valid_to zählt nicht mehr zum Grad — der
-    Status-Report widerspricht nicht mehr der Admit-Rule-Logik."""
+    """Audit #40: an edge with valid_to no longer counts toward degree — the
+    status report no longer contradicts the admit-rule logic."""
     from ideagraph.hygiene import connectivity
     brain = make_brain(tmp_path)
     brain.write_node(Node(id="conn111", text="A"))
@@ -585,49 +586,49 @@ def test_connectivity_ignores_invalidated_edges(tmp_path):
     assert c2.orphans == ["conn111", "conn222"] and c2.edges == 0
 
 def test_knn_k_zero_returns_empty():
-    """Audit #60: k<=0 → [] statt alle Items (k=0) bzw. letzter gedroppt (k=-1)."""
+    """Audit #60: k<=0 → [] instead of all items (k=0) or last dropped (k=-1)."""
     from ideagraph.similarity import knn
     cands = {"a": [1.0, 0.0], "b": [0.0, 1.0]}
     assert knn([1.0, 0.0], cands, k=0) == []
     assert knn([1.0, 0.0], cands, k=-1) == []
 
 def test_knn_skips_empty_vectors():
-    """Audit #60: fehlende/leere Vektoren werden übersprungen statt als
-    Total-Mismatch (cos 0.0) zu ranken."""
+    """Audit #60: missing/empty vectors are skipped instead of ranked as
+    a total mismatch (cos 0.0)."""
     from ideagraph.similarity import knn
     result = knn([1.0, 0.0], {"good": [1.0, 0.0], "empty": []}, k=2)
     assert [nid for nid, _ in result] == ["good"]
 
 def test_gaps_keyword_word_boundary(tmp_path):
-    """Audit #60: 'test' matcht nicht mehr 'latest' — Wortgrenzen-Matching."""
+    """Audit #60: 'test' no longer matches 'latest' — word-boundary matching."""
     from ideagraph.gaps import analyze_coverage
     brain = make_brain(tmp_path)
     brain.write_node(Node(text="The latest developments in robotics"))
     coverage = analyze_coverage(brain)
-    # "test" dürfte durch "latest" nicht mehr feuern — der Node ist unklassifiziert
+    # "test" must no longer fire through "latest" — the node is unclassified
     test_counts = [a.count for a in coverage.areas if "test" in a.name.lower()]
     assert all(c == 0 for c in test_counts)
 
 
-# ---------- Fix-Welle 3: Intent-Korrektheit (#35 #36 #51 #61) ----------
+# ---------- Fix wave 3: intent correctness (#35 #36 #51 #61) ----------
 
 def test_intent_no_false_positive_from_marker_substring():
-    """Audit #35: "versetzt" enthaelt "ersetzt" als Substring — Token-Matching
-    darf nicht feuern."""
+    """Audit #35: "versetzt" contains "ersetzt" as a substring — token matching
+    must not fire."""
     from ideagraph.intent import detect_intent
     assert detect_intent("Der Mitarbeiter wird versetzt in die neue Abteilung",
                          "Der Mitarbeiter arbeitet in der Abteilung") is None
 
 
 def test_intent_no_false_positive_from_ordinary_negation():
-    """Audit #35: "keine Zeit fuer Review" ist keine Kontradiktion ueber Review."""
+    """Audit #35: "keine Zeit fuer Review" is not a contradiction about review."""
     from ideagraph.intent import detect_intent
     assert detect_intent("Ich habe keine Zeit für Review",
                          "Review des Agent-Systems") is None
 
 
 def test_intent_stattfinden_is_not_supersedes():
-    """Audit #35: "findet statt" ist stattfinden-Verb, kein supersedes-Marker."""
+    """Audit #35: "findet statt" is the stattfinden verb, not a supersedes marker."""
     from ideagraph.intent import detect_intent
     assert detect_intent("Das Meeting findet statt", "Das Meeting des Teams") is None
 
@@ -646,14 +647,14 @@ def test_intent_negation_both_directions():
 
 
 def test_intent_punctuation_does_not_break_shared_words():
-    """Audit #36: "Erde," ist nach Tokenisierung dasselbe Wort wie "Erde"."""
+    """Audit #36: "Erde," is the same word as "Erde" after tokenization."""
     from ideagraph.intent import detect_intent
     assert detect_intent("Die Erde, wie sie ist, bleibt eine Kugel",
                          "Die Erde ist keine Kugel") is not None
 
 
 def test_intent_english_markers():
-    """Audit #61: Marker-Sets sind zweisprachig."""
+    """Audit #61: marker sets are bilingual."""
     from ideagraph.intent import detect_intent
     assert detect_intent("The new scheduler replaces the old scheduler",
                          "The old scheduler of the system") == "supersedes"
@@ -671,11 +672,11 @@ def test_intent_marker_priority_deterministic():
     assert detect_intent(both, old) == "supersedes"
 
 
-# ---------- Fix-Welle 3: Robustheit (#31 #52) ----------
+# ---------- Fix wave 3: robustness (#31 #52) ----------
 
 def test_ingest_failed_commit_raises_actionable_error(tmp_path, monkeypatch, capsys):
-    """Audit #31: commit_and_push-Fehler → Index-Heal + klare Meldung statt
-    nackter CalledProcessError; der Node bleibt auf Disk (kein Fake-Rollback)."""
+    """Audit #31: commit_and_push failure → index heal + clear message instead of
+    a bare CalledProcessError; the node stays on disk (no fake rollback)."""
     from ideagraph.brain import Brain
     from ideagraph.brain_engine import BrainEngine
     from ideagraph.embedder import HashEmbedder
@@ -696,15 +697,15 @@ def test_ingest_failed_commit_raises_actionable_error(tmp_path, monkeypatch, cap
 
 
 def test_flip_gate_marker_required(tmp_path):
-    """Audit #52: leere ROADMAP_CASES ohne Marker-File → der Gate-Test schlägt
-    fehl statt still zu passen. (Der Marker existiert im Repo — hier pruefen wir
-    die Logik direkt.)"""
+    """Audit #52: empty ROADMAP_CASES without the marker file → the gate test
+    fails instead of silently passing. (The marker exists in the repo — here we
+    check the logic directly.)"""
     from pathlib import Path
     repo = Path(__file__).resolve().parent.parent
     marker = repo / "ROADMAP_CASES_EMPTY"
     from ideagraph.evals import ROADMAP_CASES
     if not ROADMAP_CASES:
-        assert marker.exists(), "leere ROADMAP_CASES braucht den Marker-File"
+        assert marker.exists(), "empty ROADMAP_CASES requires the marker file"
 
 
 # ---------------------------------------------------------------------------

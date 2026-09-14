@@ -1,7 +1,7 @@
-"""Wachstums-Loop auf Brain-Basis: ingest → embed → suggest → commit.
+"""Growth loop on brain basis: ingest → embed → suggest → commit.
 
-Jeder Ingest ist ein Git-Commit im privaten Repo — der Graph wächst
-als sichtbare Commit-Historie.
+Every ingest is a git commit in the private repo — the graph grows as a
+visible commit history.
 """
 
 from __future__ import annotations
@@ -18,23 +18,23 @@ from .intent import detect_intent
 from .reranker import get_reranker
 
 DEDUPE_THRESHOLD = 0.92
-# Intent-Edges dürfen nur für Paare feuern, die auch wirklich thematisch
-# verwandt sind (same threshold as "extends"). Ohne diese Schranke würde
-# ein Marker-Wort im neuen Text ("ersetzt", "supersedes") eine Node gegen
-# JEDE bestehende Node als Intent nachordnen — in einem thematisch homogenen
-# Brain (geteilte Domänenvokabeln) sogar gegen fast alle.
+# Intent edges may only fire for pairs that are genuinely topically
+# related (same threshold as "extends"). Without this guard, a marker
+# word in the new text ("ersetzt", "supersedes") would subordinate a node
+# to EVERY existing node as intent — in a topically homogeneous brain
+# (shared domain vocabulary) even to almost all of them.
 INTENT_SIM_THRESHOLD = 0.45
-AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → Edges werden ohne HITL akzeptiert
+AUTO_ACCEPT_ENV = "IDEAGRAPH_AUTO_ACCEPT"  # "1"/"true" → edges accepted without HITL
 # "1"/"true" -> intent edges (supersedes/continues/contradicts) stay
-# pending (HITL-Review) statt auto-akzeptiert. Lässt Nutzer frei entscheiden,
-# ob automatisch erkannte Intentionen direkt in den Graph sollen.
+# pending (HITL review) instead of auto-accepted. Lets the user decide
+# whether automatically detected intents go straight into the graph.
 INTENT_PENDING_ENV = "IDEAGRAPH_INTENT_PENDING"
 
-# Serialisiert alle schreibenden Brain-Operationen pro Prozess. Der Store ist
-# eine Menge ganzer Datei-Rewrites (read-all → mutate → write-all); ohne Lock
-# interleaven parallele Ingests/Resolves und last-writer-wins verschluckt die
-# Schreibungen des anderen (Audit #1/#15). Ein Lock reicht, weil alle
-# Mutationen über denselben Prozess laufen (Server, CLI, Pipeline-Tools).
+# Serializes all brain write operations per process. The store is a series
+# of whole-file rewrites (read-all → mutate → write-all); without a lock,
+# parallel ingests/resolves interleave and last-writer-wins swallows the
+# other's writes (Audit #1/#15). One lock suffices because all mutations
+# run through the same process (server, CLI, pipeline tools).
 BRAIN_LOCK = threading.RLock()
 
 
@@ -47,7 +47,7 @@ def intent_pending_from_env() -> bool:
 
 
 def _normalize(text: str) -> str:
-    """Für den Duplikats-Vergleich: Kleinbuchstaben, Whitespace eingeebnet."""
+    """For the duplicate comparison: lowercase, whitespace flattened."""
     return " ".join(text.lower().split())
 
 
@@ -57,11 +57,11 @@ class BrainEngine:
         self.brain = brain
         self.embedder = embedder if embedder is not None else get_embedder()
         self.dedupe_threshold = dedupe_threshold
-        # V2#1: optionaler Cross-Encoder-Rerank-Pass; None/Default → kein Rerank.
+        # V2#1: optional cross-encoder rerank pass; None/default → no rerank.
         self.reranker = reranker if reranker is not None else get_reranker()
 
     def _find_duplicate(self, vec: list[float], exclude_id: str | None = None) -> Node | None:
-        """Nächster Node über dem Dedupe-Threshold — oder None. Nutzt den Vektor-Cache."""
+        """Closest node above the dedupe threshold — or None. Uses the vector cache."""
         node_ids = {n.id for n in self.brain.read_nodes() if n.id != exclude_id}
         vectors = self.brain.vectors_for(
             node_ids,
@@ -71,7 +71,7 @@ class BrainEngine:
         best: tuple[float, str] | None = None
         for nid, v in vectors.items():
             if len(v) != len(vec):
-                continue  # Audit #8: fremde Dimension = nicht vergleichbar, überspringen
+                continue  # Audit #8: foreign dimension = not comparable, skip
             sim = cosine(vec, v)
             if sim >= self.dedupe_threshold and (best is None or sim > best[0]):
                 best = (sim, nid)
@@ -80,18 +80,18 @@ class BrainEngine:
         return next((n for n in self.brain.read_nodes() if n.id == best[1]), None)
 
     def consolidate(self, admit_required: bool = False) -> dict:
-        """Dedup-basierte Consolidation (V2#2): Dual-Buffer-Promotion.
+        """Dedup-based consolidation (V2#2): dual-buffer promotion.
 
-        Prüft alle Probation-Nodes GEGENEINANDER und gegen active (schließt den
-        Streaming-Blindfleck: im selben Commit ingestierte Nodes wurden bisher
-        nie verglichen). Near-Duplicates werden GEMERGT (Dedupe, niemals
-        summarize) und der überflüssige Probation-Node getombstoned; alle
-        übrigen werden nach active promoted.
+        Checks all probation nodes AGAINST EACH OTHER and against active
+        (closes the streaming blind spot: nodes ingested in the same commit
+        were never compared before). Near-duplicates are MERGED (dedupe,
+        never summarize) and the redundant probation node is tombstoned;
+        all others are promoted to active.
 
-        `admit_required` (V2#3 Admit-Rule, opt-in): wenn True, tritt eine Node
-        nur in den aktiven Graph ein, wenn sie Relationen (aktive Edges) hat —
-        sonst bleibt sie in probation. Default False = bestehendes Verhalten
-        (promote alle).
+        `admit_required` (V2#3 admit rule, opt-in): when True, a node only
+        enters the active graph if it has relations (active edges) —
+        otherwise it stays in probation. Default False = existing behavior
+        (promote all).
         """
         with BRAIN_LOCK:
             promoted, merged = 0, 0
@@ -107,8 +107,8 @@ class BrainEngine:
                     self.brain.tombstone_node(pn.id)
                     merged += 1
                     continue
-                # V2#3 Admit-Rule (opt-in): ohne Relationen (aktive Edges) tritt die
-                # Node nicht in den aktiven Graph ein — sie bleibt in probation.
+                # V2#3 admit rule (opt-in): without relations (active edges) the
+                # node does not enter the active graph — it stays in probation.
                 if admit_required and not self._has_relation(pn.id):
                     continue
                 self.brain.promote_node(pn.id)
@@ -118,14 +118,14 @@ class BrainEngine:
             return {"promoted": promoted, "merged": merged}
 
     def _has_relation(self, node_id: str) -> bool:
-        """V2#3 Admit-Rule: hat die Node eine aktive Edge (ein-/ausgehend)?"""
+        """V2#3 admit rule: does the node have an active edge (in/out)?"""
         return any(e.source == node_id or e.target == node_id
                    for e in self.brain.read_edges() if e.valid_to is None)
 
     def demote_forgotten(self, level_fn) -> int:
-        """Graceful Degradation (V2#2): aktive Nodes, deren level_fn=='tombstone'
-        ist, werden getombstoned (nie hart gelöscht). level_fn(node)->str liefert
-        die Decay-Stufe (z. B. aus decay.decay_level mit Retrieval-Zählern)."""
+        """Graceful degradation (V2#2): active nodes whose level_fn=='tombstone'
+        are tombstoned (never hard-deleted). level_fn(node)->str returns the
+        decay level (e.g. from decay.decay_level with retrieval counters)."""
         with BRAIN_LOCK:
             count = 0
             for n in self.brain.read_nodes():
@@ -141,15 +141,15 @@ class BrainEngine:
                auto_accept: bool | None = None,
                relations: list[tuple[str, str]] | None = None,
                env: dict[str, str] | None = None) -> tuple[Node, list[Edge], bool]:
-        """Ingest mit Dedupe. Rückgabe: (node, edges, is_duplicate).
+        """Ingest with dedupe. Returns: (node, edges, is_duplicate).
 
-        Bei Near-Duplicate (cosine >= threshold gegen normalisierten Text)
-        wird kein neuer Node angelegt, sondern der bestehende gemergt:
-        Quelle wird an der Node protokolliert, Commit-Meldung sagt "dup".
-        auto_accept (default: Env IDEAGRAPH_AUTO_ACCEPT) akzeptiert
+        On a near-duplicate (cosine >= threshold against the normalized text)
+        no new node is created; the existing one is merged instead: the
+        source is logged on the node, the commit message says "dup".
+        auto_accept (default: env IDEAGRAPH_AUTO_ACCEPT) accepts
         Auto-accept edge suggestions instead of leaving them pending.
-        env (Tier-3): per-Call-Env-Overrides für Eval-Cases. Der Confidence-Floor
-        (IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) verwirft schwache
+        env (Tier-3): per-call env overrides for eval cases. The confidence floor
+        (IG_EDGE_CONF_FLOOR, default 0.0 = no filter) drops weak
         Auto-edge suggestions — ROADMAP_CASE `roadmap-confidence-floor`.
         """
         if auto_accept is None:
@@ -157,13 +157,13 @@ class BrainEngine:
         intent_pending = intent_pending_from_env()
         text = text.strip()
         if not text:
-            raise ValueError("Leerer Text kann nicht ingestiert werden.")
-        # Der komplette RMW-Chain (dedupe → node → embed → edges → vectors →
-        # evolve → index → commit) läuft unter EINEM Lock: parallele Ingests
-        # sollen sich nicht gegenseitig Nodes/Edges duplizieren oder
-        # Vektor-Cache-Schreibungen verlieren (Audit #1/#15).
+            raise ValueError("Empty text cannot be ingested.")
+        # The complete RMW chain (dedupe → node → embed → edges → vectors →
+        # evolve → index → commit) runs under ONE lock: parallel ingests
+        # must not duplicate each other's nodes/edges or lose
+        # vector-cache writes (Audit #1/#15).
         with BRAIN_LOCK:
-            self.brain.ensure_ready()  # Onboarding: legt ein fehlendes Brain-Repo an
+            self.brain.ensure_ready()  # onboarding: creates a missing brain repo
             self.brain.pull()
             vec = self.embedder.embed(_normalize(text))
             if not allow_duplicates:
@@ -182,17 +182,17 @@ class BrainEngine:
                     return dup, [], True
             node = Node(text=text, source=source, tags=tags, ntype=ntype)
             self.brain.write_node(node)
-            # Embedding-Cache: nur neue Nodes werden embeddet, Rest kommt aus vectors.jsonl
+            # Embedding cache: only new nodes get embedded, the rest comes from vectors.jsonl
             others = {n.id for n in self.brain.read_nodes() if n.id != node.id}
             candidates = self.brain.vectors_for(
                 others,
                 lambda t: self.embedder.embed(_normalize(t)),
                 batch_fn=lambda ts: self.embedder.embed_batch([_normalize(t) for t in ts]),
             )
-            # V2#3 Intent-Edges + Admit-Rule: die neue Node tritt mit ihren Relationen ein.
-            # Intent-Edges sind pending=False (automatisch akzeptiert), deshalb müssen
-            # sie zusätzlich eine echte thematische Verwandtschaft nachweisen (ST-Kosinus
-            # >= INTENT_SIM_THRESHOLD), sonst spammt ein Marker-Wort alle Nodes voll.
+            # V2#3 intent edges + admit rule: the new node enters with its relations.
+            # Intent edges are pending=False (auto-accepted), so they must
+            # additionally prove real topical relatedness (ST cosine
+            # >= INTENT_SIM_THRESHOLD), otherwise a single marker word spams all nodes.
             intent_edges: list[Edge] = []
             for ex in self.brain.read_nodes():
                 if ex.id == node.id:
@@ -204,21 +204,21 @@ class BrainEngine:
                 if ex_vec is None or cosine(vec, ex_vec) < INTENT_SIM_THRESHOLD:
                     continue
                 intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=intent_pending))
-            # Admit-Rule: explizit deklarierte Relationen (target_text|id, kind).
+            # Admit rule: explicitly declared relations (target_text|id, kind).
             if relations:
                 for ref, kind in relations:
                     target = next((n for n in self.brain.read_nodes()
                                    if n.id == ref or n.text.strip().lower() == ref.strip().lower()), None)
                     if target is not None and target.id != node.id:
                         intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False))
-            # Similarity-Edges (V2#3): pending nur, wenn weder das Confidence-Band (>=0.95)
-            # noch der Env-Override (IDEAGRAPH_AUTO_ACCEPT) die Edge auto-akzeptiert.
-            # Tier-3 Confidence-Floor (roadmap-confidence-floor): Vorschlaege unter dem
-            # Floor (per-Call env IG_EDGE_CONF_FLOOR, Default 0.0 = kein Filter) werden
-            # verworfen statt pending zu landen — schuetzt autonome Zyklen vor
-            # Low-Confidence-Edge-Flut.
-            # Tier-3 Confidence-Floor: nicht-numerische Werte bekommen einen
-            # verständlichen Fehler statt eines nackten float()-ValueError
+            # Similarity edges (V2#3): pending unless either the confidence band (>=0.95)
+            # or the env override (IDEAGRAPH_AUTO_ACCEPT) auto-accepts the edge.
+            # Tier-3 confidence floor (roadmap-confidence-floor): suggestions below the
+            # floor (per-call env IG_EDGE_CONF_FLOOR, default 0.0 = no filter) are
+            # dropped instead of landing pending — protects autonomous cycles from
+            # a flood of low-confidence edges.
+            # Tier-3 confidence floor: non-numeric values get an
+            # understandable error instead of a bare float() ValueError
             # (Audit #20: "unexplained 500s").
             _floor_raw = (env or {}).get("IG_EDGE_CONF_FLOOR",
                                          os.environ.get("IG_EDGE_CONF_FLOOR", "0.0"))
@@ -226,13 +226,13 @@ class BrainEngine:
                 floor = float(_floor_raw)
             except (TypeError, ValueError):
                 raise ValueError(
-                    f"IG_EDGE_CONF_FLOOR muss eine Zahl sein, bekommen: {_floor_raw!r}")
+                    f"IG_EDGE_CONF_FLOOR must be a number, got: {_floor_raw!r}")
             sim_edges = [Edge(source=s.source, target=s.target, kind=s.kind,
                               pending=not (is_auto_accept(s.confidence) or auto_accept),
                               confidence=s.confidence)
                          for s in suggest(node.id, vec, candidates)
                          if s.confidence >= floor]
-            # Intent/Admit-Rule-Edges haben Vorrang; Similarity darf dieselbe Pair nicht duplizieren.
+            # Intent/admit-rule edges take precedence; similarity must not duplicate the same pair.
             claimed = {(e.source, e.target) for e in intent_edges}
             combined = list(intent_edges)
             for e in sim_edges:
@@ -244,19 +244,19 @@ class BrainEngine:
             new_edges = [e for e in combined if (e.source, e.target) not in existing_pairs]
             for e in new_edges:
                 self.brain.add_edge(e)
-            # Vektor der neuen Node cachen
+            # Cache the new node's vector
             cached = self.brain.read_vectors()
             cached[node.id] = vec
             self.brain.write_vectors(cached)
-            # Memory Evolution (A-Mem-Lektion): starke neue Verbindung (similar,
-            # auto-akzeptiert via Confidence-Band ODER Env) → verwandte Alt-Nodes
-            # mit Querverweis anreichern.
-            # Audit #22: der Rewrite muss den Status (und created) der Target-Node
-            # erhalten — vorher verlor sie status → active fiel auf probation
-            # zurück (Status-Erosion, live verifiziert).
-            # Audit #19: die Annotation wächst unbegrenzt und driftet das eigene
-            # Embedding der Node → hartes Cap; weitere Verweise landen in den
-            # Edges (die es ohnehin gibt), nicht im Text.
+            # Memory evolution (A-Mem lesson): strong new connection (similar,
+            # auto-accepted via confidence band OR env) → enrich related old
+            # nodes with a cross-reference.
+            # Audit #22: the rewrite must preserve the target node's status (and
+            # created) — previously it lost status → active fell back to
+            # probation (status erosion, verified live).
+            # Audit #19: the annotation grows unboundedly and drifts the node's
+            # own embedding → hard cap; further references go into the
+            # edges (which exist anyway), not into the text.
             EVOLVED_ANNOTATION_CAP = 5
             evolved = 0
             for e in new_edges:
@@ -268,7 +268,7 @@ class BrainEngine:
                         existing = target_node.text.count("[evolved ")
                         if existing >= EVOLVED_ANNOTATION_CAP:
                             continue
-                        ref = f"[evolved {self._now_short()}: vernetzt mit {node.id[:8]} „{_normalize(text)[:40]}…“]"
+                        ref = f"[evolved {self._now_short()}: connected to {node.id[:8]} “{_normalize(text)[:40]}…”]"
                         if "evolved" not in target_node.text or node.id[:8] not in target_node.text:
                             self.brain.write_node(Node(
                                 text=target_node.text + "\n\n" + ref,
@@ -329,7 +329,7 @@ class BrainEngine:
 
     def link(self, source_id: str, target_id: str,
              kind: str = "same_as") -> Edge:
-        """Manuelle Edge anlegen (z.B. same_as für Übersetzungs-/Alias-Paare)."""
+        """Create a manual edge (e.g. same_as for translation/alias pairs)."""
         with BRAIN_LOCK:
             self.brain.ensure_ready()
             self.brain.pull()
@@ -337,14 +337,14 @@ class BrainEngine:
             missing = [nid for nid in (source_id, target_id) if nid not in ids]
             if missing:
                 raise ValueError(f"Node(s) not found: {', '.join(missing)}")
-            # Audit #23: das Pair-Set war richtungslos und kind-blind — ein
-            # a legitimate same_as AND similar between the same pair could not
-            # koexistieren, und A→B blockierte auch B→A. Dedupe ist jetzt
-            # kind-aware und richtungssensitiv; nur exakte Duplikate blockieren.
+            # Audit #23: the pair set was direction-less and kind-blind — a
+            # legitimate same_as AND similar between the same pair could not
+            # coexist, and A→B also blocked B→A. Dedupe is now
+            # kind-aware and direction-sensitive; only exact duplicates block.
             existing = [(e.source, e.target, e.kind) for e in self.brain.read_edges()
                         if e.valid_to is None and not e.rejected]
             if (source_id, target_id, kind) in existing:
-                raise ValueError("Diese Edge existiert bereits.")
+                raise ValueError("This edge already exists.")
             edge = Edge(source=source_id, target=target_id, kind=kind, pending=False)
             self.brain.add_edge(edge)
             self.brain.commit_and_push(f"edge link: {source_id[:8]} --[{kind}]--> {target_id[:8]}")

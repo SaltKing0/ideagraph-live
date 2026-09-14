@@ -1,4 +1,4 @@
-"""Similarity: Kosinus-Ähnlichkeit + k nächste Nachbarn."""
+"""Similarity: cosine similarity + k nearest neighbors."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ import math
 
 
 def cosine(a: list[float], b: list[float]) -> float:
-    """Kosinus-Ähnlichkeit. Audit #8: ungleiche Dimensionen sind ein Datenfehler
-    (z. B. 384-dim ST-Vektor vs. 64-dim Hash-Vektor in einem Brain) — ein stiller
-    Truncation auf die kürzere Länge erzeugt plausibel aussehende Scores und kann
-    an der Dedupe-Schwelle einen falschen Auto-Merge auslösen. Deshalb: hart failen."""
+    """Cosine similarity. Audit #8: mismatched dimensions are a data error
+    (e.g. 384-dim ST vector vs. 64-dim hash vector in one brain) — a silent
+    truncation to the shorter length produces plausible-looking scores and can
+    trigger a wrong auto-merge at the dedup threshold. Therefore: hard fail."""
     if len(a) != len(b):
         raise ValueError(
             f"cosine: dimension mismatch ({len(a)} vs {len(b)}) — "
-            "inhomogene Embedder im selben Brain? Vektoren sind nicht vergleichbar.")
+            "inhomogeneous embedders in the same brain? Vectors are not comparable.")
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
@@ -23,16 +23,16 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 def knn(query: list[float], candidates: dict[str, list[float]], k: int = 3) -> list[tuple[str, float]]:
-    """Liefert die k nächsten Nachbarn als (id, similarity), absteigend sortiert.
+    """Returns the k nearest neighbors as (id, similarity), sorted descending.
 
-    Audit #8-Follow-up (Fix-Welle 2): fremd-dimensionale Kandidaten werden
-    übersprungen statt den ganzen Query zu crashen — dieselbe Zwei-Ebenen-
-    Entscheidung wie bei _find_duplicate: das Primitiv cosine() streng,
-    die Call-Sites tolerant. Ein Brain mit ein paar Alt-Vektoren falscher
-    Dimension (z. B. nach Embedder-Wechsel) degradiert damit sauber auf die
-    kompatiblen Nachbarn.
-    Audit #60: k<=0 liefert [] statt alle Items (k=0) bzw. den letzten
-    gedroppt (k=-1) — ein Limit heißt Limit."""
+    Audit #8 follow-up (fix wave 2): foreign-dimension candidates are
+    skipped instead of crashing the whole query — the same two-level
+    decision as in _find_duplicate: the primitive cosine() is strict,
+    the call sites are tolerant. A brain with a few legacy vectors of the
+    wrong dimension (e.g. after an embedder switch) degrades cleanly to the
+    compatible neighbors.
+    Audit #60: k<=0 returns [] instead of all items (k=0) or the last one
+    being dropped (k=-1) — a limit means limit."""
     if k <= 0:
         return []
     query_dim = len(query)

@@ -64,7 +64,7 @@ def test_find_gaps_flags_thin_area(tmp_path):
     # Multi-Agent (2) ist ein Gap; Retrieval (8) nicht
     assert "Multi-Agent-Systeme" in names
     assert "Retrieval & RAG" not in names
-    # sortiert nach Abdeckung aufsteigend (dünnste zuerst)
+    # sorted by coverage ascending (thinnest first)
     counts = [a.count for a in gaps]
     assert counts == sorted(counts)
 

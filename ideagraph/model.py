@@ -1,8 +1,8 @@
-"""Kern-Datenmodell: Nodes (Ideen) und getypte Edges.
+"""Core data model: nodes (ideas) and typed edges.
 
 Edges carry a type: "similar", "contradicts", "extends".
-Pending-Edges sind Vorschläge des Wachstums-Loops und warten auf
-Human-in-the-loop Entscheidung (akzeptieren/verwerfen).
+Pending edges are suggestions from the growth loop and wait for a
+human-in-the-loop decision (accept/discard).
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ class Node:
 
 @dataclass
 class Edge:
-    source: str          # Node-ID (neue Idee)
-    target: str          # Node-ID (bestehende Idee)
-    kind: str            # einer aus EDGE_TYPES
-    pending: bool = True  # Vorschlag bis akzeptiert/verworfen
+    source: str          # node ID (new idea)
+    target: str          # node ID (existing idea)
+    kind: str            # one of EDGE_TYPES
+    pending: bool = True  # suggestion until accepted/discarded
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     created: float = field(default_factory=_now)
 

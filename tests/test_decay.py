@@ -1,4 +1,4 @@
-"""Unit-Tests für die Vergessensstrategie (Weibull-Decay, V2#2)."""
+"""Unit tests for the forgetting strategy (Weibull decay, V2#2)."""
 
 import sys
 from pathlib import Path
@@ -30,7 +30,7 @@ def test_retention_from_frequency():
     assert retention_from_frequency(0) == 0.0
     assert retention_from_frequency(1) > 0.0
     assert retention_from_frequency(100) > retention_from_frequency(1)
-    assert retention_from_frequency(50) < 1.0  # sättigt nach oben, nie exakt 1
+    assert retention_from_frequency(50) < 1.0  # saturates upward, never exactly 1
 
 
 def test_degradation_ladder():
@@ -49,6 +49,6 @@ def test_decay_level_combines_frequency_and_age():
     assert decay_level(retrievals=50, age=1) == "record"
     # alt + nie abgerufen → tombstone
     assert decay_level(retrievals=0, age=500) == "tombstone"
-    # gleiches Alter: häufiger Abruf schützt vor dem Vergessen
+    # same age: more frequent access protects against forgetting
     assert decay_level(retrievals=50, age=20) in ("record", "summary", "gist")
     assert decay_level(retrievals=0, age=20) == "tombstone"

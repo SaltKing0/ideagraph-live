@@ -1,6 +1,6 @@
-"""Tests für den Brain-Layer: Markdown-Format, Edges, Engine-Loop.
+"""Tests for the brain layer: markdown format, edges, engine loop.
 
-mode="local" — reines Dateisystem, kein Git, kein Netz.
+mode="local" — pure filesystem, no git, no network.
 """
 
 import subprocess
@@ -18,7 +18,7 @@ def make_brain(tmp_path):
     return Brain(str(tmp_path / "brain"), mode="local")
 
 
-# ---------- Markdown-Roundtrip ----------
+# ---------- Markdown roundtrip ----------
 
 def test_node_markdown_roundtrip():
     n = Node(text="Katzen jagen Maeuse", source="agent/bot", tags=["tiere", "test"])
@@ -40,7 +40,7 @@ def test_node_from_markdown_rejects_plain_text():
         Node.from_markdown("kein frontmatter")
 
 
-# ---------- Brain-FS ----------
+# ---------- Brain FS ----------
 
 def test_write_and_read_nodes(tmp_path):
     brain = make_brain(tmp_path)
@@ -203,7 +203,7 @@ def test_embedding_cache_hit(tmp_path):
     engine.ingest("Katzen jagen Maeuse nachts")
     assert (tmp_path / "brain" / "vectors.jsonl").exists()
     calls = emb.calls if hasattr(emb, "calls") else None
-    # zweiter Ingest: alte Node darf nicht neu embeddet werden
+    # second ingest: the old node must not be re-embedded
     class Counting(HashEmbedder):
         def __init__(self):
             self.n = 0
@@ -213,7 +213,7 @@ def test_embedding_cache_hit(tmp_path):
     c = Counting()
     e2 = BrainEngine(brain, c)
     e2.ingest("Hunde bellen laute geraeusche")
-    # embed-Aufrufe: 1 dup-check neue Node, 0 fuer alte (Cache), 1 cache-fill alte fehlt evtl.
+    # embed calls: 1 for dup-check new node, 0 for old (cache), 1 cache-fill if old was missing
     assert c.n <= 3
 
 
@@ -282,9 +282,9 @@ def test_edge_bi_temporal_fields(tmp_path):
     _, edges, _ = engine.ingest("katze hund tier futter")
     _, edges2, _ = engine.ingest("katze hund tier spiel")
     e = engine.brain.read_edges()[0]
-    assert e.valid_from  # gesetzt
+    assert e.valid_from  # set
     assert e.valid_to is None
-    # Invalidieren statt löschen
+    # invalidate instead of delete
     invalidated = engine.brain.invalidate_edge(e.id)
     assert invalidated is not None and invalidated.valid_to is not None
     assert any(x.id == e.id and x.valid_to for x in engine.brain.read_edges())
@@ -307,7 +307,7 @@ def test_memory_evolution_appends_crossref(monkeypatch, tmp_path):
     brain = make_brain(tmp_path)
     engine = BrainEngine(brain, emb)
     engine.ingest("katze hund tier futter")
-    engine.ingest("katze hund tier spiel")  # starke Ähnlichkeit → evolution
+    engine.ingest("katze hund tier spiel")  # strong similarity → evolution
     texts = [n.text for n in brain.read_nodes()]
     assert any("evolved" in t for t in texts)
     monkeypatch.delenv("IDEAGRAPH_AUTO_ACCEPT")
@@ -330,7 +330,7 @@ def test_init_creates_brain_structure(tmp_path):
     assert brain.edges_file.exists()
     assert brain.vectors_file.exists()
     assert (brain.path / "INDEX.md").exists()
-    # idempotent: erneutes init überschreibt nichts
+    # idempotent: a repeated init overwrites nothing
     brain.init(remote=None, commit=False)
     assert (brain.path / "nodes").is_dir()
 
@@ -342,14 +342,14 @@ def test_init_git_sets_main_branch(tmp_path):
         ["git", "-C", str(brain.path), "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True, text=True).stdout.strip()
     assert branch == "main"
-    # initialer Commit existiert
+    # initial commit exists
     log = subprocess.run(["git", "-C", str(brain.path), "log", "--oneline"],
                          capture_output=True, text=True).stdout
     assert "init" in log
 
 
 def test_ingest_auto_inits_missing_brain(tmp_path):
-    """ensure_ready: `ig ingest` auf frischer Maschine legt das Brain an."""
+    """ensure_ready: `ig ingest` on a fresh machine creates the brain."""
     brain = Brain(str(tmp_path / "brain"), mode="local")
     engine = BrainEngine(brain, HashEmbedder())
     node, _, _ = engine.ingest("Erste Idee fuer den Demo-Graph")

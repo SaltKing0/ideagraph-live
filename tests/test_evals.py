@@ -1,7 +1,7 @@
-"""Tests für den Eval-Layer: End-State-Verification, pass^k, Golden-Set.
+"""Tests for the eval layer: end-state verification, pass^k, golden set.
 
-Das Golden-Set ist die MESS-BASELINE: Es muss auf dem aktuellen Engine-Stand
-grün sein. Jede spätere Roadmap-Änderung wird gegen diese Fälle geprüft.
+The golden set is the MEASUREMENT BASELINE: it must be green on the current
+engine state. Every later roadmap change is checked against these cases.
 """
 
 import sys
@@ -25,7 +25,7 @@ from ideagraph.evals import (
 
 
 # ---------------------------------------------------------------------------
-# Harness-Unit-Tests: verify_end_state + pass^k
+# Harness unit tests: verify_end_state + pass^k
 # ---------------------------------------------------------------------------
 
 def _brain(tmp_path) -> Brain:
@@ -79,10 +79,10 @@ def test_verify_retrieval_detects_missing_hit(tmp_path):
     b.write_node(Node(id="a", text="katze hund tier futter"))
     b.write_node(Node(id="b", text="quantenmechanik wellenfunktion schroedinger"))
     engine = BrainEngine(b, HashEmbedder())
-    # Erwartung stimmt → keine Fehler
+    # expectation holds → no failures
     ok = verify_retrieval(engine, [RetrievalExpectation(query="katze futter", top=1, includes=["katze hund tier futter"], excludes=["quantenmechanik wellenfunktion schroedinger"])])
     assert ok == []
-    # Erwartung stimmt nicht → Fehler
+    # expectation does not hold → failure
     bad = verify_retrieval(engine, [RetrievalExpectation(query="katze futter", top=1, includes=["quantenmechanik wellenfunktion schroedinger"])])
     assert any("should hit" in f for f in bad)
 
@@ -96,7 +96,7 @@ def test_verify_wildcard_kind_matches_any_edge(tmp_path):
 
 
 def test_pass_k_runs_each_scenario_fresh(tmp_path):
-    # Zähler für frische Brain-Verzeichnisse je Lauf
+    # counter for fresh brain dirs per run
     counter = [0]
 
     def factory():
@@ -108,11 +108,11 @@ def test_pass_k_runs_each_scenario_fresh(tmp_path):
     result = run_eval(task, factory, k=2)
     assert result.passed
     assert result.runs == 2
-    assert counter[0] == 2  # zwei frische Brains erzeugt
+    assert counter[0] == 2  # two fresh brains created
 
 
 # ---------------------------------------------------------------------------
-# Golden-Set — die Mess-Baseline (MUSS grün sein)
+# Golden set — the measurement baseline (MUST be green)
 # ---------------------------------------------------------------------------
 
 def test_golden_set_all_pass(tmp_path):
@@ -132,35 +132,35 @@ def test_golden_set_all_pass(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Roadmap-Fälle — registrierte Spezifikation für kommende Features
+# Roadmap cases — registered specification for upcoming features
 # ---------------------------------------------------------------------------
 
 def test_roadmap_cases_registered():
-    # Leere ROADMAP_CASES = alle V2-Features sind umgesetzt (im GOLDEN_SET).
-    # Wenn Einträge existieren, brauchen sie eindeutige, roadmap-*-ids.
+    # Empty ROADMAP_CASES = all V2 features are implemented (in the GOLDEN_SET).
+    # If entries exist, they need unique roadmap-* ids.
     ids = [t.id for t in ROADMAP_CASES]
-    assert len(ids) == len(set(ids)), "Roadmap-Fälle müssen eindeutige ids haben"
+    assert len(ids) == len(set(ids)), "roadmap cases must have unique ids"
     assert all(t.id.startswith("roadmap-") for t in ROADMAP_CASES)
-    assert GOLDEN_SET, "Golden-Set darf nicht leer sein"
+    assert GOLDEN_SET, "golden set must not be empty"
 
 
 def test_roadmap_cases_are_not_yet_green(tmp_path):
-    """Solange ein Roadmap-Feature nicht implementiert ist, schlägt sein Fall fehl.
+    """While a roadmap feature is not implemented, its case fails.
 
-    Audit #52: sobald ROADMAP_CASES leer ist, war dieser Test still vacuous —
-    das Flip-Gate hätte sich silently deaktiviert. Jetzt erzwingt der Test die
-    bewusste Entscheidung: eine leere ROADMAP_CASES ist nur mit einem
-    Status-Marker-File legitim (der die letzte Flip-Aktion dokumentiert), sonst
-    FAIL mit Anleitung.
+    Audit #52: once ROADMAP_CASES is empty this test was silently vacuous —
+    the flip gate would have deactivated silently. The test now forces the
+    explicit decision: an empty ROADMAP_CASES is only legitimate with a
+    status marker file (documenting the last flip action), otherwise FAIL
+    with instructions.
     """
     marker = Path(__file__).resolve().parent.parent / "ROADMAP_CASES_EMPTY"
     if not ROADMAP_CASES:
         assert marker.exists(), (
-            "ROADMAP_CASES ist leer: entweder eine neue roadmap-* EvalTask in "
-            "ideagraph/evals.py registrieren, oder die bewusste Entscheidung "
-            f"dokumentieren: touch {marker.name} (mit Datum + Grund im File)."
+            "ROADMAP_CASES is empty: either register a new roadmap-* EvalTask in "
+            "ideagraph/evals.py, or document the explicit decision: "
+            f"touch {marker.name} (with date + reason in the file)."
         )
-        return  # dokumentiert leer
+        return  # documented empty
     counter = [0]
 
     def factory():
@@ -170,7 +170,7 @@ def test_roadmap_cases_are_not_yet_green(tmp_path):
 
     results = [run_eval(t, factory) for t in ROADMAP_CASES]
     assert any(not r.passed for r in results), (
-        "Alle Roadmap-Fälle sind grün — verschiebe sie ins GOLDEN_SET!"
+        "All roadmap cases are green — move them into the GOLDEN_SET!"
     )
 
 

@@ -1,5 +1,5 @@
-"""Unit-Tests für Memory-Hygiene (V2#2): Status/Probation, Consolidation (Dedup),
-Graceful-Degradation-Demotion, invalidated_by-Provenance (V1#1)."""
+"""Unit tests for memory hygiene (V2#2): status/probation, consolidation (dedup),
+graceful-degradation demotion, invalidated_by provenance (V1#1)."""
 
 import sys
 from pathlib import Path
@@ -19,7 +19,7 @@ def make_engine(tmp_path) -> BrainEngine:
     return BrainEngine(make_brain(tmp_path), HashEmbedder())
 
 
-# ---------- Status / Dual-Buffer ----------
+# ---------- Status / dual buffer ----------
 
 def test_node_status_defaults_to_probation():
     n = Node(text="neu")
@@ -44,7 +44,7 @@ def test_ingest_creates_probation_node(tmp_path):
     assert stored.status == "probation"
 
 
-# ---------- Consolidation (dedup-basiert) ----------
+# ---------- Consolidation (dedup-based) ----------
 
 def test_consolidate_promotes_distinct_probation(tmp_path):
     eng = make_engine(tmp_path)
@@ -58,9 +58,9 @@ def test_consolidate_promotes_distinct_probation(tmp_path):
 
 
 def test_consolidate_dedups_cross_probation(tmp_path):
-    # Zwei nahezu identische Nodes koexistieren (allow_duplicates) → beide probation.
-    # Consolidate muss sie DEDUPIZIEREN (nicht zusammenfassen): einer promoted,
-    # der Duplikat wird getombstoned.
+    # Two nearly identical nodes coexist (allow_duplicates) → both probation.
+    # Consolidate must DEDUPE them (not merge): one promoted,
+    # the duplicate becomes tombstoned.
     eng = make_engine(tmp_path)
     eng.ingest("katze hund tier futter", source="a")
     eng.ingest("katze hund tier futter", source="b", allow_duplicates=True)
@@ -84,7 +84,7 @@ def test_demote_forgotten_tombstones_active(tmp_path):
     eng = make_engine(tmp_path)
     eng.ingest("katze hund tier futter")
     eng.consolidate()  # → active
-    # level_fn: alles wird tombstone
+    # level_fn: everything becomes tombstone
     count = eng.demote_forgotten(lambda node: "tombstone")
     assert count == 1
     assert all(n.status == "tombstone" for n in eng.brain.read_nodes())
@@ -94,8 +94,8 @@ def test_demote_forgotten_keeps_frequent(tmp_path):
     eng = make_engine(tmp_path)
     eng.ingest("katze hund tier futter")
     eng.ingest("quantenmechanik wellenfunktion schroedinger")
-    eng.consolidate()  # beide active
-    # nur Node mit "katze" wird vergessen
+    eng.consolidate()  # both active
+    # only the node with "katze" is forgotten
     count = eng.demote_forgotten(lambda n: "tombstone" if "katze" in n.text else "record")
     assert count == 1
     statuses = {n.text: n.status for n in eng.brain.read_nodes()}
@@ -103,7 +103,7 @@ def test_demote_forgotten_keeps_frequent(tmp_path):
     assert statuses["quantenmechanik wellenfunktion schroedinger"] == "active"
 
 
-# ---------- invalidated_by-Provenance (V1#1) ----------
+# ---------- invalidated_by provenance (V1#1) ----------
 
 def test_invalidate_edge_records_provenance(tmp_path):
     brain = make_brain(tmp_path)
@@ -115,12 +115,12 @@ def test_invalidate_edge_records_provenance(tmp_path):
     assert invalidated is not None
     assert invalidated.valid_to is not None
     assert invalidated.invalidated_by == e2.id
-    # Roundtrip über die Datei
+    # roundtrip through the file
     reloaded = next(e for e in brain.read_edges() if e.id == e1.id)
     assert reloaded.invalidated_by == e2.id
 
 
-# ---------- Intent-Edges + Admit-Rule (V2#3) ----------
+# ---------- Intent edges + admit rule (V2#3) ----------
 
 def test_ingest_contradiction_edge(tmp_path):
     eng = make_engine(tmp_path)
@@ -139,14 +139,14 @@ def test_ingest_supersedes_edge(tmp_path):
 
 
 def test_intent_pending_config(tmp_path, monkeypatch):
-    # Default (Env ungesetzt): Intent-Edges sind auto-akzeptiert (nicht pending).
+    # Default (env unset): intent edges are auto-accepted (not pending).
     eng = make_engine(tmp_path)
     eng.ingest("Die Erde ist eine Scheibe")
     _, edges, _ = eng.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
     assert any(e.kind == "contradicts" and not e.pending for e in edges)
-    # Mit IDEAGRAPH_INTENT_PENDING=1: Intent-Edges werden pending (HITL).
+    # With IDEAGRAPH_INTENT_PENDING=1: intent edges become pending (HITL).
     monkeypatch.setenv("IDEAGRAPH_INTENT_PENDING", "1")
-    eng2 = make_engine(tmp_path / "b2")  # frischer Brain, sonst Dedupe gegen eng
+    eng2 = make_engine(tmp_path / "b2")  # fresh brain, otherwise dedupe against eng
     eng2.ingest("Die Erde ist eine Scheibe")
     _, edges2, _ = eng2.ingest("Die Erde ist keine Scheibe, sondern eine Kugel")
     assert any(e.kind == "contradicts" and e.pending for e in edges2)

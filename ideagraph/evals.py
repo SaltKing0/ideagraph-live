@@ -1,20 +1,20 @@
-"""Eval-Layer für die Engine (Roadmap V2#4).
+"""Eval layer for the engine (Roadmap V2#4).
 
-End-State-Verification statt Transcripts: Jede Eval-Aufgabe beschreibt einen
-Ingest-Ablauf + ein ORACLE über den finalen Brain-State (existiert der Node,
-sind die Edges gesetzt, wurde das Duplikat gemergt?). Deterministische Checker
-laufen gegen den tatsächlichen Brain-Zustand — kein Blick auf Zwischenschritte.
+End-state verification instead of transcripts: each eval task describes an
+ingest sequence + an ORACLE over the final brain state (does the node exist,
+are the edges set, was the duplicate merged?). Deterministic checkers run
+against the actual brain state — no peeking at intermediate steps.
 
-Zwei Stufen (Tiered Gates):
-  - GOLDEN_SET: Regression auf jedem Engine-Wandel. Diese Fälle MÜSSEN auf dem
-    aktuellen Stand grün sein — sie frieren das Ist-Verhalten als Baseline ein.
-  - ROADMAP_CASES: Dokumentieren gewünschtes Zukunfts-Verhalten aus der Roadmap
-    (Confidence-Bänder, Intent-Edges, Kontradiktionen). Sie sind als Spezifikation
-    registriert und werden grün, sobald das Feature implementiert ist — das macht
-    Fortschritt messbar, ohne die Baseline zu brechen.
+Two tiers (tiered gates):
+  - GOLDEN_SET: regression on every engine change. These cases MUST be green
+    on the current state — they freeze the as-is behavior as a baseline.
+  - ROADMAP_CASES: document desired future behavior from the roadmap
+    (confidence bands, intent edges, contradictions). They are registered as
+    a specification and turn green once the feature is implemented — making
+    progress measurable without breaking the baseline.
 
-pass^k: run_eval(... k=...) führt dieselbe Aufgabe k-mal gegen eine frische
-Brain aus und verlangt, dass ALLE Läufe bestehen (Schutz vor Flakiness).
+pass^k: run_eval(... k=...) runs the same task k times against a fresh
+brain and requires ALL runs to pass (protection against flakiness).
 """
 
 from __future__ import annotations
@@ -29,45 +29,45 @@ from .reranker import ReverseReranker
 
 
 # ---------------------------------------------------------------------------
-# Oracle / Aufgaben
+# Oracle / tasks
 # ---------------------------------------------------------------------------
 
 @dataclass
 class EdgeExpectation:
-    """Eine erwartete Kante, textbasiert (Source-/Target-NODE-INHALT).
+    """An expected edge, text-based (source/target NODE CONTENT).
 
-    kind="*" bedeutet: irgendeine aktive Kante zwischen den beiden Nodes genügt
-    (robust gegen exakte Kind-Namen, wenn es nur um "verbunden sein" geht).
-    pending/min_confidence sind optional und prüfen das Confidence-Band (V2#3).
+    kind="*" means: any active edge between the two nodes suffices
+    (robust against exact kind names when only "being connected" matters).
+    pending/min_confidence are optional and check the confidence band (V2#3).
     """
     source: str
     target: str
     kind: str
-    pending: bool | None = None          # falls gesetzt: Edge muss diesen pending-Wert haben
-    min_confidence: float | None = None  # falls gesetzt: Edge.confidence >= dieser Wert
+    pending: bool | None = None          # if set: edge must have this pending value
+    min_confidence: float | None = None  # if set: Edge.confidence >= this value
 
 
 @dataclass
 class RetrievalExpectation:
-    """Eine Retrieval-Erwartung (Hybrid dense+BM25): Query muss passende Nodes liefern."""
+    """A retrieval expectation (hybrid dense+BM25): query must return matching nodes."""
     query: str
     top: int = 5
-    includes: list[str] = field(default_factory=list)   # Node-Texte, die in den top-`top` vorkommen müssen
-    excludes: list[str] = field(default_factory=list)   # Node-Texte, die NICHT vorkommen dürfen
+    includes: list[str] = field(default_factory=list)   # node texts that must appear in the top-`top`
+    excludes: list[str] = field(default_factory=list)   # node texts that must NOT appear
 
 
 @dataclass
 class EvalOracle:
-    """Soll-Zustand des Brains nach der Ingest-Sequenz."""
+    """Desired brain state after the ingest sequence."""
     node_count: int | None = None
     nodes_present: list[str] = field(default_factory=list)
     node_absent: list[str] = field(default_factory=list)
-    # (Text, erforderliche sources): Node mit diesem Text muss all diese sources haben.
+    # (text, required sources): the node with this text must have all these sources.
     duplicate_merged: list[tuple[str, list[str]]] = field(default_factory=list)
     edges: list[EdgeExpectation] = field(default_factory=list)
     no_edge: list[EdgeExpectation] = field(default_factory=list)
     retrieval: list[RetrievalExpectation] = field(default_factory=list)
-    # text -> erwarteter Node-Status (V2#2 Memory-Hygiene)
+    # text -> expected node status (V2#2 memory hygiene)
     node_status: dict[str, str] = field(default_factory=dict)
 
 
@@ -75,14 +75,14 @@ class EvalOracle:
 class EvalTask:
     id: str
     name: str
-    ingests: list[tuple[str, dict]]  # (text, kwargs) — Reihenfolge ist Teil des Szenarios
+    ingests: list[tuple[str, dict]]  # (text, kwargs) — order is part of the scenario
     oracle: EvalOracle
-    # Optionale Aktionen NACH den Ingests (z. B. manuelle same_as-Links,
-    # Consolidation, Demotion). Rückgabewerte werden ignoriert.
+    # Optional actions AFTER the ingests (e.g. manual same_as links,
+    # consolidation, demotion). Return values are ignored.
     actions: list[Callable[[BrainEngine], object]] = field(default_factory=list)
-    # Optionaler Reranker (V2#1): wird nach dem Engine-Bau gesetzt, damit
-    # Retrieval-Evals den Cross-Encoder-Rerank-Pass mit einem deterministischen
-    # Stand-in messen können. None = Engine-Default (kein Rerank).
+    # Optional reranker (V2#1): set after engine construction so retrieval
+    # evals can measure the cross-encoder rerank pass with a deterministic
+    # stand-in. None = engine default (no rerank).
     reranker: object | None = None
 
 
@@ -127,7 +127,7 @@ def find_node_by_text(brain: Brain, text: str) -> Node | None:
 
 
 def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
-    """Prüft den finalen Brain-State gegen das Oracle. Liefert alle Fehler ([] = grün)."""
+    """Check the final brain state against the oracle. Returns all failures ([] = green)."""
     failures: list[str] = []
     nodes = brain.read_nodes()
     edges = brain.read_edges()
@@ -165,8 +165,8 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
         if s is None or t is None:
             failures.append(f"edge endpoint missing: {eexp.source!r}->{eexp.target!r}")
             continue
-        # Richtungsagnostisch: Auto-Edges zeigen vom neuesten zum älteren Node,
-        # deshalb ist die Richtung für "verbunden sein" egal.
+        # Direction-agnostic: auto edges point from the newer to the older node,
+        # so direction doesn't matter for "being connected".
         active = [
             e for e in edges
             if e.valid_to is None
@@ -213,7 +213,7 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
 
 
 def verify_retrieval(engine: BrainEngine, expectations: list[RetrievalExpectation]) -> list[str]:
-    """Prüft Hybrid-Retrieval: Query muss erwartete Nodes in den top-k liefern (bzw. ausschließen)."""
+    """Check hybrid retrieval: query must return expected nodes in the top-k (or exclude them)."""
     failures: list[str] = []
     id2node = {n.id: n for n in engine.brain.read_nodes()}
     for exp in expectations:
@@ -236,7 +236,7 @@ EngineFactory = Callable[[], BrainEngine]
 
 
 def run_eval(task: EvalTask, engine_factory: EngineFactory, k: int = 1) -> EvalResult:
-    """Führt die Aufgabe k-mal gegen eine frische Brain aus; alle Läufe müssen grün sein."""
+    """Run the task k times against a fresh brain; all runs must be green."""
     for run in range(1, k + 1):
         engine = engine_factory()
         if task.reranker is not None:
@@ -257,13 +257,13 @@ def run_tasks(tasks: list[EvalTask], engine_factory: EngineFactory, k: int = 1) 
 
 
 def report(results: list[EvalResult]) -> tuple[int, list[EvalResult]]:
-    """Liefert (Anzahl grün, alle) — nützlich für CLI/Logging."""
+    """Returns (number green, all) — useful for CLI/logging."""
     failed = [r for r in results if not r.passed]
     return len(results) - len(failed), failed
 
 
 # ---------------------------------------------------------------------------
-# Golden-Set — Regression auf jedem Engine-Wandel (MUSS grün sein)
+# Golden set — regression on every engine change (MUST be green)
 # ---------------------------------------------------------------------------
 
 def _link_same_as(source_text: str, target_text: str) -> Callable[[BrainEngine], None]:
@@ -278,7 +278,7 @@ def _link_same_as(source_text: str, target_text: str) -> Callable[[BrainEngine],
 GOLDEN_SET: list[EvalTask] = [
     EvalTask(
         id="dup-exact",
-        name="exakter Duplikat wird gemergt (sources kumuliert)",
+        name="exact duplicate gets merged (sources accumulate)",
         ingests=[
             ("Katzen jagen Maeuse nachts", {"source": "agent/test"}),
             ("Katzen jagen Maeuse nachts", {"source": "human"}),
@@ -290,7 +290,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="dup-case-whitespace",
-        name="Duplikat unabhängig von Groß-/Kleinschreibung + Whitespace",
+        name="duplicate merged regardless of case + whitespace",
         ingests=[
             ("Katzen jagen Maeuse nachts", {"source": "a"}),
             ("  katzen JAGEN maeuse   NACHTS ", {"source": "b"}),
@@ -299,7 +299,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="dup-disabled",
-        name="allow_duplicates=True legt zweiten Node an",
+        name="allow_duplicates=True creates a second node",
         ingests=[
             ("Katzen jagen Maeuse nachts", {}),
             ("Katzen jagen Maeuse nachts", {"allow_duplicates": True}),
@@ -308,7 +308,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="no-false-positive",
-        name="unverwandte Texte werden nicht dedupliziert",
+        name="unrelated texts are not deduplicated",
         ingests=[
             ("Katzen jagen Maeuse nachts", {}),
             ("Rust Compiler borrow checker lifetime Regeln", {}),
@@ -332,7 +332,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="conf-auto-accept",
-        name="V2: Confidence >=0.95 → Edge auto-akzeptiert (pending=False)",
+        name="V2: Confidence >=0.95 → edge auto-accepted (pending=False)",
         ingests=[
             ("x x x x x y y y y y z z z z z", {}),
             ("x x x x x y y y y y z z z z w", {"allow_duplicates": True}),
@@ -348,7 +348,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="edge-no-false-link",
-        name="unverwandte Nodes werden NICHT verbunden",
+        name="unrelated nodes are NOT connected",
         ingests=[
             ("katze hund tier futter", {}),
             ("quantenmechanik wellenfunktion schroedinger", {}),
@@ -360,7 +360,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="retrieval-hybrid",
-        name="V2: Hybrid-Retrieval findet passende Node, nicht unverwandte",
+        name="V2: hybrid retrieval finds the matching node, not unrelated ones",
         ingests=[
             ("katze hund tier futter", {}),
             ("quantenmechanik wellenfunktion schroedinger", {}),
@@ -377,7 +377,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="retrieval-rerank-honored",
-        name="V2: Rerank-Pass bestimmt die finale Rangfolge (Cross-Encoder-Pipeline)",
+        name="V2: rerank pass decides the final ranking (cross-encoder pipeline)",
         ingests=[
             ("aaa bbb ccc", {}),
             ("ddd eee fff", {}),
@@ -391,14 +391,14 @@ GOLDEN_SET: list[EvalTask] = [
                 excludes=["ddd eee fff"],
             )],
         ),
-        # ReverseReranker ist der deterministische Stand-in für einen Cross-Encoder:
-        # Hybrid würde "ddd eee fff" auf Rang 1 setzen; der Rerank-Pass kehrt das um.
-        # Grün nur, wenn retrieve() den Reranker tatsächlich berücksichtigt.
+        # ReverseReranker is the deterministic stand-in for a cross-encoder:
+        # hybrid would rank "ddd eee fff" first; the rerank pass reverses that.
+        # Green only if retrieve() actually honors the reranker.
         reranker=ReverseReranker(),
     ),
     EvalTask(
         id="taxonomy-procedural",
-        name="prozeduraler Node trägt type=procedural",
+        name="procedural node carries type=procedural",
         ingests=[
             ("Wie ingestiere ich Research: ig ingest ...", {"ntype": "procedural"}),
         ],
@@ -406,7 +406,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="same-as-multilingual",
-        name="mehrsprachiges Paar via manuellem same_as-Link verbunden",
+        name="multilingual pair connected via manual same_as link",
         ingests=[
             ("Katzen jagen Maeuse", {}),
             ("Cats hunt mice", {"allow_duplicates": True}),
@@ -419,7 +419,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="hygiene-promote",
-        name="V2: Dual-Buffer — Consolidation promoted Probation-Nodes zu active",
+        name="V2: dual buffer — consolidation promotes probation nodes to active",
         ingests=[
             ("katze hund tier futter", {}),
             ("quantenmechanik wellenfunktion schroedinger", {}),
@@ -435,7 +435,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="hygiene-demote",
-        name="V2: Graceful Degradation — ungenutzte Node wird getombstoned",
+        name="V2: graceful degradation — unused node gets tombstoned",
         ingests=[
             ("katze hund tier futter", {}),
             ("quantenmechanik wellenfunktion schroedinger", {}),
@@ -468,7 +468,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="intent-supersedes",
-        name="V2: neuere Aussage ersetzt ältere → 'supersedes'-Edge",
+        name="V2: newer statement supersedes older → 'supersedes' edge",
         ingests=[
             ("API v1 wird verwendet", {}),
             ("API v2 ersetzt v1", {}),
@@ -480,7 +480,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="admit-rule-no-relations",
-        name="V2: Admit-Rule — Node ohne Relationen bleibt probation (admit_required)",
+        name="V2: admit rule — node without relations stays in probation (admit_required)",
         ingests=[
             ("xyzvw abcdefgh ijklmnop", {}),
         ],
@@ -492,7 +492,7 @@ GOLDEN_SET: list[EvalTask] = [
     ),
     EvalTask(
         id="admit-rule-with-relations",
-        name="V2: Admit-Rule — Node MIT deklarierten Relationen wird aktiv",
+        name="V2: admit rule — node WITH declared relations becomes active",
         ingests=[
             ("aaa bbb ccc", {}),
             ("aaa bbb ccc ddd", {"allow_duplicates": True,
@@ -507,15 +507,15 @@ GOLDEN_SET: list[EvalTask] = [
             },
         ),
     ),
-    # GOLDEN (flip 2026-09-10, war `roadmap-confidence-floor`) — Tier-3 Self-Extension:
-    # konfigurierbarer Confidence-Floor für Auto-Edge-Vorschläge (per-Call env kwarg,
-    # IG_EDGE_CONF_FLOOR, Default 0.0 = kein Verhaltenswandel). Vorschläge unter dem
-    # Floor werden verworfen statt pending zu landen — schützt autonome Zyklen vor
-    # Low-Confidence-Edge-Flut. (HashEmbedder-Messung: die beiden Texte liegen bei
-    # cos≈0.653 → pending-Band 0.45–0.95, unter Floor 0.95.)
+    # GOLDEN (flip 2026-09-10, was `roadmap-confidence-floor`) — Tier-3 self-extension:
+    # configurable confidence floor for auto edge suggestions (per-call env kwarg,
+    # IG_EDGE_CONF_FLOOR, default 0.0 = no behavior change). Suggestions below the
+    # floor are dropped instead of landing pending — protects autonomous cycles
+    # from a flood of low-confidence edges. (HashEmbedder measurement: the two
+    # texts sit at cos≈0.653 → pending band 0.45–0.95, below floor 0.95.)
     EvalTask(
         id="roadmap-confidence-floor",
-        name="Confidence-Floor verwirft schwache Auto-Edge-Vorschlaege",
+        name="Confidence floor rejects weak auto edge suggestions",
         ingests=[
             ("Agentenplanung zerlegt langfristige Aufgaben in hierarchische "
              "Teilziele und prueft Zwischenergebnisse gegen den Zielzustand.", {}),
@@ -537,19 +537,19 @@ GOLDEN_SET: list[EvalTask] = [
 
 
 # ---------------------------------------------------------------------------
-# Roadmap-Fälle — gewünschtes Zukunfts-Verhalten (wird grün, sobald implementiert)
+# Roadmap cases — desired future behavior (turns green once implemented)
 # ---------------------------------------------------------------------------
 
 ROADMAP_CASES: list[EvalTask] = [
-    # Admit-Rule-Enforcement (V2#3) ist umgesetzt → GOLDEN_SET
+    # Admit-rule enforcement (V2#3) is implemented → GOLDEN_SET
     # (`admit-rule-no-relations`, `admit-rule-with-relations`).
-    # Late Chunking (V2#1) bleibt bewusst KEIN Eval-Case: solange es keine echte
-    # Chunking-Schicht gibt (die Engine embeddet den ganzen Node-Text), lässt es
-    # sich nicht als End-State-Oracle spezifizieren — ein Case würde entweder
-    # spurious grün (Ganz-Text-Embedding erfüllt ihn trivial) oder aus falschen
-    # Gründen rot. Deshalb als dokumentierte Roadmap-Notiz, nicht als Fall.
+    # Late chunking (V2#1) deliberately stays NO eval case: as long as there is
+    # no real chunking layer (the engine embeds the whole node text), it cannot
+    # be specified as an end-state oracle — a case would either turn
+    # spuriously green (whole-text embedding satisfies it trivially) or red
+    # for the wrong reasons. So it remains a documented roadmap note, not a case.
     #
-    # Cross-Encoder-Reranking (V2#1) ist umgesetzt → GOLDEN_SET
+    # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
     # (`retrieval-rerank-honored`).
     #
 ]

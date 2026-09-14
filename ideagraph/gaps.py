@@ -1,12 +1,12 @@
-"""Coverage- und Gap-Analyse über den Brain.
+"""Coverage and gap analysis over the brain.
 
-Klassifiziert jeden Node anhand einer Themen-Taxonomie (Bereich → Schlüsselwörter),
-zählt die Abdeckung pro Bereich und identifiziert unterbesetzte Bereiche (Gaps).
-Das steuert gezielte Forschung statt breiter Recherche.
+Classifies each node against a topic taxonomy (area → keywords),
+counts coverage per area and identifies underrepresented areas (gaps).
+This steers targeted research instead of broad search.
 
-Die Taxonomie ist generisch und über eine JSON-Datei austauschbar
-(Format: {"Bereich": ["keyword", ...]}); DEFAULT_TAXONOMY ist ein sinnvoller
-LLM/Agent-Default. Es wird nichts am Brain verändert (read-only).
+The taxonomy is generic and swappable via a JSON file
+(format: {"area": ["keyword", ...]}); DEFAULT_TAXONOMY is a sensible
+LLM/agent default. Nothing on the brain is modified (read-only).
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Any
 
 from .brain import Brain
 
-# Standard-Taxonomie (LLM/Agent-Forschung) — generisch, keine persönlichen Daten.
+# Default taxonomy (LLM/agent research) — generic, no personal data.
 DEFAULT_TAXONOMY: dict[str, list[str]] = {
     "Agent-Harness & Orchestrierung": [
         "harness", "orchestrierung", "agent-runtime", "supervisor", "handoff",
@@ -101,7 +101,7 @@ DEFAULT_TAXONOMY: dict[str, list[str]] = {
 
 
 def normalize(text: str) -> str:
-    """Kleinschreibung + Umlaut-Normalisierung (ä→ae etc.)."""
+    """Lowercase + umlaut normalization (ä→ae etc.)."""
     s = text.lower()
     for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
         s = s.replace(a, b)
@@ -109,11 +109,11 @@ def normalize(text: str) -> str:
 
 
 def _node_text(node: Any) -> str:
-    """Body eines Nodes ohne Frontmatter.
+    """Node body without frontmatter.
 
-    Audit #25: das blinde parts[2] verlor alles nach einem internen
-    `---`-Horizontalrule im Body. Frontmatter-Ende ist die ERSTE
-    `---`-Zeile alleine — danach kommt der komplette Body.
+    Audit #25: the blind parts[2] lost everything after an internal
+    `---` horizontal rule in the body. Frontmatter end is the FIRST
+    `---` line alone — everything after that is the complete body.
     """
     t = getattr(node, "text", "") or ""
     m = re.match(r"^---\n.*?\n---\n\n?(.*)$", t, re.DOTALL)
@@ -132,24 +132,24 @@ class AreaStat:
 @dataclass
 class CoverageResult:
     total: int
-    areas: list[AreaStat]  # sortiert nach count absteigend
+    areas: list[AreaStat]  # sorted by count descending
     unclassified: int
     taxonomy: dict[str, list[str]]
 
 
 def analyze_coverage(brain: Brain, taxonomy: dict[str, list[str]] | None = None) -> CoverageResult:
-    """Klassifiziert alle Nodes über die Taxonomie und zählt Abdeckung pro Bereich.
+    """Classifies all nodes against the taxonomy and counts coverage per area.
 
-    Ein Node kann mehreren Bereichen angehören (Schlüsselwort-Overlap).
-    Read-only — verändert den Brain nicht.
+    A node can belong to multiple areas (keyword overlap).
+    Read-only — does not modify the brain.
     """
     tax = taxonomy or DEFAULT_TAXONOMY
     count: Counter = Counter()
     examples: dict[str, list] = defaultdict(list)
     nodes = brain.read_nodes()
     unclassified = 0
-    # Audit #60: Substring-Matching liess "test" auf "latest" passen — Keywords
-    # matchen jetzt mit Wortgrenzen (Umlaute sind durch normalize() ASCII-förmig).
+    # Audit #60: substring matching let "test" match "latest" — keywords now
+    # match with word boundaries (umlauts are ASCII-shaped by normalize()).
     kw_res = {area: [re.compile(rf"\b{re.escape(k)}\b") for k in kws]
               for area, kws in tax.items()}
     for node in nodes:
@@ -168,26 +168,26 @@ def analyze_coverage(brain: Brain, taxonomy: dict[str, list[str]] | None = None)
 
 
 def find_gaps(coverage: CoverageResult, threshold: int) -> list[AreaStat]:
-    """Bereiche unterhalb der Schwelle, aufsteigend nach Abdeckung (dünnste zuerst)."""
+    """Areas below the threshold, ascending by coverage (thinnest first)."""
     return [a for a in sorted(coverage.areas, key=lambda s: s.count) if a.count < threshold]
 
 
 def render(coverage: CoverageResult, threshold: int) -> str:
-    """Textueller Coverage-/Gap-Report."""
+    """Textual coverage/gap report."""
     lines = [
-        f"Coverage ({coverage.total} Nodes, {len(coverage.areas)} Bereiche):",
-        f"{'Nodes':>5}  {'Bereich':<40}  Abdeckung",
+        f"Coverage ({coverage.total} nodes, {len(coverage.areas)} areas):",
+        f"{'Nodes':>5}  {'Area':<40}  Coverage",
         "-----  " + "-" * 40 + "  ---------",
     ]
     maxc = max((a.count for a in coverage.areas), default=1)
-    # Audit #24: ein Brain ohne Treffer (alle Counts 0) darf nicht mit
-    # ZeroDivisionError crashen — maxc mindestens 1.
+    # Audit #24: a brain without hits (all counts 0) must not crash with
+    # ZeroDivisionError — maxc at least 1.
     maxc = max(maxc, 1)
     for a in coverage.areas:
         bar = "#" * int(a.count / maxc * 30)
         gap = "  ← GAP" if a.count < threshold else ""
         lines.append(f"{a.count:>5}  {a.name:<40}  {bar}{gap}")
-    lines.append(f"{coverage.unclassified:>5}  {'UNKLASSIFIZIERT':<40}")
+    lines.append(f"{coverage.unclassified:>5}  {'UNCLASSIFIED':<40}")
     gaps = find_gaps(coverage, threshold)
     if gaps:
         lines.append("")
@@ -198,9 +198,9 @@ def render(coverage: CoverageResult, threshold: int) -> str:
 
 
 def load_taxonomy(path: str) -> dict[str, list[str]]:
-    """Lädt eine Taxonomie aus einer JSON-Datei ({"Bereich": ["kw", ...]})."""
+    """Loads a taxonomy from a JSON file ({"area": ["kw", ...]})."""
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict) or not all(isinstance(v, list) for v in data.values()):
-        raise ValueError("Taxonomie muss JSON-Objekt sein: {\"Bereich\": [\"kw\", ...]}")
+        raise ValueError("Taxonomy must be a JSON object: {\"area\": [\"kw\", ...]}")
     return data

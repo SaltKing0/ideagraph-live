@@ -1,8 +1,8 @@
-"""Tests für das Pipeline-Gate: Marker-Scan-Normalisierung + IG_BRAIN_PATH-Wiring.
+"""Tests for the pipeline gate: marker-scan normalization + IG_BRAIN_PATH wiring.
 
-Audit #5: der Marker-Scan war per Unicode-Normalisierung/Case bypassbar und die
-Allowlist whole-line (ein harmloses Wort unterdrückte Marker-Treffer an anderer
-Stelle). Audit #6: --brain wurde vom echten Ingest ignoriert.
+Audit #5: the marker scan was bypassable via Unicode normalization/case and the
+allowlist was whole-line (one innocent word suppressed marker hits elsewhere).
+Audit #6: --brain was ignored by the real ingest.
 """
 import sys
 from pathlib import Path
@@ -14,7 +14,7 @@ from ig_cycle import marker_scan, _fold, MARKERS, ALLOW
 
 
 def test_homoglyph_marker_is_caught():
-    """Kyrillisches і statt i: 'nіcht' muss genauso feuern wie 'nicht'."""
+    """Cyrillic і instead of i: 'nіcht' must fire just like 'nicht'."""
     findings = [("src", "Das Modell nutzt nіcht diese Methode")]  # Cyrillic і
     bad = marker_scan(findings)
     assert any("nicht" in b for b in bad), f"homoglyph bypass: {bad}"
@@ -31,8 +31,8 @@ def test_fullwidth_and_combining_marks_are_caught():
 
 
 def test_allowlist_is_span_scoped():
-    """'Stätte' in der Zeile darf einen 'statt'-Treffer an ANDERER Stelle
-    nicht mehr whitelisten (Audit #5b)."""
+    """'Stätte' in the line must no longer whitelist a 'statt' hit
+    ELSEWHERE (Audit #5b)."""
     findings = [("src", "Treffen statt Morgen … und die Stätte ist gut")]
     bad = marker_scan(findings)
     assert any("statt" in b for b in bad), f"whole-line allowlist bypass: {bad}"
@@ -49,17 +49,17 @@ def test_plain_marker_still_caught():
 
 
 def test_word_boundary_no_substring_fires():
-    """Ein Marker als SUBSTRING in einem anderen Wort feuert nicht (das macht
-    detect_intent bewusst anders — hier ist der Gate Wort-basiert)."""
-    findings = [("src", "uebersetzt")]  # enthält 'ersetzt' als Substring
-    # 'uebersetzt' ist selbst ein Marker (Audit-Lektion), aber 'ersetzt' als
-    # Substring von uebersetzt feuert NICHT doppelt:
+    """A marker as a SUBSTRING of another word does not fire (this makes
+    detect_intent deliberately different — this gate is word-based)."""
+    findings = [("src", "uebersetzt")]  # contains 'ersetzt' as a substring
+    # 'uebersetzt' is itself a marker (audit lesson), but 'ersetzt' as a
+    # substring of uebersetzt does NOT fire twice:
     bad = marker_scan(findings)
-    assert not any(b.endswith("Marker 'ersetzt'") for b in bad)
+    assert not any(b.endswith("marker 'ersetzt'") for b in bad)
     assert any("uebersetzt" in b for b in bad)
 
 
 def test_fold_is_idempotent_and_normalizes():
     assert _fold("NICHT") == _fold("nicht") == _fold("nіcht")  # Cyrillic і
-    # NFKD zerlegt ä → a + Combining-Diaeresis, Stripping → 'statte'
+    # NFKD decomposes ä → a + combining diaeresis, stripping → 'statte'
     assert _fold("Stätte") == "statte"

@@ -1,7 +1,7 @@
-"""Tests für die Hygiene-/Status-Reports (`ig status`, `ig near-dup`).
+"""Tests for the hygiene/status reports (`ig status`, `ig near-dup`).
 
-Definieren das erwartete Verhalten von near_dup_pairs / connectivity /
-status_counts, bevor die CLI darauf aufbaut (measure-first).
+Define the expected behavior of near_dup_pairs / connectivity /
+status_counts before the CLI builds on top of it (measure-first).
 """
 import json
 import sys
@@ -34,7 +34,7 @@ def test_near_dup_finds_band_pair(tmp_path):
     b.write_node(Node(id="a", text="Thema A"))
     b.write_node(Node(id="b", text="Thema A Variante"))
     b.write_node(Node(id="c", text="Ganz anderes Thema"))
-    # a=[1,0,0], b=[0.8,0.6,0] -> cos=0.8 (im Band), c=[0,1,0] -> cos(a,c)=0
+    # a=[1,0,0], b=[0.8,0.6,0] -> cos=0.8 (in the band), c=[0,1,0] -> cos(a,c)=0
     _write_vecs(b, {"a": [1, 0, 0], "b": [0.8, 0.6, 0], "c": [0, 1, 0]})
     pairs = near_dup_pairs(b, lo=0.78, hi=0.92)
     assert len(pairs) == 1
@@ -48,10 +48,10 @@ def test_near_dup_band_excludes_outside(tmp_path):
     b.write_node(Node(id="a", text="A"))
     b.write_node(Node(id="x", text="X"))
     b.write_node(Node(id="y", text="Y"))
-    # x=[1,0,0] (cos 1.0 mit a -> >=hi, ausgeschlossen), y=[0.6,0.8,0] (cos 0.6 -> <lo)
+    # x=[1,0,0] (cos 1.0 with a -> >=hi, excluded), y=[0.6,0.8,0] (cos 0.6 -> <lo)
     _write_vecs(b, {"a": [1, 0, 0], "x": [1, 0, 0], "y": [0.6, 0.8, 0]})
     pairs = near_dup_pairs(b, lo=0.78, hi=0.92)
-    assert pairs == []  # 1.0 >= hi und 0.6 < lo, beide raus
+    assert pairs == []  # 1.0 >= hi and 0.6 < lo, both excluded
 
 
 def test_near_dup_sorted_desc(tmp_path):
@@ -76,7 +76,7 @@ def test_connectivity_detects_islands_and_orphans(tmp_path):
     b.write_node(Node(id="orphan", text="Orphan"))
     b.write_node(Node(id="weak", text="Schwach"))
     b.write_node(Node(id="hub", text="Hub"))
-    # hub-weak, hub-weak2 -> weak hat 2 Kanten; island 1; orphan 0
+    # hub-weak, hub-weak2 -> weak has 2 edges; island 1; orphan 0
     b.add_edge(Edge(source="hub", target="weak", kind="extends", pending=False))
     b.add_edge(Edge(source="hub", target="island", kind="extends", pending=False))
     b.add_edge(Edge(source="weak", target="hub", kind="extends", pending=False))
@@ -84,7 +84,7 @@ def test_connectivity_detects_islands_and_orphans(tmp_path):
     assert c.total == 4
     assert "orphan" in c.orphans
     assert "island" in c.islands  # degree 1
-    assert "weak" not in c.islands  # degree 2 (weak, nicht Insel)
+    assert "weak" not in c.islands  # degree 2 (weak, not an island)
 
 
 def test_status_counts(tmp_path):

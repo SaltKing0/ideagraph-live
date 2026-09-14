@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import re
 
-# Marker als Token-Folgen (lowercase). Matching ist Token-basiert: ein Marker
-# passt nur, wenn seine Token als FOLGE im Token-Stream stehen — "versetzt"
-# (Tokens: [versetzt]) matcht "ersetzt" nicht mehr, "findet statt" (Tokens
-# [findet, statt]) matcht den supersedes-Marker "statt" weiterhin, weil er
-# dort wirklich als eigenes Wort auftritt (aber nur im selben Satz wie das
-# Subjekt — siehe _clause_hits).
-# Zweisprachig (Audit #61): jedes Set deckt DE und EN ab.
+# Marker sequences (lowercase). Matching is token-based: a marker only
+# matches when its tokens appear as a SEQUENCE in the token stream —
+# "versetzt" (tokens: [versetzt]) no longer matches "ersetzt", while
+# "findet statt" (tokens [findet, statt]) still matches the supersedes
+# marker "statt" because it really occurs as its own word there (but only
+# in the same clause as the subject — see _clause_hits).
+# Bilingual (Audit #61): every set covers DE and EN.
 SUPERSEDE_MARKERS: tuple[tuple[str, ...], ...] = (
     ("ersetzt",), ("ersetzt", "durch"), ("ersatz",),
     ("ablöst",), ("löst", "ab"), ("abgelöst",),
@@ -53,8 +53,8 @@ CONTINUE_MARKERS: tuple[tuple[str, ...], ...] = (
 )
 
 # Priority on multiple hits (audit #51): supersedes > contradicts
-# > continues — dokumentiert und deterministisch; die satzenlage Subjekt-
-# Prüfung disambiguiert die meisten Doppeltreffer bereits.
+# > continues — documented and deterministic; the clause-scoped subject
+# check already disambiguates most double hits.
 _PRIORITY = ("supersedes", "contradicts", "continues")
 
 _MARKER_TO_INTENT: dict[tuple[str, ...], str] = {}
@@ -67,9 +67,9 @@ for _m in CONTINUE_MARKERS:
 
 _WORD_RE = re.compile(r"[a-zäöüß0-9]+")
 
-# Gemeine Funktions-/Stoppwörter (DE + EN), die KEINEN Themenüberlapp anzeigen.
-# Ohne Filter wäre `shared` fast immer true (die/der/und/ist… in jedem Text),
-# wodurch die Intent-Subjekt-Prüfung wirkungslos würde.
+# Common function/stop words (DE + EN) that do NOT indicate topical overlap.
+# Without the filter `shared` would be almost always true (die/der/und/ist… in
+# every text), which would make the intent subject check ineffective.
 _STOPWORDS = frozenset(
     """
     die der das und ist ein eine einer eines mit von für auf den dem aus bei
@@ -85,8 +85,8 @@ _STOPWORDS = frozenset(
 
 
 def _tokens(text: str) -> list[str]:
-    """Token-Stream: lowercase, Interpunktion getrennt (Audit #36: "Erde," war
-    vorher ein anderes Token als "Erde")."""
+    """Token stream: lowercase, punctuation separated (Audit #36: "Erde," was
+    previously a different token than "Erde")."""
     return _WORD_RE.findall(text.lower())
 
 
@@ -95,13 +95,13 @@ def _content_words(text: str) -> set[str]:
 
 
 def _clauses(text: str) -> list[list[str]]:
-    """Satz/Teilsatz-Grenzen: . ! ? ; , : und Zeilenumbrüche trennen."""
+    """Sentence/clause boundaries: . ! ? ; , : and line breaks separate."""
     parts = re.split(r"[.!?;,:()\[\]\"\']|\n+", text.lower())
     return [_tokens(p) for p in parts if _tokens(p)]
 
 
 def _marker_hits(tokens: list[str], markers: tuple[tuple[str, ...], ...]) -> list[tuple[str, ...]]:
-    """Marker, die als zusammenhängende Token-Folge vorkommen."""
+    """Markers that occur as contiguous token sequences."""
     hits = []
     n = len(tokens)
     for m in markers:
@@ -113,21 +113,22 @@ def _marker_hits(tokens: list[str], markers: tuple[tuple[str, ...], ...]) -> lis
     return hits
 
 
-# Nomen-Negations-/Ersetzungs-Marker: hier ist das negierte/ersetzte Ding das
-# OBJEKT des Markers — es muss als geteiltes Inhaltswort KURZ NACH dem Marker
-# stehen. "keine Zeit für Review" negiert "Zeit", nicht "Review" (Audit #35);
-# "findet statt" hat kein Objekt nach "statt" (stattfinden-Verb, kein supersedes).
+# Noun-negation/replacement markers: here the negated/replaced thing is the
+# OBJECT of the marker — it must appear as a shared content word SHORTLY AFTER
+# the marker. "keine Zeit für Review" negates "Zeit", not "Review" (Audit #35);
+# "findet statt" has no object after "statt" (stattfinden verb, no supersedes).
 _OBJECT_MARKERS = frozenset(("keine", "kein", "nie", "niemals", "statt", "falsch",
                              "falsche", "no", "never", "false", "wrong"))
 
 
 def _marker_object_shared(clause: list[str], marker: tuple[str, ...], subjects: set[str]) -> bool:
     if marker[0] not in _OBJECT_MARKERS:
-        return True  # verbale Marker: Subjekt-im-Satz-Prüfung genügt
-    # Position des Marker-Endes suchen; ein geteiltes Inhaltswort innerhalb der
-    # nächsten 2 Tokens macht die Negation zum Gegenstand ("keine Scheibe" ✓,
-    # "keine Zeit für Review" ✗ — Review steht an Position +3 und ist nicht
-    # das Negierte). Fenster ist positional (Artikel/Adjektive dazwischen ok).
+        return True  # verbal markers: subject-in-clause check suffices
+    # Find the end position of the marker; a shared content word within the
+    # next 2 tokens makes the negation the subject ("keine Scheibe" ✓,
+    # "keine Zeit für Review" ✗ — Review sits at position +3 and is not
+    # the negated thing). The window is positional (articles/adjectives in
+    # between are fine).
     n = len(clause)
     for i in range(n - len(marker) + 1):
         if clause[i:i + len(marker)] == list(marker):
@@ -139,13 +140,14 @@ def _marker_object_shared(clause: list[str], marker: tuple[str, ...], subjects: 
 
 def _clause_hits(clauses: list[list[str]], markers: tuple[tuple[str, ...], ...],
                  subjects: set[str]) -> bool:
-    """True, wenn ein Marker im selben Satz/Teilsatz wie ein Subjekt-Inhaltswort steht.
+    """True when a marker shares a sentence/clause with a subject content word.
 
-    Audit #35: bloße Marker-Anwesenheit im Text feuerte gegen JEDE verwandte
-    Node ("Der Mitarbeiter wird versetzt" → supersedes wegen 'ersetzt'-Substring
-    in 'versetzt' + geteilte Domänenwörter). Jetzt muss der Marker im selben
-    Satz wie ein geteiltes Inhaltswort stehen — und bei Objekt-Markern (keine/
-    kein/nie/statt/falsch) muss das negierte/ersetzte Objekt selbst geteilt sein."""
+    Audit #35: mere marker presence in the text fired against EVERY related
+    node ("Der Mitarbeiter wird versetzt" → supersedes because of the
+    'ersetzt' substring in 'versetzt' + shared domain words). Now the marker
+    must be in the same sentence as a shared content word — and for object
+    markers (keine/kein/nie/statt/falsch) the negated/replaced object itself
+    must be shared."""
     for clause in clauses:
         if not (_content_words(" ".join(clause)) & subjects):
             continue
@@ -156,16 +158,16 @@ def _clause_hits(clauses: list[list[str]], markers: tuple[tuple[str, ...], ...],
 
 
 def detect_intent(new_text: str, old_text: str) -> str | None:
-    """Intent zwischen neuer und bestehender Node, oder None.
+    """Intent between the new and the existing node, or None.
 
-    `new_text` ist die neu ingestierte Aussage, `old_text` die bestehende.
-    Alle drei Intents verlangen, dass beide über denselben Gegenstand
-    sprechen (geteilte Inhaltswörter) UND dass der Marker im selben Satz
-    wie ein geteiltes Inhaltswort steht (Audit #35).
+    `new_text` is the newly ingested statement, `old_text` the existing one.
+    All three intents require that both talk about the same subject
+    (shared content words) AND that the marker shares a sentence with a
+    shared content word (Audit #35).
 
-    Audit #36 (beidseitige Negation): verneint ALT den Gegenstand und bejaht
-    NEW affirms it (or vice versa), that is also contradicts — before
-    lieferte new-affirms-what-old-denies None.
+    Audit #36 (bidirectional negation): if OLD denies the subject and
+    NEW affirms it (or vice versa), that is also contradicts — before,
+    new-affirms-what-old-denies returned None.
     """
     new_subjects = _content_words(new_text)
     shared = new_subjects & _content_words(old_text)
@@ -186,8 +188,8 @@ def detect_intent(new_text: str, old_text: str) -> str | None:
             or _clause_hits(old_clauses, markers, shared)
         )
 
-    # Beidseitige Negation (Audit #36): alt verneint, neu bejaht denselben
-    # Gegenstand ohne Verneinung → Widerspruch zwischen den Aussagen.
+    # Bidirectional negation (Audit #36): old denies, new affirms the same
+    # subject without negation → contradiction between the statements.
     if not hits["contradicts"]:
         old_denies = _clause_hits(old_clauses, CONTRADICT_MARKERS, shared)
         new_denies = _clause_hits(new_clauses, CONTRADICT_MARKERS, shared)

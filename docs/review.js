@@ -1,7 +1,7 @@
 // IdeaGraph Review — inbox work + same_as linking, keyboard-first.
 //
 // Security (Audit #11/#12/#14): alle dynamischen Werte (ids, kinds, Text)
-// werden strikt escaped; Interaktion läuft über data-Attribute +
+// are strictly escaped; interaction runs via data attributes +
 // Event-Delegation statt inline onclick-Attributen mit String-Interpolation.
 // Ein manipuliertes Brain-Repo (geklontes Remote mit feindlichen ids/kinds)
 // kann keinen Code mehr in die Seite injizieren.
@@ -23,8 +23,8 @@ function short(id, n = 70) {
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 }
 
-// Strict escaping für Element-Content UND Attribut-Kontext (Audit #14:
-// die alte Version escaped nur & und < — unzureichend für Attribute).
+// Strict escaping for element content AND attribute context (audit #14:
+// the old version escaped only & and < — insufficient for attributes).
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
   .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
