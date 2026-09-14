@@ -172,3 +172,51 @@ def test_roadmap_cases_are_not_yet_green(tmp_path):
     assert any(not r.passed for r in results), (
         "Alle Roadmap-Fälle sind grün — verschiebe sie ins GOLDEN_SET!"
     )
+
+
+# ---------------------------------------------------------------------------
+# Audit #27: oracle matching correctness
+# ---------------------------------------------------------------------------
+
+def test_find_node_by_text_exact_beats_prefix(tmp_path):
+    """#27a: oracle texts that are prefixes of each other resolve correctly."""
+    from ideagraph.evals import find_node_by_text
+    b = _brain(tmp_path)
+    b.write_node(Node(id="short", text="Agent memory"))
+    b.write_node(Node(id="long", text="Agent memory consolidation improves recall"))
+    # exact match wins even though the prefix node comes first
+    assert find_node_by_text(b, "Agent memory consolidation").id == "long"
+    assert find_node_by_text(b, "Agent memory").id == "short"
+
+
+def test_find_node_by_text_prefix_prefers_original(tmp_path):
+    """#27a: after evolution appends a suffix, the original (shortest) wins."""
+    from ideagraph.evals import find_node_by_text
+    b = _brain(tmp_path)
+    b.write_node(Node(id="evolved", text="Agent memory [evolved from abc123]"))
+    b.write_node(Node(id="other", text="Agent memory consolidation improves recall"))
+    n = find_node_by_text(b, "Agent memory")
+    assert n.id == "evolved"  # shortest prefix, not first-hit order
+
+
+def test_no_edge_ignores_invalidated_and_foreign_kind(tmp_path):
+    """#27b: no_edge mirrors the positive path — valid_to + kind aware."""
+    b = _brain(tmp_path)
+    b.write_node(Node(id="a", text="alpha node"))
+    b.write_node(Node(id="b", text="beta node"))
+    import time
+    dead = Edge(source="a", target="b", kind="similar", pending=False)
+    dead.valid_to = time.time()  # invalidated
+    b.write_edges([dead])
+    # an invalidated edge is NOT an unexpected edge
+    assert verify_end_state(b, EvalOracle(
+        no_edge=[EdgeExpectation("alpha node", "beta node", "similar")])) == []
+    # a live edge of a DIFFERENT kind is not a violation of a specific kind
+    b.write_edges([Edge(source="a", target="b", kind="extends", pending=False)])
+    assert verify_end_state(b, EvalOracle(
+        no_edge=[EdgeExpectation("alpha node", "beta node", "similar")])) == []
+    # but a live edge of the SAME kind IS
+    b.write_edges([Edge(source="a", target="b", kind="similar", pending=False)])
+    failures = verify_end_state(b, EvalOracle(
+        no_edge=[EdgeExpectation("alpha node", "beta node", "similar")]))
+    assert any("unexpected edge" in f for f in failures)

@@ -104,17 +104,26 @@ def _norm(text: str) -> str:
 
 
 def find_node_by_text(brain: Brain, text: str) -> Node | None:
-    """Node, dessen Inhalt (normalisiert) mit `text` beginnt, sonst None.
+    """Resolve an oracle text to a node: exact normalized match wins.
 
-    Starts-with statt exakt: Memory Evolution hängt auto-akzeptierten
-    "similar" edges get an "[evolved …]" Querverweis ans Ende — der ursprüngliche
-    Text bleibt Präfix, und die Zuordnung soll dennoch greifen.
+    Prefix fallback exists because memory evolution appends an auto-accepted
+    "[evolved …]" cross-reference to the text — the original text stays a
+    prefix and must still resolve. Audit #27: when one oracle text is a
+    prefix of another, first-hit-wins prefix matching resolved to the wrong
+    node — an exact match now always beats a prefix match, and prefix
+    matching prefers the SHORTEST prefix (the original, pre-evolution text).
     """
     target = _norm(text)
-    for n in brain.read_nodes():
-        if _norm(n.text).startswith(target):
+    nodes = brain.read_nodes()
+    for n in nodes:
+        if _norm(n.text) == target:
             return n
-    return None
+    best: Node | None = None
+    for n in nodes:
+        if _norm(n.text).startswith(target):
+            if best is None or len(_norm(n.text)) < len(_norm(best.text)):
+                best = n
+    return best
 
 
 def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
@@ -186,10 +195,18 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
     for eexp in oracle.no_edge:
         s = find_node_by_text(brain, eexp.source)
         t = find_node_by_text(brain, eexp.target)
-        if s and t and any(
-            e.source == s.id and e.target == t.id or e.source == t.id and e.target == s.id
-            for e in edges
-        ):
+        if s is None or t is None:
+            continue
+        # Audit #27: mirror the positive path — only ACTIVE edges count, and
+        # kind="*" means any kind; a specific kind must match exactly. An
+        # invalidated edge or a different-kind edge is NOT a violation.
+        violating = [
+            e for e in edges
+            if e.valid_to is None
+            and ((e.source == s.id and e.target == t.id) or (e.source == t.id and e.target == s.id))
+            and (eexp.kind == "*" or e.kind == eexp.kind)
+        ]
+        if violating:
             failures.append(f"unexpected edge: {eexp.source!r} --[{eexp.kind}]--> {eexp.target!r}")
 
     return failures

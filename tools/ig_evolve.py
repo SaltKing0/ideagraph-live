@@ -69,7 +69,7 @@ else:
         # TemporaryDirectory cleans itself up (audit: mkdtemp brains leaked).
         td = tempfile.TemporaryDirectory()
         return BrainEngine(Brain(td.name, mode="local"), HashEmbedder())
-    res = run_eval(task, factory)
+    res = run_eval(task, factory, k=3)  # audit #27: pass^3 — a flaky case cannot flip on one lucky run
     print(json.dumps({{"id": res.task_id, "passed": res.passed,
                        "failures": res.failures, "runs": res.runs}}))
 """
