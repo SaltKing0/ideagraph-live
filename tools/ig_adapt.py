@@ -14,8 +14,8 @@ Strategy decisions (all data-driven):
 
 Usage:
   python3 tools/ig_adapt.py [--engine <engine-repo>]
-                            [--metrics ~/.hermes/cron/ig_metrics.jsonl]
-                            [--strategy ~/.hermes/cron/cycle_strategy.json]
+                            [--metrics ~/.cache/ideagraph/ig_metrics.jsonl]
+                            [--strategy ~/.cache/ideagraph/cycle_strategy.json]
                             [--engine <engine-repo>] [--print]
 """
 from __future__ import annotations
@@ -27,8 +27,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-DEFAULT_METRICS = os.path.expanduser("~/.hermes/cron/ig_metrics.jsonl")
-DEFAULT_STRATEGY = os.path.expanduser("~/.hermes/cron/cycle_strategy.json")
+DEFAULT_METRICS = os.path.expanduser("~/.cache/ideagraph/ig_metrics.jsonl")
+DEFAULT_STRATEGY = os.path.expanduser("~/.cache/ideagraph/cycle_strategy.json")
 DEFAULT_ENGINE = str(Path(__file__).resolve().parents[1])
 
 FOCUS_AREAS = {"Multi-Agent-Systeme", "Agent-Harness & Orchestrierung"}

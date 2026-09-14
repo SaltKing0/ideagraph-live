@@ -35,7 +35,7 @@ import tempfile
 import time
 import unicodedata
 
-DEFAULT_METRICS = os.path.expanduser("~/.hermes/cron/ig_metrics.jsonl")
+DEFAULT_METRICS = os.path.expanduser("~/.cache/ideagraph/ig_metrics.jsonl")
 
 # Intent-marker substrings (exact) that must NOT appear in a finding.
 MARKERS = [
@@ -282,8 +282,7 @@ def main() -> int:
     # skip instead of a hard crash when it's missing.
     review = os.environ.get(
         "IG_REVIEW_SCRIPT",
-        os.path.expanduser("~/.hermes/skills/software-development/"
-                           "ideagraph-engine/scripts/review_edges.py"))
+        os.path.expanduser("~/.cache/ideagraph/review_edges.py"))
     if os.path.exists(review):
         out = run([eng_py, review], git_env, args.engine)
         print(out.strip().splitlines()[-1] if out.strip() else "review: no output")

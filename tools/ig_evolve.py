@@ -29,7 +29,7 @@ import sys
 ENGINE = os.environ.get("IG_ENGINE_PATH",
                       str(Path(__file__).resolve().parents[1]))
 PY = os.path.join(ENGINE, ".venv", "bin", "python")
-HISTORY = os.path.expanduser("~/.hermes/cron/ig_evolve_history.jsonl")
+HISTORY = os.path.expanduser("~/.cache/ideagraph/ig_evolve_history.jsonl")
 
 
 def run(cmd: list[str], cwd: str = ENGINE) -> tuple[int, str]:
