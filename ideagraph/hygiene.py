@@ -78,7 +78,9 @@ def near_dup_pairs(
                 a, b = ids[i], ids[j]
                 pairs.append(NearDup(c, a, b, texts.get(a, a)[:72], texts.get(b, b)[:72]))
     pairs.sort(key=lambda p: p.score, reverse=True)
-    if max_pairs:
+    if max_pairs is not None:
+        # Audit #60: `if max_pairs:` behandelte max_pairs=0 als "unbegrenzt" —
+        # 0 heißt Limit 0 (keine Paare).
         pairs = pairs[:max_pairs]
     return pairs
 

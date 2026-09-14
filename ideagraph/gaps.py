@@ -11,6 +11,7 @@ LLM/Agent-Default. Es wird nichts am Brain verändert (read-only).
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -108,10 +109,17 @@ def normalize(text: str) -> str:
 
 
 def _node_text(node: Any) -> str:
-    """Body eines Nodes ohne Frontmatter."""
+    """Body eines Nodes ohne Frontmatter.
+
+    Audit #25: das blinde parts[2] verlor alles nach einem internen
+    `---`-Horizontalrule im Body. Frontmatter-Ende ist die ERSTE
+    `---`-Zeile alleine — danach kommt der komplette Body.
+    """
     t = getattr(node, "text", "") or ""
-    parts = t.split("---")
-    return (parts[2] if len(parts) >= 3 else t).strip()
+    m = re.match(r"^---\n.*?\n---\n\n?(.*)$", t, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return t.strip()
 
 
 @dataclass
@@ -167,6 +175,9 @@ def render(coverage: CoverageResult, threshold: int) -> str:
         "-----  " + "-" * 40 + "  ---------",
     ]
     maxc = max((a.count for a in coverage.areas), default=1)
+    # Audit #24: ein Brain ohne Treffer (alle Counts 0) darf nicht mit
+    # ZeroDivisionError crashen — maxc mindestens 1.
+    maxc = max(maxc, 1)
     for a in coverage.areas:
         bar = "#" * int(a.count / maxc * 30)
         gap = "  ← GAP" if a.count < threshold else ""

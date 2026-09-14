@@ -352,3 +352,57 @@ def test_merge_refreshes_survivor_vector(tmp_path):
     new_vec = engine.brain.read_vectors()[n2.id]
     assert new_vec != old_vec, "survivor vector was not refreshed after text append"
     assert engine.brain.read_vectors().get(n1.id) is None
+
+
+# ---------- Fix-Welle 2: CLI-Robustheit (#24 #26 #32 #33 #58) ----------
+
+def test_cli_accept_without_arg_prints_usage():
+    """Audit #26: 'ig accept' ohne Edge-ID → Usage-Zeile, kein IndexError."""
+    import subprocess, os, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, IG_BRAIN_PATH=tmp, IG_BRAIN_MODE="local",
+                   IDEAGRAPH_EMBEDDER="hash")
+        r = subprocess.run(
+            [sys.executable, "-m", "ideagraph", "accept"],
+            capture_output=True, text=True, env=env,
+            cwd=str(Path(__file__).resolve().parent.parent), timeout=60)
+    assert r.returncode == 1
+    assert "Traceback" not in r.stderr
+    assert "Nutzung: ig accept" in r.stdout
+
+
+def test_cli_ingest_stdin_marker_rejects_mixed_args():
+    """Audit #32: 'ig ingest - extra' darf keinen Node mit Text '- extra' anlegen."""
+    import subprocess, os, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, IG_BRAIN_PATH=tmp, IG_BRAIN_MODE="local",
+                   IDEAGRAPH_EMBEDDER="hash")
+        r = subprocess.run(
+            [sys.executable, "-m", "ideagraph", "ingest", "-", "extra"],
+            capture_output=True, text=True, env=env, input="",
+            cwd=str(Path(__file__).resolve().parent.parent), timeout=60)
+    assert r.returncode == 1
+    assert "Traceback" not in r.stderr
+    assert "stdin" in r.stdout
+
+
+def test_gaps_render_empty_brain_no_zero_division(tmp_path_factory):
+    """Audit #24: leerer Brain (alle Counts 0) → Report, kein ZeroDivisionError."""
+    from ideagraph.gaps import analyze_coverage, render
+    brain = make_brain(tmp_path_factory.mktemp("empty"))
+    cov = analyze_coverage(brain)
+    out = render(cov, threshold=10)
+    assert "Coverage" in out  # kein Crash
+
+
+def test_near_dup_max_zero_means_zero(tmp_path_factory):
+    """Audit #60 (Teil): max_pairs=0 limitiert auf 0, nicht auf unbegrenzt."""
+    from ideagraph.hygiene import near_dup_pairs
+    brain = make_brain(tmp_path_factory.mktemp("maxzero"))
+    a = Node(text="Alpha Knoten")
+    b = Node(text="Alpha Knoten zwei")
+    brain.write_node(a)
+    brain.write_node(b)
+    brain.write_vectors({a.id: [1.0] * 4, b.id: [0.99] * 4})
+    pairs = near_dup_pairs(brain, max_pairs=0)
+    assert pairs == []

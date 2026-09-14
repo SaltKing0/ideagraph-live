@@ -33,8 +33,12 @@ from .retrieval import retrieve
 
 
 def make_engine() -> BrainEngine:
+    # Audit #33: expanduser muss AUCH auf einen explizit gesetzten Env-Wert
+    # angewandt werden (IG_BRAIN_PATH=~/x erzeugte vorher ein wörtliches ./~).
+    brain_path = os.path.expanduser(
+        os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")))
     brain = Brain(
-        path=os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")),
+        path=brain_path,
         # Kein privater/persönlicher Default-Remote mehr: nur für `git clone`
         # beim ersten Einrichten nötig. Bestehende Clones nutzen ihr eigenes
         # origin-Repo (pull/push funktionieren ohne Remote-Angabe).
@@ -56,6 +60,11 @@ def cmd_ingest(engine: BrainEngine, args: list[str]) -> None:
     i = 0
     while i < len(args):
         if args[i] == "--source":
+            # Audit #26: fehlender Wert nach --source ist ein Usage-Fehler,
+            # kein IndexError-Traceback.
+            if i + 1 >= len(args):
+                print("Nutzung: ig ingest \"Text\" --source <quelle>")
+                sys.exit(1)
             source = args[i + 1]
             i += 2
         elif args[i] == "--allow-dup":
@@ -64,7 +73,14 @@ def cmd_ingest(engine: BrainEngine, args: list[str]) -> None:
         else:
             rest.append(args[i])
             i += 1
-    if rest == ["-"]:
+    # Audit #32: '-' ist der stdin-Marker — auch in gemischten Args. Vorher
+    # wurde 'ig ingest - extra' als wörtlicher Text "- extra" ingestiert
+    # (Exit 0, Node angelegt). Ein '-'-Token bedeutet stdin; zusätzlicher
+    # Text daneben ist ein Fehler.
+    if "-" in rest:
+        if len(rest) > 1:
+            print("Nutzung: '-' (stdin) kann nicht mit Text-Argumenten kombiniert werden.")
+            sys.exit(1)
         text = sys.stdin.read()
     else:
         text = " ".join(rest)
@@ -92,6 +108,14 @@ def cmd_pending(engine: BrainEngine, args: list[str]) -> None:
     print(f"\n{len(edges)} pending · akzeptieren: ig accept {edges[0].id}")
 
 
+def _first_or_usage(args: list[str], cmd: str) -> str:
+    """Audit #26: fehlendes Positionsargument → Usage-Zeile statt IndexError."""
+    if not args:
+        print(f"Nutzung: ig {cmd} <edge_id>")
+        sys.exit(1)
+    return args[0]
+
+
 def _resolve_cmd(engine: BrainEngine, edge_id: str, accept: bool) -> None:
     edge = engine.resolve(edge_id, accept)
     if edge is None:
@@ -104,6 +128,10 @@ def cmd_link(engine: BrainEngine, args: list[str]) -> None:
     kind = "same_as"
     if "--kind" in args:
         i = args.index("--kind")
+        # Audit #26: fehlender Wert nach --kind → Usage-Fehler statt IndexError.
+        if i + 1 >= len(args):
+            print("Nutzung: ig link <node_a> <node_b> [--kind same_as]")
+            sys.exit(1)
         kind = args[i + 1]
         args = args[:i] + args[i + 2:]
     if len(args) != 2:
@@ -126,7 +154,15 @@ def cmd_init(engine: BrainEngine, args: list[str]) -> None:
     brain = engine.brain
     if demo:
         from .demo import build_demo_brain
-        stats = build_demo_brain(str(brain.path))
+        try:
+            stats = build_demo_brain(str(brain.path))
+        except FileExistsError:
+            # Audit #58: freundliche Meldung statt roher Traceback — ein
+            # nicht-leeres Verzeichnis wird nie überschrieben.
+            print(f"Fehler: {brain.path} existiert bereits und ist nicht leer.")
+            print("Das Demo-Brain wird nie in ein bestehendes Verzeichnis geschrieben.")
+            print("Wähle einen anderen Pfad: IG_BRAIN_PATH=<pfad> ig init --demo")
+            sys.exit(1)
         print(f"✓ Demo-Brain initialisiert: {brain.path}")
         print(f"  {stats['nodes']} Nodes · {stats['edges']} Edges "
               f"({stats['pending']} pending für das HITL-Review)")
@@ -158,7 +194,12 @@ def cmd_gaps(engine: BrainEngine, args: list[str]) -> None:
             taxonomy = load_taxonomy(args[i + 1])
             i += 2
         elif args[i] == "--min" and i + 1 < len(args):
-            threshold = int(args[i + 1])
+            # Audit #26: nicht-numerische --min-Werte → Usage-Fehler statt ValueError-Traceback.
+            try:
+                threshold = int(args[i + 1])
+            except ValueError:
+                print(f"Nutzung: --min erwartet eine Zahl, bekommen: {args[i + 1]!r}")
+                sys.exit(1)
             i += 2
         elif args[i] == "--json":
             as_json = True
@@ -197,15 +238,38 @@ def cmd_near_dup(engine: BrainEngine, args: list[str]) -> None:
     i = 0
     while i < len(args):
         if args[i] == "--lo" and i + 1 < len(args):
-            lo = float(args[i + 1]); i += 2
+            try:
+                lo = float(args[i + 1])
+            except ValueError:
+                print(f"Nutzung: --lo erwartet eine Zahl, bekommen: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
         elif args[i] == "--hi" and i + 1 < len(args):
-            hi = float(args[i + 1]); i += 2
+            try:
+                hi = float(args[i + 1])
+            except ValueError:
+                print(f"Nutzung: --hi erwartet eine Zahl, bekommen: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
         elif args[i] == "--max" and i + 1 < len(args):
-            max_pairs = int(args[i + 1]); i += 2
+            try:
+                max_pairs = int(args[i + 1])
+            except ValueError:
+                print(f"Nutzung: --max erwartet eine Zahl, bekommen: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
         elif args[i] == "--json":
             as_json = True; i += 1
         else:
             i += 1
+    # Audit #26 (Semantik): --lo >= --hi ist eine leere/invalide Band-Angabe;
+    # --max 0 heißt "0 Paare" (Limit), nicht "unbegrenzt".
+    if lo >= hi:
+        print(f"Nutzung: --lo ({lo}) muss kleiner als --hi ({hi}) sein.")
+        sys.exit(1)
+    if max_pairs is not None and max_pairs < 0:
+        print("Nutzung: --max erwartet eine nicht-negative Zahl.")
+        sys.exit(1)
     pairs = near_dup_pairs(engine.brain, lo=lo, hi=hi, max_pairs=max_pairs)
     if as_json:
         import json as _json
@@ -249,8 +313,8 @@ COMMANDS = {
     "init": cmd_init,
     "ingest": cmd_ingest,
     "pending": lambda e, a: cmd_pending(e, a),
-    "accept": lambda e, a: _resolve_cmd(e, a[0], True),
-    "reject": lambda e, a: _resolve_cmd(e, a[0], False),
+    "accept": lambda e, a: _resolve_cmd(e, _first_or_usage(a, "accept"), True),
+    "reject": lambda e, a: _resolve_cmd(e, _first_or_usage(a, "reject"), False),
     "link": cmd_link,
     "search": cmd_search,
     "gaps": cmd_gaps,
