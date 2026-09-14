@@ -22,10 +22,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
-ENGINE = os.environ.get("IG_ENGINE_PATH", "/home/ubuntu/ideagraph-live")
+ENGINE = os.environ.get("IG_ENGINE_PATH",
+                      str(Path(__file__).resolve().parents[1]))
 PY = os.path.join(ENGINE, ".venv", "bin", "python")
 HISTORY = os.path.expanduser("~/.hermes/cron/ig_evolve_history.jsonl")
 
@@ -110,7 +112,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default=ENGINE,
                     help="engine repo path (default: IG_ENGINE_PATH env or "
-                         "/home/ubuntu/ideagraph-live)")
+                         "the engine repo (IG_ENGINE_PATH))")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--propose", metavar="SPEC_JSON")

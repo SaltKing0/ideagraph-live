@@ -36,7 +36,7 @@ def _free_port() -> int:
 def server():
     """A uvicorn server on a fixture brain containing hostile content."""
     import tempfile
-    tmp = tempfile.mkdtemp(prefix="ig-xss-", dir="/home/ubuntu")
+    tmp = tempfile.mkdtemp(prefix="ig-xss-")
     brain = Path(tmp) / "brain"
     env = dict(os.environ,
                IG_BRAIN_MODE="local",
@@ -76,8 +76,11 @@ def test_hostile_node_text_is_inert(server):
     """Hostile node text renders as TEXT, never executes (no __pwned global)."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=(
-            "/home/ubuntu/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome"))
+        import shutil as _sh
+        chrome = os.environ.get("PLAYWRIGHT_CHROMIUM") or _sh.which("chromium")
+        if not chrome:
+            pytest.skip("no chromium available (set PLAYWRIGHT_CHROMIUM)")
+        browser = pw.chromium.launch(executable_path=chrome)
         page = browser.new_page()
         page.goto(f"{server}/", wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(1500)  # d3 render
@@ -90,8 +93,11 @@ def test_hostile_text_in_graph_api_is_escaped_in_dom(server):
     """The node label must land in the DOM as text content, not markup."""
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=(
-            "/home/ubuntu/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome"))
+        import shutil as _sh
+        chrome = os.environ.get("PLAYWRIGHT_CHROMIUM") or _sh.which("chromium")
+        if not chrome:
+            pytest.skip("no chromium available (set PLAYWRIGHT_CHROMIUM)")
+        browser = pw.chromium.launch(executable_path=chrome)
         page = browser.new_page()
         page.goto(f"{server}/", wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(1500)

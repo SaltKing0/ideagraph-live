@@ -17,8 +17,8 @@ swap ("nіcht" with a Cyrillic і) or an innocent word elsewhere in the line
 ("Stätte" whitelisting a "statt" elsewhere) can no longer bypass the gate.
 
 Usage:
-  python3 tools/ig_cycle.py [--glob '/tmp/dogfood_*.txt'] [--brain /home/ubuntu/ideagraph-brain]
-                            [--engine /home/ubuntu/ideagraph-live] [--dry-run-only]
+  python3 tools/ig_cycle.py [--glob '/tmp/dogfood_*.txt'] [--brain ~/ideagraph-brain]
+                            [--engine <engine-repo>] [--dry-run-only]
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ import argparse
 import glob
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -174,8 +175,9 @@ def write_metrics(entry: dict, path: str = DEFAULT_METRICS) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--glob", default="/tmp/dogfood_*.txt")
-    ap.add_argument("--brain", default=os.environ.get("IG_BRAIN_PATH", "/home/ubuntu/ideagraph-brain"))
-    ap.add_argument("--engine", default="/home/ubuntu/ideagraph-live")
+    _repo_root = Path(__file__).resolve().parents[1]
+    ap.add_argument("--brain", default=os.environ.get("IG_BRAIN_PATH", "~/ideagraph-brain"))
+    ap.add_argument("--engine", default=os.environ.get("IG_ENGINE_PATH", str(_repo_root)))
     ap.add_argument("--dry-run-only", action="store_true")
     ap.add_argument("--copy", default="",
                     help="dry-run copy dir (default: unique mkdtemp in /tmp)")

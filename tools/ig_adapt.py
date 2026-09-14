@@ -13,21 +13,23 @@ Strategy decisions (all data-driven):
     it back (max 4, VPS limit).
 
 Usage:
-  python3 tools/ig_adapt.py [--metrics ~/.hermes/cron/ig_metrics.jsonl]
+  python3 tools/ig_adapt.py [--engine <engine-repo>]
+                            [--metrics ~/.hermes/cron/ig_metrics.jsonl]
                             [--strategy ~/.hermes/cron/cycle_strategy.json]
-                            [--engine /home/ubuntu/ideagraph-live] [--print]
+                            [--engine <engine-repo>] [--print]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
 DEFAULT_METRICS = os.path.expanduser("~/.hermes/cron/ig_metrics.jsonl")
 DEFAULT_STRATEGY = os.path.expanduser("~/.hermes/cron/cycle_strategy.json")
-DEFAULT_ENGINE = "/home/ubuntu/ideagraph-live"
+DEFAULT_ENGINE = str(Path(__file__).resolve().parents[1])
 
 FOCUS_AREAS = {"Multi-Agent-Systeme", "Agent-Harness & Orchestrierung"}
 
@@ -58,7 +60,7 @@ def gap_counts(engine: str, brain: str = "") -> dict[str, int]:
     if brain:
         env["IG_BRAIN_PATH"] = os.path.abspath(os.path.expanduser(brain))
     elif not env.get("IG_BRAIN_PATH"):
-        env["IG_BRAIN_PATH"] = "/home/ubuntu/ideagraph-brain"
+        env["IG_BRAIN_PATH"] = "~/ideagraph-brain"  # engine's neutral default
     eng_py = os.path.join(engine, ".venv", "bin", "python")
     if not os.path.exists(eng_py):
         print(f"WARNING: engine venv python missing at {eng_py} — no gap weights",
