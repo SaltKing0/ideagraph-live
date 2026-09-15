@@ -611,24 +611,10 @@ GOLDEN_SET: list[EvalTask] = [
                 kind="similar")],
         ),
     ),
-]
 
-
-# ---------------------------------------------------------------------------
-# Roadmap cases — desired future behavior (turns green once implemented)
-# ---------------------------------------------------------------------------
-
-ROADMAP_CASES: list[EvalTask] = [
-    # Admit-rule enforcement (V2#3) is implemented → GOLDEN_SET
-    # (`admit-rule-no-relations`, `admit-rule-with-relations`).
-    # Late chunking (V2#1) deliberately stays NO eval case: as long as there is
-    # no real chunking layer (the engine embeds the whole node text), it cannot
-    # be specified as an end-state oracle — a case would either turn
-    # spuriously green (whole-text embedding satisfies it trivially) or red
-    # for the wrong reasons. So it remains a documented roadmap note, not a case.
-    #
-    # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
-    # (`retrieval-rerank-honored`).
+    # Report #3 (2026-09-15): topology communities — two topical clusters form
+    # two communities with a structural gap. Registered RED, implemented, then
+    # flipped (pass^3 + full suite green).
     EvalTask(
         id="roadmap-communities-two-clusters",
         name="Topology: two topical clusters form two communities with a structural gap",
@@ -654,6 +640,23 @@ ROADMAP_CASES: list[EvalTask] = [
                 min_size=2,
             )],
         ),
-    ),
+    ),]
+
+
+# ---------------------------------------------------------------------------
+# Roadmap cases — desired future behavior (turns green once implemented)
+# ---------------------------------------------------------------------------
+
+ROADMAP_CASES: list[EvalTask] = [
+    # Admit-rule enforcement (V2#3) is implemented → GOLDEN_SET
+    # (`admit-rule-no-relations`, `admit-rule-with-relations`).
+    # Late chunking (V2#1) deliberately stays NO eval case: as long as there is
+    # no real chunking layer (the engine embeds the whole node text), it cannot
+    # be specified as an end-state oracle — a case would either turn
+    # spuriously green (whole-text embedding satisfies it trivially) or red
+    # for the wrong reasons. So it remains a documented roadmap note, not a case.
+    #
+    # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
+    # (`retrieval-rerank-honored`).
 ]
 

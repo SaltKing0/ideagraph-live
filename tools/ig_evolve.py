@@ -78,6 +78,12 @@ from ideagraph.embedder import HashEmbedder
 
 task = next((t for t in ROADMAP_CASES if t.id == {case_id!r}), None)
 if task is None:
+    # After a flip the case lives in GOLDEN_SET; --flip must still be able
+    # to re-verify and record it (the ROADMAP gate test forces the move
+    # BEFORE the suite can go green — audit #52 deadlock found 2026-09-15).
+    from ideagraph.evals import GOLDEN_SET
+    task = next((t for t in GOLDEN_SET if t.id == {case_id!r}), None)
+if task is None:
     print(json.dumps({{"error": "case not found"}}))
 else:
     counter = [0]
