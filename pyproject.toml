@@ -7,7 +7,7 @@ name = "ideagraph-live"
 version = "0.5.0"
 description = "Self-growing idea graph: Ingest → Embed → Suggest → Visualize. A generic engine for a persistent knowledge graph backed by your own private git repo (the 'brain')."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "SaltKing0" }]
 keywords = ["knowledge-graph", "memory", "agent", "embeddings", "rag", "zettelkasten"]
@@ -23,7 +23,10 @@ dependencies = [
   "fastapi==0.116.0",
   "uvicorn[standard]==0.35.0",
   "httpx==0.28.1",
-  "numpy==2.3.1",
+  # numpy is the only compiled dependency: 2.3.1 ships wheels for cp311-cp313
+  # only, so newer Pythons (3.14+) get a newer numpy instead of a source build.
+  "numpy==2.3.1; python_version < '3.14'",
+  "numpy>=2.3.2; python_version >= '3.14'",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +35,13 @@ dev = ["pytest==8.4.0"]
 
 [project.scripts]
 ig = "ideagraph.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/SaltKing0/ideagraph-live"
+Repository = "https://github.com/SaltKing0/ideagraph-live"
+Issues = "https://github.com/SaltKing0/ideagraph-live/issues"
+Changelog = "https://github.com/SaltKing0/ideagraph-live/blob/main/CHANGELOG.md"
+PyPI = "https://pypi.org/project/ideagraph-live/"
 
 [tool.setuptools]
 packages = ["ideagraph", "ideagraph.web"]
