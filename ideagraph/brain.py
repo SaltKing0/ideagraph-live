@@ -395,21 +395,31 @@ class Brain:
             for nid, vec in sorted(vectors.items()))
         _atomic_write(self.vectors_file, content)
 
+    # Process-wide memo for persist=False reads (report #1): the MCP server is
+    # long-lived, but Brain instances are rebuilt per call via runtime.make_brain,
+    # so without a memo every search on a cold clone re-embeds ALL nodes
+    # (measured 275 s for 1821 nodes on the 2-core VPS — per search). Keyed by
+    # (path, vectors.jsonl mtime) so an external cache fill (cron, CLI) or a
+    # different brain invalidates it naturally. Bounded to one brain's worth of
+    # vectors per path; entries are replaced, never appended unboundedly.
+    _VECTOR_MEMO: dict = {}
+
     def vectors_for(self, node_ids: set[str], embed_fn, batch_fn=None,
                     persist: bool = True) -> dict[str, list[float]]:
-        """`persist=False` (report #1): compute missing vectors but never
-        write vectors.jsonl — the strictly read-only path for the MCP server
-        (a cold-cache write into the private repo would dirty it and churn
-        the cron rebase)."""
-        """Vectors from cache; missing ones are computed and stored.
-
-        Audit #4: reads nodes/vectors ONCE up front instead of per missing ID
-        (previously: read_nodes() per missing node -> O(N) file-read cycles,
-        measured 4.2 s for 300 cold nodes) and writes the cache exactly once
-        at the end. Audit #60: when batch_fn is provided, all missing nodes
-        are embedded in ONE batch call instead of N sequential embed_fn calls
-        (sentence-transformers encodes lists natively).
-        """
+        """Vectors from cache; missing ones are computed and — unless
+        `persist=False` — stored. Audit #4: reads nodes/vectors ONCE up front
+        instead of per missing ID. Audit #60: when batch_fn is provided, all
+        missing nodes are embedded in ONE batch call instead of N sequential
+        embed_fn calls (sentence-transformers encodes lists natively).
+        `persist=False` (report #1) is the strictly read-only path for the MCP
+        server: nothing is written to vectors.jsonl (a cold-cache write into
+        the private repo would dirty it and churn the cron rebase); results
+        are memoized in-process instead so the NEXT search is warm."""
+        vec_file = self.path / "vectors.jsonl"
+        memo_key = (str(self.path), vec_file.stat().st_mtime_ns if vec_file.exists() else None)
+        memo = Brain._VECTOR_MEMO.get(memo_key)
+        if memo is not None:
+            return {nid: v for nid, v in memo.items() if nid in node_ids}
         nodes = {n.id: n for n in self.read_nodes()}
         cached = self.read_vectors()
         missing = [nid for nid in node_ids if nid not in cached and nid in nodes]
@@ -429,6 +439,11 @@ class Brain:
                     dirty = True
         if dirty and persist:
             self.write_vectors(cached)
+            # after a write the mtime changed — memoize under the NEW key so
+            # the next persist=False call hits it
+            Brain._VECTOR_MEMO[(str(self.path), vec_file.stat().st_mtime_ns)] = dict(cached)
+        elif not persist:
+            Brain._VECTOR_MEMO[memo_key] = dict(cached)
         return {nid: v for nid, v in cached.items() if nid in node_ids}
 
     # ---------- Edges ----------

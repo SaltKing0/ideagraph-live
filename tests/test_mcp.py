@@ -195,6 +195,30 @@ class TestMCPTools:
         assert payload["ok"] is False
         assert payload["error"]["code"] == "brain_missing"
 
+    def test_persist_false_memoizes(self, mcp_env):
+        """The cold-search cost is paid ONCE per process: a second
+        persist=False search must not re-embed (the runtime memo)."""
+        import sys
+        from ideagraph.runtime import make_engine, reset_engine_cache
+        reset_engine_cache()
+        calls = {"n": 0}
+        engine = make_engine()
+        orig = engine.embedder.embed
+
+        def counting(text):
+            calls["n"] += 1
+            return orig(text)
+
+        engine.embedder.embed = counting
+        from ideagraph.retrieval import retrieve
+        retrieve(engine, "agent memory", k=2, persist=False)
+        first = calls["n"]
+        assert first > 0
+        retrieve(engine, "agent memory", k=2, persist=False)
+        # exactly ONE new embed: the query itself (never memoized — it is
+        # per-call by nature); the NODE vectors come from the process memo
+        assert calls["n"] == first + 1
+
     def test_read_only_no_vector_file_written(self, mcp_env):
         """The core guarantee: a search with the default strict mode must
         leave vectors.jsonl untouched/absent."""

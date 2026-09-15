@@ -6,7 +6,7 @@ Thanks for helping out! Here are the key rules to keep things running smoothly.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"   # engine + dev dependencies (pytest)
+.venv/bin/pip install -e ".[dev,mcp]"   # engine + dev deps (pytest) + MCP extra
 ```
 
 ## Tests

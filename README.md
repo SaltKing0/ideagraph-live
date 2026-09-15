@@ -126,7 +126,50 @@ ig report [--since 24h|--top 5] [--json] [--write]
                                    # --write regenerates the tracked BRAIN_REPORT.md
 ig status / near-dup               # hygiene: islands, orphans, near-dup pairs
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
+ig mcp                             # read-only MCP server over stdio (AI assistants)
 ```
+
+## MCP server (AI assistants)
+
+Expose the brain to MCP-capable assistants (Claude Desktop, Claude Code, …)
+as a **strictly read-only** tool surface:
+
+```bash
+pip install 'ideagraph-live[mcp]'
+ig mcp   # or: ig-mcp — stdio JSON-RPC, nothing else touches stdout
+```
+
+Register it in `claude_desktop_config.json` / `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ideagraph": {
+      "command": "ig-mcp",
+      "env": { "IG_BRAIN_PATH": "~/ideagraph-brain" }
+    }
+  }
+}
+```
+
+Four tools, all annotated `readOnlyHint`:
+
+| Tool | Purpose |
+|---|---|
+| `search_brain` | hybrid search (dense + BM25, RRF-fused); `score` is a rank-fusion score, **not** a similarity |
+| `get_node` | one node: full text (capped at 2000 chars) + its live edges |
+| `neighbors` | undirected graph neighborhood, 1–2 hops — the question vector search cannot answer |
+| `brain_status` | cheap orientation: size, connectivity, pending-review load |
+
+Design guarantees: **no write tools** (ingest commits and pushes to a private
+repo — model-initiated writes with no human review are the highest-risk thing
+this surface could do), the engine loads lazily (first search, not import),
+response payloads are capped and escaped in one place (`ideagraph/mcp/format.py`),
+and by default even the derived vector cache is **never written** — a search on
+a cold clone does not dirty the private repo (`IG_MCP_CACHE_VECTORS=1` opts
+back in; measured cold-search cost: see CHANGELOG). `brain_status` returns the
+brain path basename only. Optional opt-in prompt snippet for your
+`CLAUDE.md`/`AGENTS.md`: `ideagraph/mcp/agent/instructions.md`.
 
 ## Configuration
 
@@ -137,6 +180,9 @@ ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 | `IG_BRAIN_MODE` | `git` | `local` = filesystem only (tests) |
 | `IDEAGRAPH_EMBEDDER` | `st` | `hash` = deterministic test embedder |
 | `IDEAGRAPH_AUTO_ACCEPT` | off | `1` = auto-accept all suggested edges |
+| `IG_MCP_CACHE_VECTORS` | `0` | `1` = MCP search may fill the on-disk vector cache (default: strictly read-only) |
+| `IG_MCP_MAX_SNIPPET_CHARS` | `200` | search-result snippet cap |
+| `IG_MCP_MAX_NEIGHBORS` | `20` | neighbors result cap (hard max 50) |
 | `IDEAGRAPH_INTENT_PENDING` | off | `1` = intent edges become pending (HITL) |
 | `IDEAGRAPH_RERANKER` | none | optional cross-encoder rerank pass |
 | `IG_BOT_NAME` / `IG_BOT_EMAIL` | ideagraph-bot | git commit author |

@@ -7,6 +7,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Read-only MCP server** (`ig mcp` / `ig-mcp`, new `mcp` extra): exposes the
+  brain to AI assistants over stdio with four `readOnlyHint` tools —
+  `search_brain` (hybrid search; scores are rank-fusion, not similarity),
+  `get_node` (full text capped + live edges), `neighbors` (undirected 1-2-hop
+  graph neighborhood via the new `ideagraph.graph` seam), and `brain_status`
+  (size/connectivity/pending load, basename-only path). No write tools by
+  design; the engine loads lazily; payloads are capped and escaped in one
+  place (`ideagraph/mcp/format.py`); the vector cache is never written by
+  default (`IG_MCP_CACHE_VECTORS=1` opts in) so a cold-clone search cannot
+  dirty the private repo. Cold-search cost measured on a 1821-node clone
+  (2-core VPS, all-MiniLM-L6-v2): 275 s one-time embed — memoized in-process,
+  so subsequent searches in the same server session are warm (~2 s); with
+  `persist=True` the fill lands on disk once (352 s incl. write) and warm
+  searches stay ~2 s. Opt-in assistant prompt snippet shipped at
+  `ideagraph/mcp/agent/instructions.md`.
+- Engine seams: `Brain.read_node(id)` (single-node fetch without the full
+  glob), `vectors_for(..., persist=False)` (compute without writing the cache;
+  threaded through `retrieve()`), `ideagraph/graph.py` (undirected live-edge
+  neighborhood, shared primitive from report #1).
+- Eval layer: `NeighborhoodExpectation` + `verify_neighborhood` (graceful
+  degrade when `graph.py` is absent); golden case `roadmap-neighbors` flipped
+  (21 golden cases).
 - `ig communities` — read-only topology report: deterministic label-propagation
   communities (canonical 0..k-1), god nodes (degree AND normalized Brandes
   betweenness — the rankings diverge substantially), and structural gaps ranked
