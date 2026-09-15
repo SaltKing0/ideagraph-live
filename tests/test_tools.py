@@ -51,6 +51,31 @@ def test_cycle_missing_brain_aborts_cleanly(tmp_path):
     assert "Traceback" not in r.stderr
 
 
+def test_cycle_default_brain_expands_tilde(tmp_path):
+    """The documented cron invocation passes NO --brain: the `~/ideagraph-brain`
+    default must be tilde-expanded, otherwise the run aborts with "brain not
+    found" although the brain exists (found 2026-09-15)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    b = home / "ideagraph-brain"
+    subprocess.run([PY, "-m", "ideagraph", "init"], capture_output=True, text=True,
+                   env=_env(tmp_path, IG_BRAIN_MODE="local", IG_BRAIN_PATH=str(b)),
+                   check=True)
+    findings = tmp_path / "findings"
+    findings.mkdir()
+    (findings / "dogfood_t.txt").write_text("Ein Agent plant seine Schritte.\n",
+                                            encoding="utf-8")
+    env = _env(tmp_path, HOME=str(home))
+    env.pop("IG_BRAIN_PATH", None)  # the default path is what we are testing
+    r = subprocess.run(
+        [PY, str(REPO / "tools" / "ig_cycle.py"),
+         "--engine", str(REPO), "--glob", str(findings / "*.txt"),
+         "--dry-run-only"],
+        capture_output=True, text=True, env=env, timeout=300)
+    assert "brain not found" not in r.stdout
+    assert r.returncode == 0, r.stderr[-500:]
+
+
 def test_cycle_dry_run_on_empty_brain(tmp_path, brain):
     """A dry-run cycle completes, reports islands, and does NOT write metrics
     (dry runs must not pollute the production metrics stream the adapt loop reads)."""
