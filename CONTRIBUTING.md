@@ -17,7 +17,7 @@ All tests run deterministically with the HashEmbedder (no model download):
 .venv/bin/python -m pytest tests/ -q
 ```
 
-Before a PR: the full suite must be green (`238 passed` with the `[st]` extra
+Before a PR: the full suite must be green (`240 passed` with the `[st]` extra
 and Playwright installed; the embedder- and browser-dependent tests skip
 without them). New features need tests — in particular the golden-set evals
 (`ideagraph/evals.py`) and the intent/hygiene integrations.

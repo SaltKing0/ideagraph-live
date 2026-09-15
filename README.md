@@ -141,7 +141,7 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q   # 238 tests
+.venv/bin/python -m pytest tests/ -q   # 240 tests
 ```
 
 ## Status
