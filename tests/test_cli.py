@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-PY = str(REPO / ".venv" / "bin" / "python")
+# sys.executable = the interpreter running pytest: the repo venv locally, the
+# CI environment on GitHub Actions (where no .venv exists).
+PY = sys.executable
 
 
 def run_cli(args: list[str], tmp_path, env_extra: dict | None = None,

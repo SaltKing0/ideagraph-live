@@ -4,6 +4,7 @@ Batch 1: locks + atomic writes + read-once vectors (audits #1, #2, #4, #15).
 Each test first reproduces the audit finding and then verifies the fix.
 """
 
+import importlib.util
 import json
 import sys
 import threading
@@ -16,6 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ideagraph.brain import Brain, Node, Edge
 from ideagraph.brain_engine import BrainEngine, BRAIN_LOCK
 from ideagraph.embedder import HashEmbedder
+
+# The real (semantic) embedder is the optional [st] extra. The default install
+# — and the default CI job — has no sentence-transformers, so tests that need
+# it skip instead of failing. The dedicated CI job "test-st" installs the extra
+# and runs them for real.
+_HAS_ST = importlib.util.find_spec("sentence_transformers") is not None
+_NEEDS_ST = "requires the optional [st] extra (sentence-transformers)"
 
 
 def make_brain(tmp_path):
@@ -748,6 +756,7 @@ def test_vectors_for_batch_path(tmp_path):
     assert calls == [3]
 
 
+@pytest.mark.skipif(not _HAS_ST, reason=_NEEDS_ST)
 def test_get_embedder_model_override():
     """#60: get_embedder honors the model parameter."""
     from ideagraph.embedder import get_embedder, Embedder
@@ -814,8 +823,9 @@ def test_get_embedder_falls_back_without_sentence_transformers(monkeypatch):
     assert isinstance(e, emb.HashEmbedder)
 
 
+@pytest.mark.skipif(not _HAS_ST, reason=_NEEDS_ST)
 def test_get_embedder_st_returns_real_embedder():
-    """With ST available (venv has it), 'st' returns the real embedder."""
+    """With ST available, 'st' returns the real embedder."""
     import ideagraph.embedder as emb
     e = emb.get_embedder("st")
     assert isinstance(e, emb.Embedder)

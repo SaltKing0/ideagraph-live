@@ -12,13 +12,16 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-PY = str(REPO / ".venv" / "bin" / "python")
+# sys.executable = the interpreter running pytest (repo venv locally, the CI
+# environment on GitHub Actions, where no .venv exists).
+PY = sys.executable
 PW = pytest.importorskip("playwright.sync_api")
 
 HOSTILE = '<img src=x onerror=window.__pwned=1><script>window.__pwned=1</script>'

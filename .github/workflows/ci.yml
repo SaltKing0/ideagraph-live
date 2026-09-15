@@ -6,7 +6,10 @@ on:
   pull_request:
 
 jobs:
+  # The default install path: core deps only, HashEmbedder, no PyTorch.
+  # Tests that need the real embedder skip here (they run in test-st).
   test:
+    name: test (${{ matrix.python-version }}, light install)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -22,5 +25,25 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev]"
+      - name: Test
+        run: pytest tests/ -q
+
+  # The [st] extra path: real sentence-transformers embedder. Keeps the
+  # embedder-dependent tests (model override, demo near-dup measurement)
+  # honest instead of silently skipped. CPU torch wheel to stay light.
+  test-st:
+    name: test (3.12, real embedder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,st]"
       - name: Test
         run: pytest tests/ -q

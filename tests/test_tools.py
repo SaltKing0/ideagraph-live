@@ -10,12 +10,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-PY = str(REPO / ".venv" / "bin" / "python")
+# sys.executable = the interpreter running pytest (repo venv locally, the CI
+# environment on GitHub Actions, where no .venv exists).
+PY = sys.executable
 
 
 def _env(tmp_path, **extra) -> dict:
