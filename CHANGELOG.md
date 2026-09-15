@@ -18,6 +18,18 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   + `verify_communities` wired into `run_eval`; golden case
   `roadmap-communities-two-clusters` registered RED, implemented, flipped
   (19 golden cases).
+- `ig report` / `GET /api/report` + `/report` web page — one-page read-only
+  BRAIN_REPORT digest (report #7): deltas since a window, edge mix + confidence
+  bands, intent review queue grouped by source fan-out (the measured
+  false-positive signature), hubs + degree percentiles, hygiene, research next.
+  `--since` (hours or ISO), `--top`, `--json`, `--coverage` (opt-in, measured
+  5.8 s), `--write` regenerates the tracked `BRAIN_REPORT.md` at the brain root
+  (one commit per generation; the cron cycle calls it automatically). The
+  structural-gaps section consumes `ig communities` via a provider seam and is
+  omitted — never printed empty — when no community qualifies. Escaping order
+  is truncate-then-escape (audit #55); an empty body hard-fails instead of
+  writing a blank artifact. Golden case `roadmap-brain-report` registered RED,
+  implemented, flipped (20 golden cases).
 
 ### Fixed
 - `tools/ig_evolve.py --flip` deadlock: audit #52's flip-gate test forces a green

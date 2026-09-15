@@ -120,6 +120,10 @@ ig pending / accept / reject       # review edge suggestions
 ig gaps [--min 10] [--json]        # coverage report + under-covered areas
 ig communities [--min-size 15] [--top 10] [--json]
                                    # topology: communities, god nodes, structural gaps
+ig report [--since 24h|--top 5] [--json] [--write]
+                                   # one-page BRAIN_REPORT digest (deltas, intent
+                                   # review queue, hubs, hygiene, research next);
+                                   # --write regenerates the tracked BRAIN_REPORT.md
 ig status / near-dup               # hygiene: islands, orphans, near-dup pairs
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 ```
