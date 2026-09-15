@@ -147,7 +147,7 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 ## Status
 
 Core features, the hygiene loop, and the self-evolving pipeline are
-implemented; release `v0.5.0` is published — see
+implemented; release `v0.5.1` is published — see
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Open source / privacy
