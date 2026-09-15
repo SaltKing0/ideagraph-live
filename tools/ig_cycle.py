@@ -299,6 +299,16 @@ def main() -> int:
         print(f"review_edges.py not found at {review} — skipping edge accept "
               "(pending edges stay pending; review them manually)")
 
+    # Regenerate BRAIN_REPORT.md (report #7): rides the cycle as its own commit
+    # (one commit per generation). A report failure must never fail the cycle.
+    try:
+        out = run([eng_py, "-m", "ideagraph", "report", "--write"],
+                  git_env, args.engine)
+        line = out.strip().splitlines()[-1] if out.strip() else ""
+        print(f"report: {line or 'no output'}")
+    except RuntimeError as e:
+        print(f"report: skipped ({str(e)[-160:]})")
+
     # Report node count + write Tier-1 metrics.
     n_nodes = len([f for f in os.listdir(os.path.join(args.brain, "nodes"))
                    if f.endswith(".md")])

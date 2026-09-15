@@ -24,7 +24,7 @@ import subprocess
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from .brain import Brain
+from .brain import Brain, _atomic_write
 from .hygiene import connectivity, near_dup_pairs, status_counts
 
 # Confidence bands (suggester.py): <0.45 no edge, 0.45-0.75 extends,
@@ -371,3 +371,18 @@ def render_report(brain: Brain, **opts) -> str:
     else:
         lines.append("nothing queued — ingest new material")
     return "\n".join(lines)
+
+def write_report(brain: Brain, **opts) -> str:
+    """Write BRAIN_REPORT.md at the brain root (tracked, renders on GitHub).
+
+    Returns the rendered markdown. The caller decides whether to commit —
+    in a cron cycle the write rides the cycle's commit (one commit per
+    generation, report #7 §5); from the CLI pass commit=True.
+    """
+    md = render_report(brain, **opts)
+    if not md.strip():
+        # A blank generated artifact destroys the workflow value (the
+        # Graphify GRAPH_REPORT.md lesson) — fail loudly, never write empty.
+        raise RuntimeError("render_report produced an empty report; refusing to write BRAIN_REPORT.md")
+    _atomic_write(brain.path / "BRAIN_REPORT.md", md + "\n")
+    return md

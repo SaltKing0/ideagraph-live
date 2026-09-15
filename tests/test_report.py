@@ -13,7 +13,7 @@ import tempfile
 from ideagraph.brain import Brain, Edge, Node
 from ideagraph.brain_engine import BrainEngine
 from ideagraph.embedder import HashEmbedder
-from ideagraph.report import render_report, report_data, _md_cell
+from ideagraph.report import render_report, report_data, write_report, _md_cell
 
 
 def _engine() -> BrainEngine:
@@ -179,5 +179,35 @@ def test_report_structural_provider_via_env_json(tmp_path, monkeypatch):
         out = render_report(eng.brain)
         assert "## Structural gaps" in out
         assert "A <-> B" in out
+    finally:
+        _teardown(eng)
+
+def test_write_report_creates_tracked_file(tmp_path):
+    eng = _engine()
+    try:
+        eng.ingest("Die Erde ist eine Scheibe", source="agent/test")
+        md = write_report(eng.brain)
+        f = eng.brain.path / "BRAIN_REPORT.md"
+        assert f.exists()
+        on_disk = f.read_text(encoding="utf-8")
+        assert "# BRAIN_REPORT" in on_disk
+        assert on_disk.endswith("\n")
+        assert md.strip() in on_disk
+    finally:
+        _teardown(eng)
+
+
+def test_write_report_refuses_empty_body(monkeypatch):
+    eng = _engine()
+    try:
+        import ideagraph.report as rep
+        monkeypatch.setattr(rep, "render_report", lambda *a, **k: "")
+        try:
+            rep.write_report(eng.brain)
+        except RuntimeError as exc:
+            assert "refusing to write" in str(exc)
+        else:
+            raise AssertionError("empty report must raise RuntimeError")
+        assert not (eng.brain.path / "BRAIN_REPORT.md").exists()
     finally:
         _teardown(eng)

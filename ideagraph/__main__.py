@@ -361,18 +361,17 @@ def cmd_report(engine: BrainEngine, args: list[str]) -> None:
             sys.exit(1)
         print(out)
     if write:
-        from .report import report_data as _rd
-        from .brain import _atomic_write
-        from pathlib import Path as _Path
-        data = _rd(engine.brain, **opts)
-        body = render_report(engine.brain, **opts)
-        front = (f"---\ngenerated_at: {data['generated_at']}\n"
-                 f"head_sha: {data['head_sha']}\n---\n\n")
-        _atomic_write(_Path(engine.brain.path) / "BRAIN_REPORT.md",
-                      front + body + "\n")
+        from .report import write_report
+        try:
+            write_report(engine.brain, **opts)
+        except RuntimeError as exc:
+            print(f"Error: {exc}")
+            sys.exit(1)
         if engine.brain.mode == "git":
             engine.brain.commit_and_push("report: regenerate BRAIN_REPORT.md")
             print("written: BRAIN_REPORT.md (committed)")
+        else:
+            print("written: BRAIN_REPORT.md (local mode, no commit)")
 
 
 def cmd_merge(engine: BrainEngine, args: list[str]) -> None:

@@ -284,3 +284,12 @@ def test_report_empty_brain_clean(tmp_path):
     assert r.returncode == 0
     assert "# BRAIN_REPORT" in r.stdout
     assert "0 nodes / 0 live edges" in r.stdout
+
+def test_report_write_local_mode_no_commit(tmp_path):
+    run_cli(["ingest", "Die Erde ist eine Scheibe"], tmp_path)
+    r = run_cli(["report", "--write"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "written: BRAIN_REPORT.md (local mode, no commit)" in r.stdout
+    f = tmp_path / "brain" / "BRAIN_REPORT.md"
+    assert f.exists()
+    assert "# BRAIN_REPORT" in f.read_text(encoding="utf-8")
