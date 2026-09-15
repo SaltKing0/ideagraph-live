@@ -444,13 +444,15 @@ def render_communities(report: CommunityReport) -> str:
         lines.append(f"Structural gaps (top {len(report.gaps)} · communities >= "
                      f"{DEFAULT_MIN_COMMUNITY} nodes, deficit vs. configuration null):")
         for gp in report.gaps:
-            lines.append(f"[{gp.deficit:.2f}] {gp.a_label} ({gp.a_size}) <-> "
-                         f"{gp.b_label} ({gp.b_size})   "
+            # C-ids disambiguate: several communities can share one dominant
+            # label, so a label-only line can render the same pair twice.
+            lines.append(f"[{gp.deficit:.2f}] C{gp.a} ({gp.a_label}, n={gp.a_size})"
+                         f" <-> C{gp.b} ({gp.b_label}, n={gp.b_size})   "
                          f"{gp.observed_edges} edges, {gp.expected_edges} expected")
-            for side, samples in (("a", gp.a_samples), ("b", gp.b_samples)):
+            for side, cid, samples in (("a", gp.a, gp.a_samples),
+                                       ("b", gp.b, gp.b_samples)):
                 if samples:
-                    name = gp.a_label if side == "a" else gp.b_label
-                    lines.append(f"    {name}: {' / '.join(samples)}")
+                    lines.append(f"    C{cid}: {' / '.join(samples)}")
     if report.isolated:
         lines.append("")
         lines.append(f"Isolated nodes ({len(report.isolated)}): "
