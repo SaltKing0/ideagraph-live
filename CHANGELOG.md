@@ -6,6 +6,28 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `ig communities` — read-only topology report: deterministic label-propagation
+  communities (canonical 0..k-1), god nodes (degree AND normalized Brandes
+  betweenness — the rankings diverge substantially), and structural gaps ranked
+  by deficit against the configuration-model null (`expected = comdeg_a *
+  comdeg_b / 2m`). `--min-size`, `--top`, `--no-pending`, `--betweenness-sample`,
+  `--members`, `--json`. No new dependencies (networkx is deliberately not used —
+  undeclared and absent in CI); nothing is written to the brain.
+- Eval layer: `CommunityExpectation` (asserts `together` AND `apart` AND `gap`)
+  + `verify_communities` wired into `run_eval`; golden case
+  `roadmap-communities-two-clusters` registered RED, implemented, flipped
+  (19 golden cases).
+
+### Fixed
+- `tools/ig_evolve.py --flip` deadlock: audit #52's flip-gate test forces a green
+  roadmap case out of `ROADMAP_CASES` BEFORE the suite can go green, but `--flip`
+  only looked in `ROADMAP_CASES` — it now falls back to `GOLDEN_SET`, so the
+  documented flip procedure works again.
+- Test-fixture lesson: LPA's update order is sorted(node ids) — uuid4 fixture ids
+  shuffled that order between runs and flaked borderline partitions. Fixtures now
+  pin ids (the live brain has stable ids, so production determinism is unaffected).
+
 ## [0.5.2] - 2026-09-15
 
 ### Added
