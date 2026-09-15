@@ -24,7 +24,15 @@ ig init --demo     # 13 nodes, 19 edges, 2 pending suggestions,
 uvicorn ideagraph.server:app --port 8000   # → http://localhost:8000
 ```
 
-Or install straight from the repository:
+Or install from PyPI (recommended — versioned releases):
+
+```bash
+pip install ideagraph-live
+# with the real (semantic) embedder — pulls PyTorch:
+pip install "ideagraph-live[st]"
+```
+
+Or install straight from the repository (latest main):
 
 ```bash
 pip install git+https://github.com/SaltKing0/ideagraph-live.git
