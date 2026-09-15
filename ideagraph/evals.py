@@ -654,7 +654,23 @@ GOLDEN_SET: list[EvalTask] = [
                 min_size=2,
             )],
         ),
-    ),]
+    ),
+    # Report #7 (2026-09-15): BRAIN_REPORT digest renders non-empty, sectioned,
+    # content-asserted output. Registered RED, implemented, then flipped.
+    EvalTask(
+        id="roadmap-brain-report",
+        name="BRAIN_REPORT renders non-empty, sectioned, content-asserted output",
+        ingests=[
+            ("Die Erde ist eine Scheibe", {}),
+            ("Die Erde ist keine Scheibe", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            report_contains=["BRAIN_REPORT", "Intent review queue",
+                             "Die Erde ist eine Scheibe"],
+        ),
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -672,18 +688,5 @@ ROADMAP_CASES: list[EvalTask] = [
     #
     # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
     # (`retrieval-rerank-honored`).
-    EvalTask(
-        id="roadmap-brain-report",
-        name="BRAIN_REPORT renders non-empty, sectioned, content-asserted output",
-        ingests=[
-            ("Die Erde ist eine Scheibe", {}),
-            ("Die Erde ist keine Scheibe", {}),
-        ],
-        oracle=EvalOracle(
-            node_count=2,
-            report_contains=["BRAIN_REPORT", "Intent review queue",
-                             "Die Erde ist eine Scheibe"],
-        ),
-    ),
 ]
 
