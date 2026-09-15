@@ -127,6 +127,11 @@ class Connectivity:
 
 def connectivity(brain: Brain) -> Connectivity:
     nodes = brain.read_nodes()
+    # Tombstones are edge-less BY DESIGN (merge redirects their edges away and
+    # keeps the node as append-only history) — counting them made every merge
+    # leave a permanent phantom "orphan/island" in the status report, and the
+    # autonomous cycle then tried to re-link a dead node (found 2026-09-15).
+    nodes = [n for n in nodes if n.status != "tombstone"]
     edges = brain.read_edges()
     # Audit #40: invalidated edges (valid_to set) no longer count toward
     # connectivity — otherwise the status report would contradict the

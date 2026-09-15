@@ -147,6 +147,9 @@ def analyze_coverage(brain: Brain, taxonomy: dict[str, list[str]] | None = None)
     count: Counter = Counter()
     examples: dict[str, list] = defaultdict(list)
     nodes = brain.read_nodes()
+    # Tombstones are append-only history, not live knowledge: they must not
+    # count toward coverage (they would inflate UNCLASSIFIED and every area).
+    nodes = [n for n in nodes if n.status != "tombstone"]
     unclassified = 0
     # Audit #60: substring matching let "test" match "latest" — keywords now
     # match with word boundaries (umlauts are ASCII-shaped by normalize()).

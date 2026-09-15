@@ -98,3 +98,32 @@ def test_status_counts(tmp_path):
 
 def test_default_threshold_constant():
     assert DEFAULT_DEDUP_THRESHOLD == 0.92
+
+
+def test_connectivity_ignores_tombstones(tmp_path):
+    """A tombstone is edge-less BY DESIGN (merge keeps it as history) — it must
+    not show up as a phantom orphan/island, or every merge leaves a permanent
+    false island the autonomous cycle tries to re-link (found 2026-09-15)."""
+    b = _brain(tmp_path)
+    b.write_node(Node(id="live", text="Lebendig"))
+    b.write_node(Node(id="dead", text="Konsolidiert", status="tombstone"))
+    b.add_edge(Edge(source="live", target="live2", kind="extends", pending=False))
+    b.write_node(Node(id="live2", text="Auch lebendig"))
+    c = connectivity(b)
+    assert c.total == 2                      # live nodes only
+    assert "dead" not in c.orphans
+    assert "dead" not in c.islands
+    assert status_counts(b)["tombstone"] == 1  # still visible in the distribution
+
+
+def test_gaps_coverage_ignores_tombstones(tmp_path):
+    """Coverage counts live knowledge: a tombstone must not inflate the total
+    or the UNCLASSIFIED bucket."""
+    from ideagraph.gaps import analyze_coverage
+    b = _brain(tmp_path)
+    b.write_node(Node(id="live", text="Ein Subagent uebernimmt eine Delegation."))
+    b.write_node(Node(id="dead", text="voelliger unsinn ohne stichwort",
+                      status="tombstone"))
+    cov = analyze_coverage(b)
+    assert cov.total == 1
+    assert cov.unclassified == 0  # the live node matches, the tombstone is gone
