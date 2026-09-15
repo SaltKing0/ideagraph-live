@@ -70,10 +70,15 @@ def get_embedder(name: str = "st", model: str | None = None) -> Embedder | HashE
     try:
         import sentence_transformers  # noqa: F401 — availability probe only
     except ImportError:
+        # stderr, not stdout: a stdio MCP server's stdout IS the JSON-RPC
+        # transport, and even for plain CLI users informational notices
+        # must never corrupt piped output (e.g. `ig search --json`).
+        import sys
         print(
             "NOTE: sentence-transformers is not installed — falling back to the "
             "deterministic HashEmbedder (64-dim, lower quality). Install the "
-            "real embedder with: pip install 'ideagraph-live[st]'"
+            "real embedder with: pip install 'ideagraph-live[st]'",
+            file=sys.stderr,
         )
         return HashEmbedder()
     return Embedder(model or "all-MiniLM-L6-v2")

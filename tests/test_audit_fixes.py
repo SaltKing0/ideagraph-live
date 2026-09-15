@@ -421,18 +421,20 @@ def test_near_dup_max_zero_means_zero(tmp_path_factory):
 def test_server_engine_cache_follows_env(tmp_path, monkeypatch):
     """Audit #16: the engine cache is keyed on (IG_BRAIN_PATH, IDEAGRAPH_EMBEDDER) —
     env changes deliver the matching engine, same env values the cached instance."""
-    from ideagraph import server
+    from ideagraph import runtime
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
     monkeypatch.setenv("IG_BRAIN_MODE", "local")
     monkeypatch.setenv("IDEAGRAPH_EMBEDDER", "hash")
-    e1 = server.make_engine()
-    assert server.make_engine() is e1  # cache hit
+    runtime.reset_engine_cache()
+    e1 = runtime.make_engine()
+    assert runtime.make_engine() is e1  # cache hit
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "b"))
-    e2 = server.make_engine()
+    e2 = runtime.make_engine()
     assert e2 is not e1  # new brain → new engine
     assert e2.brain.path == tmp_path / "b"
     monkeypatch.setenv("IG_BRAIN_PATH", str(tmp_path / "a"))
-    assert server.make_engine() is e1  # back → the first one again
+    assert runtime.make_engine() is e1  # back → the first one again
+    runtime.reset_engine_cache()
 
 def test_pull_without_origin_is_noop(tmp_path):
     """Audit #20: local repo without origin — pull must not crash."""
@@ -829,3 +831,35 @@ def test_get_embedder_st_returns_real_embedder():
     import ideagraph.embedder as emb
     e = emb.get_embedder("st")
     assert isinstance(e, emb.Embedder)
+
+
+def test_get_embedder_fallback_notice_goes_to_stderr_not_stdout(monkeypatch, capsys):
+    """The ST-fallback notice must NEVER touch stdout.
+
+    A stdio MCP server's stdout is the JSON-RPC transport; a notice printed
+    there corrupts the protocol framing (found in the MCP handoff report).
+    Also breaks `ig search --json | jq` for light installs.
+    """
+    import builtins
+    import io
+    import contextlib
+    import ideagraph.embedder as emb
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "sentence_transformers":
+            raise ImportError("No module named 'sentence_transformers'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    # Capture stdout manually: capsys intercepts BOTH streams, so redirect
+    # sys.stdout to a string buffer and let stderr flow to capsys.
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        e = emb.get_embedder("st")
+    assert isinstance(e, emb.HashEmbedder)
+    assert buf.getvalue() == "", f"stdout polluted: {buf.getvalue()!r}"
+    captured = capsys.readouterr()
+    assert "sentence-transformers is not installed" in captured.err
+    assert captured.out == ""
