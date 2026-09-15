@@ -299,6 +299,82 @@ def cmd_communities(engine: BrainEngine, args: list[str]) -> None:
         print(render_communities(rep))
 
 
+def cmd_report(engine: BrainEngine, args: list[str]) -> None:
+    """One-page state-of-the-brain digest (read-only)."""
+    from .report import render_report, report_data
+    import json as _json
+
+    since = None
+    top = None
+    as_json = False
+    write = False
+    coverage = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--since" and i + 1 < len(args):
+            since = args[i + 1]
+            i += 2
+        elif arg == "--top" and i + 1 < len(args):
+            try:
+                top = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --top expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
+        elif arg == "--json":
+            as_json = True
+            i += 1
+        elif arg == "--write":
+            write = True
+            i += 1
+        elif arg == "--coverage":
+            coverage = True
+            i += 1
+        else:
+            i += 1
+    opts: dict = {}
+    if since is not None:
+        # Accept hours (int/float) or ISO — reject anything else BEFORE doing
+        # any work (usage error, not a traceback mid-render).
+        from .report import _parse_since
+        try:
+            _parse_since({"since": since})
+        except (ValueError, TypeError):
+            print(f"Usage: --since expects hours (e.g. 24) or ISO datetime, "
+                  f"got: {since!r}")
+            sys.exit(1)
+        opts["since"] = since
+    if top is not None:
+        opts["top"] = top
+    if coverage:
+        opts["coverage"] = True
+    if as_json:
+        print(_json.dumps(report_data(engine.brain, **opts),
+                          ensure_ascii=False, indent=2))
+    else:
+        out = render_report(engine.brain, **opts)
+        # A blank generated artifact destroys the workflow value (Graphify
+        # GRAPH_REPORT.md lesson): guard the body at runtime.
+        if len(out.strip()) < 50:
+            print("Error: report body is empty — the brain may be unreadable")
+            sys.exit(1)
+        print(out)
+    if write:
+        from .report import report_data as _rd
+        from .brain import _atomic_write
+        from pathlib import Path as _Path
+        data = _rd(engine.brain, **opts)
+        body = render_report(engine.brain, **opts)
+        front = (f"---\ngenerated_at: {data['generated_at']}\n"
+                 f"head_sha: {data['head_sha']}\n---\n\n")
+        _atomic_write(_Path(engine.brain.path) / "BRAIN_REPORT.md",
+                      front + body + "\n")
+        if engine.brain.mode == "git":
+            engine.brain.commit_and_push("report: regenerate BRAIN_REPORT.md")
+            print("written: BRAIN_REPORT.md (committed)")
+
+
 def cmd_merge(engine: BrainEngine, args: list[str]) -> None:
     if len(args) != 2:
         print("Usage: ig merge <survivor_id> <deletee_id>  (consolidates deletee into survivor)")
@@ -425,6 +501,7 @@ COMMANDS = {
     "near-dup": cmd_near_dup,
     "status": cmd_status,
     "communities": cmd_communities,
+    "report": cmd_report,
 }
 
 

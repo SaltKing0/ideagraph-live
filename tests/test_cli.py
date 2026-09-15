@@ -248,3 +248,39 @@ def test_communities_human_report_mentions_sections(tmp_path):
     assert r.returncode == 0, r.stderr
     assert "Communities (" in r.stdout
     assert "God nodes" in r.stdout
+
+# ---------------------------------------------------------------------------
+# ig report (report #7): one-page state-of-the-brain digest
+# ---------------------------------------------------------------------------
+
+def test_report_renders_digest(tmp_path):
+    run_cli(["ingest", "Die Erde ist eine Scheibe"], tmp_path)
+    run_cli(["ingest", "Die Erde ist keine Scheibe"], tmp_path)
+    r = run_cli(["report"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "# BRAIN_REPORT" in r.stdout
+    assert "## Intent review queue" in r.stdout
+    assert "contradicts" in r.stdout
+
+
+def test_report_json_parses(tmp_path):
+    run_cli(["ingest", "Die Erde ist eine Scheibe"], tmp_path)
+    r = run_cli(["report", "--json"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    import json
+    data = json.loads(r.stdout)
+    assert {"generated_at", "nodes", "edges", "kinds", "intent_queue"} <= set(data)
+
+
+def test_report_bad_since_usage_error(tmp_path):
+    r = run_cli(["report", "--since", "not-a-date-or-hours"], tmp_path)
+    assert r.returncode == 1
+    assert "Traceback" not in r.stdout
+    assert "--since expects" in r.stdout
+
+
+def test_report_empty_brain_clean(tmp_path):
+    r = run_cli(["report"], tmp_path)
+    assert r.returncode == 0
+    assert "# BRAIN_REPORT" in r.stdout
+    assert "0 nodes / 0 live edges" in r.stdout

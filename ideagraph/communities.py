@@ -421,6 +421,36 @@ def _node_text_raw(text: str) -> str:
     return (text or "").strip()
 
 
+def structural_gaps(brain: Brain, min_size: int = DEFAULT_MIN_COMMUNITY,
+                    top: int = 5) -> list[dict]:
+    """Provider seam for the BRAIN_REPORT (report #7's contract).
+
+    Returns rows of {"kind", "label", "node_ids", "score", "hint"} — the
+    report renders them and never computes communities itself. Reuses
+    analyze_communities (one pass, no duplicate logic).
+    """
+    rep = analyze_communities(brain, min_size=min_size, top=top,
+                              betweenness_sample=200)
+    id2text = {n.id: n.text for n in brain.read_nodes() if n.status != "tombstone"}
+    rows: list[dict] = []
+    big = [c for c in rep.communities if c.size >= min_size][:top]
+    for c in big:
+        rows.append({"kind": "community", "label": c.label,
+                     "node_ids": c.members or [], "score": float(c.size),
+                     "hint": c.sample})
+    # NOTE: no 'god' rows — the report's own Hubs section already renders
+    # hub nodes from degree; emitting them here double-renders and, worse,
+    # makes the provider non-empty on tiny brains where the rows are noise.
+    for gp in rep.gaps:
+        hint = (f"C{gp.a} ({gp.a_label}, n={gp.a_size}) <-> "
+                f"C{gp.b} ({gp.b_label}, n={gp.b_size}): "
+                f"{gp.observed_edges} of {gp.expected_edges} expected edges; "
+                f"evidence: {' / '.join((gp.a_samples + gp.b_samples)[:2])}")
+        rows.append({"kind": "hole", "label": f"{gp.a_label} <-> {gp.b_label}",
+                     "node_ids": [], "score": float(gp.deficit), "hint": hint})
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
