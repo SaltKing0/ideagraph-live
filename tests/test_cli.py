@@ -155,3 +155,39 @@ def test_search_without_args_is_usage(tmp_path):
     r = run_cli(["search"], tmp_path)
     assert r.returncode == 1
     assert "Usage: ig search <term>" in r.stdout
+
+
+def test_search_json_emits_machine_readable_shape(tmp_path):
+    """`ig search --json` is the machine-readable mode the MCP handoff asked for:
+    stdout carries ONLY the JSON payload (the ST-fallback notice must stay on
+    stderr — a polluted stdout breaks `ig search --json | jq`)."""
+    r = run_cli(["ingest", "Vector databases store embeddings for RAG retrieval"], tmp_path)
+    assert r.returncode == 0
+    r = run_cli(["search", "vector databases", "--json"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "Traceback" not in r.stderr
+    import json
+    data = json.loads(r.stdout)  # raises if stdout is not pure JSON
+    assert data["count"] >= 1
+    top = data["results"][0]
+    assert {"id", "score", "snippet", "status", "type", "tags", "created"} <= set(top)
+    assert 0.0 <= top["score"]
+
+def test_search_json_empty_result_is_valid_json(tmp_path):
+    run_cli(["ingest", "Completely unrelated anchovy pizza history"], tmp_path)
+    r = run_cli(["search", "zzzqqqxxx nonexistent term", "--json"], tmp_path)
+    assert r.returncode == 0
+    import json
+    data = json.loads(r.stdout)
+    assert data["count"] == 0 and data["results"] == []
+
+def test_search_text_mode_unchanged(tmp_path):
+    run_cli(["ingest", "Vector databases store embeddings for RAG retrieval"], tmp_path)
+    r = run_cli(["search", "vector databases"], tmp_path)
+    assert r.returncode == 0
+    assert "hits (hybrid dense+BM25)" in r.stdout
+
+def test_search_usage_error_mentions_json(tmp_path):
+    r = run_cli(["search"], tmp_path)
+    assert r.returncode == 1
+    assert "Usage: ig search <term> [--json]" in r.stdout
