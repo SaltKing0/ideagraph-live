@@ -237,8 +237,13 @@ def main() -> int:
     shutil.copytree(os.path.join(args.brain, "nodes"), os.path.join(copy_dir, "nodes"))
     for f in ("edges.jsonl", "vectors.jsonl", "INDEX.md"):
         shutil.copy(os.path.join(args.brain, f), os.path.join(copy_dir, f))
+    # The cycle is a production pipeline, so the real embedder is the default —
+    # but an explicit IDEAGRAPH_EMBEDDER from the caller wins. Otherwise a
+    # caller that asked for the hash embedder (tests, light installs without
+    # the [st] extra) still pulled a model download in here.
+    cycle_embedder = os.environ.get("IDEAGRAPH_EMBEDDER", "st")
     dry_env = dict(os.environ, IG_BRAIN_PATH=copy_dir, IG_BRAIN_MODE="local",
-                   IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
+                   IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER=cycle_embedder)
     dry_islands = []
     for src, finding in findings:
         out = run([eng_py, "-m", "ideagraph", "ingest", finding, "--source", src],
@@ -256,7 +261,7 @@ def main() -> int:
     # is passed THROUGH to the real ingest — before, git_env only set the mode,
     # the ingest landed in the env default path while the metrics counted args.brain.
     git_env = dict(os.environ, IG_BRAIN_MODE="git", IG_BRAIN_PATH=os.path.abspath(args.brain),
-                   IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER="st")
+                   IDEAGRAPH_INTENT_PENDING="1", IDEAGRAPH_EMBEDDER=cycle_embedder)
     real_islands = []
     dups = 0
     failed: list[str] = []
