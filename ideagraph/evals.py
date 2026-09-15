@@ -74,6 +74,20 @@ class CommunityExpectation:
 
 
 @dataclass
+class NeighborhoodExpectation:
+    """Graph-traversal expectation (report #1): the node with `node_text`
+    must have each of `expected_neighbor_texts` within `hops` undirected
+    live-edge hops. `absent_neighbor_texts` must NOT be reachable within
+    `hops` — an expectation family alone is trivially green, so both run
+    together (same rule as CommunityExpectation).
+    """
+    node_text: str
+    expected_neighbor_texts: list[str] = field(default_factory=list)
+    absent_neighbor_texts: list[str] = field(default_factory=list)
+    hops: int = 1
+
+
+@dataclass
 class EvalOracle:
     """Desired brain state after the ingest sequence."""
     node_count: int | None = None
@@ -92,6 +106,8 @@ class EvalOracle:
     # must not appear in the generated BRAIN_REPORT digest
     report_contains: list[str] = field(default_factory=list)
     report_absent: list[str] = field(default_factory=list)
+    # graph-traversal expectations (report #1): neighborhood reachability
+    neighborhoods: list[NeighborhoodExpectation] = field(default_factory=list)
 
 
 @dataclass
@@ -261,6 +277,44 @@ def verify_retrieval(engine: BrainEngine, expectations: list[RetrievalExpectatio
     return failures
 
 
+def verify_neighborhood(brain: Brain, expectations: list) -> list[str]:
+    """Check neighborhood reachability against NeighborhoodExpectation entries.
+
+    Degrades gracefully when ideagraph.graph does not exist: the gate test
+    must fail for the RIGHT reason (expectation violation), never crash the
+    harness with an ImportError (same trap as a missing no-op kwarg stub).
+    """
+    try:
+        from .graph import neighbors
+    except ImportError:
+        return ["graph traversal not implemented (ideagraph/graph.py missing)"]
+    failures: list[str] = []
+    if not expectations:
+        return failures
+    for exp in expectations:
+        node = find_node_by_text(brain, exp.node_text)
+        if node is None:
+            continue  # missing nodes already reported by verify_end_state
+        # expected + absent in ONE call set: include_pending=True because the
+        # harness verifies what the graph CONTAINS, not the review gate state.
+        found = neighbors(brain, node.id, hops=exp.hops, include_pending=True,
+                          limit=None)
+        found_ids = {n.id for n in found}
+        for want in exp.expected_neighbor_texts:
+            w = find_node_by_text(brain, want)
+            if w is None or w.id not in found_ids:
+                failures.append(
+                    f"neighborhood '{exp.node_text[:40]}': {want!r} not within "
+                    f"{exp.hops} hops")
+        for avoid in exp.absent_neighbor_texts:
+            w = find_node_by_text(brain, avoid)
+            if w is not None and w.id in found_ids:
+                failures.append(
+                    f"neighborhood '{exp.node_text[:40]}': {avoid!r} must NOT be "
+                    f"within {exp.hops} hops")
+    return failures
+
+
 def verify_communities(brain: Brain, expectations: list) -> list[str]:
     """Check the final partition against CommunityExpectation entries.
 
@@ -339,6 +393,7 @@ def run_eval(task: EvalTask, engine_factory: EngineFactory, k: int = 1) -> EvalR
         failures = verify_end_state(engine.brain, task.oracle)
         failures += verify_retrieval(engine, task.oracle.retrieval)
         failures += verify_communities(engine.brain, task.oracle.communities)
+        failures += verify_neighborhood(engine.brain, task.oracle.neighborhoods)
         if failures:
             return EvalResult(task.id, task.name, False, failures, run)
     return EvalResult(task.id, task.name, True, [], k)
@@ -670,7 +725,41 @@ GOLDEN_SET: list[EvalTask] = [
                              "Die Erde ist eine Scheibe"],
         ),
     ),
+    # Report #1 (2026-09-15): graph traversal over live edges (flipped). MEASURED under
+    # HashEmbedder: the three agent-memory texts sit at cos 0.875/0.875/0.75
+    # (similar/similar/extends — inside the 0.75/0.45 bands), the gardening
+    # text at 0.13-0.27 (no edges). The MCP surface itself is a read-only
+    # projection and CANNOT be an EvalTask (the harness verifies brain
+    # end-state only) — same judgement as Late Chunking above; traversal is
+    # the measurable new capability underneath it.
+    EvalTask(
+        id="roadmap-neighbors",
+        name="graph traversal reaches hub neighbors at hop 1, isolates stay out",
+        ingests=[
+            ("agent memory systems store knowledge graphs for retrieval", {}),
+            ("agent memory systems store knowledge graphs for retrieval and search", {}),
+            ("agent memory systems store knowledge graphs for retrieval but slower", {}),
+            ("unrelated note about gardening tomatoes and weather", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=4,
+            neighborhoods=[
+                NeighborhoodExpectation(
+                    node_text="agent memory systems store knowledge graphs for retrieval",
+                    expected_neighbor_texts=[
+                        "agent memory systems store knowledge graphs for retrieval and search",
+                        "agent memory systems store knowledge graphs for retrieval but slower",
+                    ],
+                    absent_neighbor_texts=[
+                        "unrelated note about gardening tomatoes and weather",
+                    ],
+                    hops=1,
+                ),
+            ],
+        ),
+    ),
 ]
+
 
 
 # ---------------------------------------------------------------------------
