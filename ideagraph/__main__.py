@@ -8,7 +8,7 @@ Examples:
   python -m ideagraph accept <edge_id>
   python -m ideagraph reject <edge_id>
   python -m ideagraph link <node_a> <node_b> [--kind same_as]
-  python -m ideagraph search "attention"
+  python -m ideagraph search "attention" [--json]
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
   python -m ideagraph merge <survivor_id> <deletee_id>   # consolidate a near-dup
   python -m ideagraph near-dup [--lo 0.78] [--hi 0.92]   # report near-duplicate pairs
@@ -20,34 +20,17 @@ IDEAGRAPH_EMBEDDER (st|hash), IDEAGRAPH_EMBEDDER_MODEL.
 
 from __future__ import annotations
 
-import os
 import sys
 
-from .brain import Brain
+from . import runtime
 from .brain_engine import BrainEngine
-from .embedder import get_embedder
 from .gaps import analyze_coverage, find_gaps, render, load_taxonomy
 from .hygiene import near_dup_pairs, connectivity, status_counts, render_near_dup, render_status
 from .merge import merge_nodes
 from .retrieval import retrieve
 
-
-def make_engine() -> BrainEngine:
-    # Audit #33: expanduser must apply to an explicitly set env value too
-    # (IG_BRAIN_PATH=~/x used to create a literal ./~).
-    brain_path = os.path.expanduser(
-        os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")))
-    brain = Brain(
-        path=brain_path,
-        # No private/personal default remote: only needed for `git clone`
-        # on first setup. Existing clones use their own
-        # origin-Repo (pull/push funktionieren ohne Remote-Angabe).
-        remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
-        mode=os.environ.get("IG_BRAIN_MODE", "git"),
-    )
-    _emb = os.environ.get("IDEAGRAPH_EMBEDDER", "st")
-    _model = os.environ.get("IDEAGRAPH_EMBEDDER_MODEL")  # audit #60
-    return BrainEngine(brain, get_embedder(_emb, _model))
+# Shared factory (one source of truth for CLI, server and future MCP surface).
+make_engine = runtime.make_engine
 
 
 def _short(text: str, n: int = 70) -> str:
@@ -306,12 +289,35 @@ def cmd_status(engine: BrainEngine, args: list[str]) -> None:
 
 
 def cmd_search(engine: BrainEngine, args: list[str]) -> None:
+    as_json = "--json" in args
+    args = [a for a in args if a != "--json"]
     if not args:
-        print("Usage: ig search <term>")
+        print("Usage: ig search <term> [--json]")
         sys.exit(1)
     q = " ".join(args)
     id2node = {n.id: n for n in engine.brain.read_nodes()}
     hits = retrieve(engine, q, k=5)
+    if as_json:
+        import json as _json
+        results = []
+        for nid, score in hits:
+            n = id2node.get(nid)
+            if n is None:
+                continue
+            results.append({
+                "id": nid,
+                # RRF rank-fusion score, NOT a similarity — do not compare
+                # it across queries or read it as a confidence.
+                "score": round(score, 4),
+                "snippet": _short(n.text, 200),
+                "status": n.status,
+                "type": n.ntype,
+                "tags": list(n.tags or []),
+                "created": n.created,
+            })
+        print(_json.dumps({"query": q, "count": len(results), "results": results},
+                          ensure_ascii=False, indent=2))
+        return
     for nid, score in hits:
         n = id2node.get(nid)
         if n is not None:

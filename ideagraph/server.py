@@ -11,7 +11,6 @@ Env control:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -19,45 +18,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from .brain import Brain
-from .brain_engine import BrainEngine
-from .embedder import get_embedder
+from . import runtime
 
 # Shipped UI assets live INSIDE the package so a pip install serves them too
 # (repo-root docs/ would not exist in site-packages).
 DOCS_DIR = Path(__file__).resolve().parent / "web"
 
 app = FastAPI(title="IdeaGraph Live Engine")
-
-
-def make_brain() -> Brain:
-    return Brain(
-        path=os.environ.get("IG_BRAIN_PATH", str(Path.home() / "ideagraph-brain")),
-        remote=os.environ.get("IG_BRAIN_REMOTE", "") or None,
-        mode=os.environ.get("IG_BRAIN_MODE", "git"),
-    )
-
-
-# Audit #16: building a fresh engine per request re-instantiates the
-# sentence-transformers model per request (seconds of CPU, memory churn).
-# A process-wide cache shares the model + vector cache; write consistency
-# is provided by the Brain instance lock (all RMW mutations run under
-# brain._lock / BRAIN_LOCK). The cache is keyed on (brain path, embedder):
-# a changed env (tests, multi-brain setups) correctly gets a fresh engine
-# instead of the foreign instance.
-_ENGINES: dict[tuple[str, str], BrainEngine] = {}
-
-
-def make_engine() -> BrainEngine:
-    brain_path = str(Path(os.environ.get("IG_BRAIN_PATH", str(Path.home() / "ideagraph-brain"))).expanduser())
-    embedder_name = os.environ.get("IDEAGRAPH_EMBEDDER", "st")
-    key = (brain_path, embedder_name)
-    eng = _ENGINES.get(key)
-    if eng is None:
-        model = os.environ.get("IDEAGRAPH_EMBEDDER_MODEL")  # audit #60
-        eng = BrainEngine(make_brain(), get_embedder(embedder_name, model))
-        _ENGINES[key] = eng
-    return eng
 
 
 class ConnectionManager:
@@ -108,7 +75,7 @@ def review_js():
 
 @app.get("/api/graph")
 def graph():
-    return JSONResponse(make_brain().graph_state())
+    return JSONResponse(runtime.make_brain().graph_state())
 
 
 class IngestBody(BaseModel):
@@ -131,7 +98,7 @@ async def ingest(body: IngestBody):
     # Audit #16: git pull/push + embedding inference are blocking I/O — they
     # run in the threadpool, not on the event loop (otherwise a slow ingest
     # stalls all requests and WS broadcasts).
-    engine = make_engine()
+    engine = runtime.make_engine()
     node, edges, is_dup = await run_in_threadpool(
         engine.ingest, body.text, body.source, body.tags,
         body.allow_duplicates)
@@ -147,7 +114,7 @@ async def ingest(body: IngestBody):
 
 @app.post("/api/edge/{edge_id}/accept")
 async def accept_edge(edge_id: str):
-    edge = await run_in_threadpool(make_engine().resolve, edge_id, True)
+    edge = await run_in_threadpool(runtime.make_engine().resolve, edge_id, True)
     if edge is None:
         return JSONResponse({"error": "edge not found or not pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": True})
@@ -156,7 +123,7 @@ async def accept_edge(edge_id: str):
 
 @app.post("/api/edge/{edge_id}/reject")
 async def reject_edge(edge_id: str):
-    edge = await run_in_threadpool(make_engine().resolve, edge_id, False)
+    edge = await run_in_threadpool(runtime.make_engine().resolve, edge_id, False)
     if edge is None:
         return JSONResponse({"error": "edge not found or not pending"}, status_code=404)
     await manager.broadcast({"type": "edge_resolved", "edge": edge.to_dict(), "accepted": False})
@@ -173,7 +140,7 @@ class LinkBody(BaseModel):
 async def link_edge(body: LinkBody):
     def _link():
         try:
-            return make_engine().link(body.source, body.target, body.kind), None
+            return runtime.make_engine().link(body.source, body.target, body.kind), None
         except ValueError as exc:
             return None, str(exc)
     edge, err = await run_in_threadpool(_link)
@@ -204,7 +171,7 @@ async def ws_endpoint(ws: WebSocket):
 
 @app.post("/api/edge/{edge_id}/undo")
 async def undo_edge(edge_id: str):
-    edge = await run_in_threadpool(make_engine().undo, edge_id)
+    edge = await run_in_threadpool(runtime.make_engine().undo, edge_id)
     if edge is None:
         return JSONResponse({"error": "edge not found or already resolved"}, status_code=409)
     await manager.broadcast({"type": "edge_restored", "edge": edge.to_dict()})
