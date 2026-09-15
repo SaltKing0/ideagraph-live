@@ -4,6 +4,43 @@ All notable changes to this project. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This project
 follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **PyPI publishing** via GitHub Actions with OIDC trusted publishing
+  (`.github/workflows/release.yml`) — publishing a release uploads to PyPI,
+  no token in the repo.
+- **Dedicated CI job for the real embedder** (`test-st`) — installs the `[st]`
+  extra (CPU torch) so the embedder-dependent tests run for real; the light
+  job covers the default install path.
+- `[project.urls]` in `pyproject.toml` — repository and issue links on PyPI.
+
+### Fixed
+- **CI green again on the default install** — `tests/test_cli.py`,
+  `tests/test_tools.py` and `tests/test_frontend_xss.py` hardcoded the repo's
+  `.venv/bin/python` (absent in CI) and now use `sys.executable`; tests that
+  need sentence-transformers skip instead of failing when the extra is absent.
+- `ig status` / `ig gaps` ignore tombstoned nodes — a merged-away node no
+  longer shows up as a permanent phantom orphan/island.
+- `tools/ig_cycle.py` expands `~` in its `--brain` default (the documented
+  no-argument cron invocation aborted on a literal `~/...` path).
+- **`ig init --remote <existing brain>` clones instead of forking it** — on a
+  machine without a clone it created a second, unrelated root commit, so the
+  next push was rejected as a non-fast-forward and the brain looked broken.
+- **Installable on current Pythons** — `numpy==2.3.1` ships wheels for
+  cp311–cp313 only, so `pip install ideagraph-live` failed to resolve on
+  Python 3.14 (and on 3.10). The pin now carries an environment marker
+  (`>=2.3.2` on 3.14+) and `requires-python` is `>=3.11`.
+- **`tools/ig_cycle.py` respects the caller's embedder** — the cycle hardcoded
+  `IDEAGRAPH_EMBEDDER=st` for its ingest subprocesses, so a caller that asked
+  for the hash embedder still triggered a model download (and the pipeline
+  tests were network-dependent/flaky). The real embedder stays the default.
+
+### Changed
+- Repository hygiene: build artifacts (`*.egg-info/`) are no longer tracked,
+  `CONTRIBUTING.md` reflects the current suite and tooling, and the older
+  changelog entries are in English like the rest of the repo.
+
 ## [0.5.0] - 2026-09-14
 
 ### Changed
@@ -90,7 +127,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   - `tools/ig_cycle.py` (Tier 1) — the safe mechanical ingest pipeline
     (collect → marker-scan abort → dry-run on a copy → real ingest → accept
     edges → report). Never ingests blind; appends one JSON metrics line per run
-    (nodes added, islands, duration, timeouts) to `~/.hermes/cron/ig_metrics.jsonl`.
+    (nodes added, islands, duration, timeouts) to
+    `~/.cache/ideagraph/ig_metrics.jsonl`.
   - `tools/ig_adapt.py` (Tier 2) — the adaptive controller: reads the metrics,
     writes `cycle_strategy.json` with topic weights (thin areas boosted, focus
     areas weighted 2x), quality-driven findings rules, and an adaptive batch
@@ -150,66 +188,69 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [0.2.0] - 2026-08-23
 
 ### Added
-- **Tab-Cockpit-UI** (`docs/index.html` + `docs/app.js`): drei Tabs —
-  **Ingest** (Startseite), **Graph**, **Review** — statt des bisherigen
-  Ein-Screen-Layouts.
-- **Graph-Interaktion (Obsidian-artig):** Mausrad-Zoom, Pan per Ziehen auf
-  dem Hintergrund, Hover-Tooltip, Klick auf Node-Details, Doppelklick-Fokus
-  (Nachbarn hervorheben, Rest abdimmen), Node-Suche mit Zentrieren/Zoomen,
-  Zoom-Buttons.
-- **Config-Option `IDEAGRAPH_INTENT_PENDING`:** Intent-Edges (supersedes /
-  continues / kontradiktorisch) können optional auf `pending` (HITL-Review)
-  statt auto-akzeptiert umgestellt werden.
-- **Packaging:** `pyproject.toml` — pip-installierbar, `ig`-Console-Script,
-  `requires-python >= 3.10`, Dependencies, `[project.optional-dependencies] dev`.
-- **CI:** GitHub Actions-Workflow (`.github/workflows/ci.yml`) — pytest auf
-  Push/PR für Python 3.11 und 3.12.
-- **`CONTRIBUTING.md`** — Beitragsleitfaden.
-- **`CHANGELOG.md`** und **`CODE_OF_CONDUCT.md`**.
-- **README-Screenshot** des Graph-Tabs.
+- **Tab cockpit UI** (`ideagraph/web/index.html` + `app.js`): three tabs —
+  **Ingest** (start page), **Graph**, **Review** — replacing the previous
+  single-screen layout.
+- **Graph interaction (Obsidian-like):** wheel zoom, pan by dragging the
+  background, hover tooltip, click for node details, double-click focus
+  (highlight neighbours, dim the rest), node search with center/zoom,
+  zoom buttons.
+- **`IDEAGRAPH_INTENT_PENDING` config option:** intent edges (supersedes /
+  continues / contradicts) can optionally go to `pending` (HITL review)
+  instead of being auto-accepted.
+- **Packaging:** `pyproject.toml` — pip-installable, `ig` console script,
+  `requires-python >= 3.10`, dependencies, `[project.optional-dependencies] dev`.
+- **CI:** GitHub Actions workflow (`.github/workflows/ci.yml`) — pytest on
+  push/PR for Python 3.11 and 3.12.
+- **`CONTRIBUTING.md`** — contribution guide.
+- **`CHANGELOG.md`** (and a `CODE_OF_CONDUCT.md`, dropped again before 0.5.0 —
+  no public enforcement contact was wanted).
+- **README screenshot** of the Graph tab.
 
 ### Changed
-- **Intent-Erkennung gehärtet:** `detect_intent` verlangt jetzt geteilte
-  Inhaltswörter (Stoppwort-Filter) für alle Intents inkl. `supersedes`; und
-  Intent-Edges entstehen nur noch bei echtem ST-Kosinus ≥ 0.45 (Schwelle
-  wie `erweitert`). Ein Marker-Wort im Text kann eine Node nicht mehr gegen
-  JEDE bestehende Node als Intent markieren.
-- **README** umfassend überarbeitet (Tab-UI, V2-Features, OSS/Privatsphäre,
-  Env-Tabelle).
-- **Engine vom Brain entkoppelt:** kein hardcoded privater Remote /
-  Bot-Identität mehr; alles per Env konfigurierbar (`IG_BRAIN_REMOTE`,
+- **Intent detection hardened:** `detect_intent` now requires shared content
+  words (stopword filter) for every intent including `supersedes`; and intent
+  edges only appear at a real ST cosine >= 0.45 (the same threshold as
+  `extends`). A marker word in the text can no longer mark a node as an intent
+  against EVERY existing node.
+- **README** substantially revised (tab UI, V2 features, OSS/privacy, env table).
+- **Engine decoupled from the brain:** no hardcoded private remote or bot
+  identity any more; everything is configurable via env (`IG_BRAIN_REMOTE`,
   `IG_BOT_NAME`, `IG_BOT_EMAIL`).
-- **No-Cache-Header** auf statischen UI-Routen (behebt "Tab-Leiste nicht
-  klickbar" durch gecachtes altes JS).
+- **No-cache headers** on static UI routes (fixes "tab bar not clickable" caused
+  by a cached old JS bundle).
 
 ### Fixed
-- Intent-Edges feuerten bei Marker-Wörtern ("supersedes", "ersetzt",
-  "statt") gegen fast alle Nodes — begrenzt durch Ähnlichkeits-Schranke.
-- Gecachtes altes `app.js` (referenzierte verschwundene Elemente) führte zu
-  JS-Crash → Tabs wirkten tot; durch Cache-Busting + No-Store gelöst.
+- Intent edges fired on marker words ("supersedes", "ersetzt", "statt") against
+  almost every node — now bounded by the similarity gate.
+- A cached old `app.js` (referencing removed elements) crashed the JS, so the
+  tabs looked dead; solved with cache busting + no-store.
 
 ## [0.1.1] - 2026-08-22
 
 ### Added
-- Web-UI-Cockpit (`/` + `/review`), FastAPI-Server, WebSocket-Live-Update.
+- Web UI cockpit (`/` + `/review`), FastAPI server, WebSocket live updates.
 - CLI: `ingest`, `pending`, `accept`, `reject`, `link`, `search`.
 
 ## [0.1.0] - 2026-08-22
 
 ### Added
-- Brain-Layer als privates Git-Repo (Nodes als Markdown, Edges als JSONL,
-  Embedding-Cache, INDEX.md).
-- Embedder: sentence-transformers (all-MiniLM-L6-v2) + deterministischer
-  HashEmbedder für Tests.
-- Dedupe (Kosinus ≥ 0.92 → Merge statt Neuanlage).
+- Brain layer as a private git repo (nodes as Markdown, edges as JSONL,
+  embedding cache, INDEX.md).
+- Embedder: sentence-transformers (all-MiniLM-L6-v2) + a deterministic
+  HashEmbedder for tests.
+- Dedupe (cosine >= 0.92 → merge instead of creating a new node).
 
 ## [0.0.1] - 2026-08-21
 
 ### Added
-- Erstes lauffähiges Grundgerüst: Ingest → Embed → Suggest-Ansatz,
-  Similarity-Edges (`ähnlich`, `erweitert`), README, MIT-Lizenz.
+- First runnable skeleton: ingest → embed → suggest approach, README, MIT
+  license. Similarity edges (`ähnlich`, `erweitert` — renamed to
+  `similar`/`extends` in 0.5.0).
 
-[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/SaltKing0/ideagraph-live/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.1.1...v0.2.0

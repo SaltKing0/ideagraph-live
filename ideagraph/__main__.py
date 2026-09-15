@@ -33,8 +33,8 @@ from .retrieval import retrieve
 
 
 def make_engine() -> BrainEngine:
-    # Audit #33: expanduser muss AUCH auf einen explizit gesetzten Env-Wert
-    # actually applied (IG_BRAIN_PATH=~/x used to create a literal ./~).
+    # Audit #33: expanduser must apply to an explicitly set env value too
+    # (IG_BRAIN_PATH=~/x used to create a literal ./~).
     brain_path = os.path.expanduser(
         os.environ.get("IG_BRAIN_PATH", os.path.expanduser("~/ideagraph-brain")))
     brain = Brain(
@@ -75,10 +75,10 @@ def cmd_ingest(engine: BrainEngine, args: list[str]) -> None:
         else:
             rest.append(args[i])
             i += 1
-    # Audit #32: '-' ist der stdin-Marker — auch in gemischten Args. Vorher
+    # Audit #32: '-' is the stdin marker, also in mixed args. Before,
     # 'ig ingest - extra' used to ingest the literal text "- extra"
-    # (exit 0, node created). A '-' token means stdin; an extra
-    # Text daneben ist ein Fehler.
+    # (exit 0, node created). A '-' token means stdin; extra text
+    # next to it is an error.
     if "-" in rest:
         if len(rest) > 1:
             print("Usage: '-' (stdin) cannot be combined with text arguments.")
@@ -111,7 +111,8 @@ def cmd_pending(engine: BrainEngine, args: list[str]) -> None:
 
 
 def _first_or_usage(args: list[str], cmd: str) -> str:
-    """Audit #26: fehlendes Positionsargument → Usage-Zeile statt IndexError."""
+    """Audit #26: a missing positional argument prints the usage line
+    instead of raising IndexError."""
     if not args:
         print(f"Usage: ig {cmd} <edge_id>")
         sys.exit(1)
@@ -130,7 +131,7 @@ def cmd_link(engine: BrainEngine, args: list[str]) -> None:
     kind = "same_as"
     if "--kind" in args:
         i = args.index("--kind")
-        # Audit #26: fehlender Wert nach --kind → Usage-Fehler statt IndexError.
+        # Audit #26: a missing value after --kind is a usage error, not an IndexError.
         if i + 1 >= len(args):
             print("Usage: ig link <node_a> <node_b> [--kind same_as]")
             sys.exit(1)
@@ -203,7 +204,7 @@ def cmd_gaps(engine: BrainEngine, args: list[str]) -> None:
             taxonomy = load_taxonomy(args[i + 1])
             i += 2
         elif args[i] == "--min" and i + 1 < len(args):
-            # Audit #26: nicht-numerische --min-Werte → Usage-Fehler statt ValueError-Traceback.
+            # Audit #26: non-numeric --min values are a usage error, not a ValueError traceback.
             try:
                 threshold = int(args[i + 1])
             except ValueError:

@@ -11,7 +11,7 @@ coverage gaps and grow the engine itself through an eval-gated feedback loop.
 ## Quickstart
 
 ```bash
-# 1) set up the engine (Python 3.10+) — lightweight core, HashEmbedder works
+# 1) set up the engine (Python 3.11+) — lightweight core, HashEmbedder works
 #    out of the box; add the real embedder with: pip install -e ".[st]"
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
@@ -141,7 +141,7 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q   # 233 tests
+.venv/bin/python -m pytest tests/ -q   # 238 tests
 ```
 
 ## Status
