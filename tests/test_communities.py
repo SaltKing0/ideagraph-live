@@ -55,7 +55,13 @@ def _tri(brain: Brain, prefix: str) -> list[str]:
     return ids
 
 
-def test_two_triangles_two_communities_bridge_merges():
+def test_two_triangles_communities_and_weaving_merges():
+    """MEASURED (not the report's intuition): two dense triangles stay TWO
+    communities even with one bridge edge or one bridge node — LPA keeps
+    dense clusters stable (each bridge endpoint has 2 same-label vs 1
+    foreign neighbor). Only a WOVEN connection (3 cross edges) merges them.
+    That is the desired macro-view behavior: structural gaps must not
+    collapse because of a single stray link."""
     b = _brain()
     try:
         a = _tri(b, "alpha")
@@ -63,8 +69,15 @@ def test_two_triangles_two_communities_bridge_merges():
         nodes, adj, deg = build_graph(b)
         labels = label_propagation(nodes, adj)
         assert len(set(labels.values())) == 2
-        # a bridge edge joins them into ONE community
+        # one bridge edge does NOT merge (measured)
         _add_edges(b, Edge(source=a[0], target=d[0], kind="similar", pending=False))
+        nodes, adj, deg = build_graph(b)
+        labels = label_propagation(nodes, adj)
+        assert len(set(labels.values())) == 2
+        # weaving with 3 cross edges DOES merge (measured)
+        _add_edges(b,
+                   Edge(source=a[1], target=d[1], kind="similar", pending=False),
+                   Edge(source=a[2], target=d[2], kind="similar", pending=False))
         nodes, adj, deg = build_graph(b)
         labels = label_propagation(nodes, adj)
         assert len(set(labels.values())) == 1
