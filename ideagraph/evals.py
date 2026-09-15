@@ -250,22 +250,58 @@ def verify_retrieval(engine: BrainEngine, expectations: list[RetrievalExpectatio
 def verify_communities(brain: Brain, expectations: list) -> list[str]:
     """Check the final partition against CommunityExpectation entries.
 
-    RED-SPEC STUB (report #3): the topology analyzer does not exist yet, so
-    every expectation fails with an explicit not-implemented message — the
-    roadmap case must fail for the RIGHT reason, not crash run_eval with a
-    TypeError.
+    All three assertion families run together on purpose: `together` alone
+    is trivially green if everything lands in one community, `apart` alone
+    if every node is its own community, and `gap` alone if the analyzer
+    reported every pair. Requires all three to hold.
     """
+    from .communities import analyze_communities
+
     failures: list[str] = []
+    if not expectations:
+        return failures
+    # One analysis per expectation list, min_size = the strictest requested.
+    min_size = min(exp.min_size for exp in expectations)
+    # top is generous on purpose: the verifier needs the COMPLETE gap list
+    # (truncating to the CLI default could hide a pair the oracle asserts).
+    rep = analyze_communities(brain, min_size=min_size, top=10_000,
+                              include_pending=True, with_members=True)
+    # Community membership lookup: id -> canonical community index.
+    id2com: dict[str, int] = {}
+    for c in rep.communities:
+        for nid in c.members:
+            id2com[nid] = c.id
+    gap_pairs: set[tuple[int, int]] = {(g.a, g.b) for g in rep.gaps}
+
+    def _resolve(text: str):
+        node = find_node_by_text(brain, text)
+        return node.id if node else None
+
     for exp in expectations:
         for group in exp.together:
-            for text in group:
-                if find_node_by_text(brain, text) is None:
-                    failures.append(f"community node missing: {text!r}")
-        for a, b in list(exp.apart) + list(exp.gap):
-            for text in (a, b):
-                if find_node_by_text(brain, text) is None:
-                    failures.append(f"community node missing: {text!r}")
-        failures.append("community analysis not implemented yet (roadmap #3 red spec)")
+            ids = [_resolve(t) for t in group]
+            if any(i is None for i in ids):
+                continue  # missing nodes already reported by verify_end_state
+            coms = {id2com[i] for i in ids}
+            if len(coms) != 1:
+                failures.append(
+                    f"together violated: {group!r} spans communities {sorted(coms)}")
+        for a, b in exp.apart:
+            ia, ib = _resolve(a), _resolve(b)
+            if ia is None or ib is None:
+                continue
+            if id2com.get(ia) == id2com.get(ib):
+                failures.append(
+                    f"apart violated: {a!r} and {b!r} share community {id2com.get(ia)}")
+        for a, b in exp.gap:
+            ia, ib = _resolve(a), _resolve(b)
+            if ia is None or ib is None:
+                continue
+            pair = (min(id2com.get(ia, -1), id2com.get(ib, -1)),
+                    max(id2com.get(ia, -1), id2com.get(ib, -1)))
+            if pair not in gap_pairs:
+                failures.append(
+                    f"gap not reported: {a!r} <-> {b!r} (communities {pair[0]}/{pair[1]})")
     return failures
 
 
