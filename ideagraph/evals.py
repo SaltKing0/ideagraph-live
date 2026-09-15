@@ -88,6 +88,10 @@ class EvalOracle:
     node_status: dict[str, str] = field(default_factory=dict)
     # topology expectations (report #3): partition-level assertions
     communities: list[CommunityExpectation] = field(default_factory=list)
+    # rendered-output expectations (report #7): strings that must appear in /
+    # must not appear in the generated BRAIN_REPORT digest
+    report_contains: list[str] = field(default_factory=list)
+    report_absent: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -227,6 +231,16 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
         ]
         if violating:
             failures.append(f"unexpected edge: {eexp.source!r} --[{eexp.kind}]--> {eexp.target!r}")
+
+    if oracle.report_contains or oracle.report_absent:
+        from .report import render_report
+        rendered = render_report(brain)
+        for needle in oracle.report_contains:
+            if needle not in rendered:
+                failures.append(f"report missing: {needle!r}")
+        for needle in oracle.report_absent:
+            if needle in rendered:
+                failures.append(f"report should not contain: {needle!r}")
 
     return failures
 
@@ -658,5 +672,18 @@ ROADMAP_CASES: list[EvalTask] = [
     #
     # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
     # (`retrieval-rerank-honored`).
+    EvalTask(
+        id="roadmap-brain-report",
+        name="BRAIN_REPORT renders non-empty, sectioned, content-asserted output",
+        ingests=[
+            ("Die Erde ist eine Scheibe", {}),
+            ("Die Erde ist keine Scheibe", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            report_contains=["BRAIN_REPORT", "Intent review queue",
+                             "Die Erde ist eine Scheibe"],
+        ),
+    ),
 ]
 
