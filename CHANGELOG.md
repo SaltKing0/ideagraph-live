@@ -6,6 +6,22 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-15
+
+### Added
+- `ig search --json` — machine-readable hybrid search; stdout carries ONLY the
+  JSON payload, so `ig search "..." --json | jq` works on any install.
+
+### Fixed
+- **The sentence-transformers fallback notice goes to stderr, not stdout** —
+  the notice corrupted piped JSON output (`ig search --json | jq`) and would
+  have corrupted a stdio MCP server's JSON-RPC transport.
+
+### Changed
+- `ideagraph/runtime.py` — one shared brain/engine factory for the CLI and
+  the FastAPI server (previously two drifting copies; the server keeps its
+  process-wide engine cache, now in one place).
+
 ## [0.5.1] - 2026-09-15
 
 ### Added
