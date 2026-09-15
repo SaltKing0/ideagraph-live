@@ -1,6 +1,0 @@
-ROADMAP_CASES is deliberately empty as of 2026-09-14.
-All registered roadmap cases have been implemented and flipped into GOLDEN_SET
-(18 golden cases, see ideagraph/evals.py).
-To register a new aspirational feature: add a roadmap-* EvalTask to
-ideagraph/evals.py ROADMAP_CASES, then delete this marker file.
-Audit #52: this marker keeps the flip-gate test from being silently vacuous.

@@ -57,6 +57,23 @@ class RetrievalExpectation:
 
 
 @dataclass
+class CommunityExpectation:
+    """Structural expectation over the community partition of the FINAL graph.
+
+    Topology evals (report #3): `together` texts must share ONE community,
+    `apart` pairs must sit in DIFFERENT communities, `gap` pairs must appear
+    together in a reported structural gap. All three are asserted — each one
+    alone is trivially green (everything-in-one / everything-singleton /
+    report-every-pair). min_size mirrors the CLI default's role: communities
+    smaller than this are not gap candidates.
+    """
+    together: list[list[str]] = field(default_factory=list)
+    apart: list[tuple[str, str]] = field(default_factory=list)
+    gap: list[tuple[str, str]] = field(default_factory=list)
+    min_size: int = 2
+
+
+@dataclass
 class EvalOracle:
     """Desired brain state after the ingest sequence."""
     node_count: int | None = None
@@ -69,6 +86,8 @@ class EvalOracle:
     retrieval: list[RetrievalExpectation] = field(default_factory=list)
     # text -> expected node status (V2#2 memory hygiene)
     node_status: dict[str, str] = field(default_factory=dict)
+    # topology expectations (report #3): partition-level assertions
+    communities: list[CommunityExpectation] = field(default_factory=list)
 
 
 @dataclass
@@ -228,6 +247,28 @@ def verify_retrieval(engine: BrainEngine, expectations: list[RetrievalExpectatio
     return failures
 
 
+def verify_communities(brain: Brain, expectations: list) -> list[str]:
+    """Check the final partition against CommunityExpectation entries.
+
+    RED-SPEC STUB (report #3): the topology analyzer does not exist yet, so
+    every expectation fails with an explicit not-implemented message — the
+    roadmap case must fail for the RIGHT reason, not crash run_eval with a
+    TypeError.
+    """
+    failures: list[str] = []
+    for exp in expectations:
+        for group in exp.together:
+            for text in group:
+                if find_node_by_text(brain, text) is None:
+                    failures.append(f"community node missing: {text!r}")
+        for a, b in list(exp.apart) + list(exp.gap):
+            for text in (a, b):
+                if find_node_by_text(brain, text) is None:
+                    failures.append(f"community node missing: {text!r}")
+        failures.append("community analysis not implemented yet (roadmap #3 red spec)")
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # Runner (pass^k)
 # ---------------------------------------------------------------------------
@@ -247,6 +288,7 @@ def run_eval(task: EvalTask, engine_factory: EngineFactory, k: int = 1) -> EvalR
             action(engine)
         failures = verify_end_state(engine.brain, task.oracle)
         failures += verify_retrieval(engine, task.oracle.retrieval)
+        failures += verify_communities(engine.brain, task.oracle.communities)
         if failures:
             return EvalResult(task.id, task.name, False, failures, run)
     return EvalResult(task.id, task.name, True, [], k)
@@ -551,6 +593,31 @@ ROADMAP_CASES: list[EvalTask] = [
     #
     # Cross-encoder reranking (V2#1) is implemented → GOLDEN_SET
     # (`retrieval-rerank-honored`).
-    #
+    EvalTask(
+        id="roadmap-communities-two-clusters",
+        name="Topology: two topical clusters form two communities with a structural gap",
+        ingests=[
+            ("alpha beta gamma delta", {}),
+            ("alpha beta gamma epsilon", {}),
+            ("alpha beta gamma zeta", {}),
+            ("omega psi chi phi", {}),
+            ("omega psi chi kappa", {}),
+            ("omega psi chi lambda", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=6,
+            communities=[CommunityExpectation(
+                together=[
+                    ["alpha beta gamma delta", "alpha beta gamma epsilon",
+                     "alpha beta gamma zeta"],
+                    ["omega psi chi phi", "omega psi chi kappa",
+                     "omega psi chi lambda"],
+                ],
+                apart=[("alpha beta gamma delta", "omega psi chi phi")],
+                gap=[("alpha beta gamma delta", "omega psi chi phi")],
+                min_size=2,
+            )],
+        ),
+    ),
 ]
 
