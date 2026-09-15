@@ -163,6 +163,13 @@ class Brain:
 
     # ---------- Git sync ----------
 
+    @staticmethod
+    def _remote_has_main(remote: str) -> bool:
+        """True when the remote already carries a brain (a `main` branch)."""
+        r = subprocess.run(["git", "ls-remote", "--heads", remote, "main"],
+                           capture_output=True, text=True)
+        return r.returncode == 0 and bool(r.stdout.strip())
+
     def clone_if_missing(self) -> None:
         # Audit #20: crashed-clone detection — a half-cloned directory
         # (without .git) blocked every further clone attempt forever.
@@ -184,7 +191,16 @@ class Brain:
         `git init` + branch main, optionally an origin remote, and commits the
         initial state. Idempotent: an existing repo is not overwritten. Without
         a remote the first commit stays local (push=False).
+
+        If the remote already carries a brain (a `main` branch), it is cloned
+        instead of initialized: two machines running `ig init --remote <same
+        brain>` used to create two unrelated root commits, so the second push
+        was rejected as a non-fast-forward.
         """
+        if (self.mode == "git" and remote and not (self.path / ".git").exists()
+                and self._remote_has_main(remote)):
+            self.remote = remote
+            self.clone_if_missing()
         self.path.mkdir(parents=True, exist_ok=True)
         (self.path / "nodes").mkdir(parents=True, exist_ok=True)
         if not self.edges_file.exists():

@@ -101,6 +101,31 @@ def test_truncated_jsonl_recovery(tmp_path):
     assert "a" in vecs and "b" in vecs and "c" not in vecs
 
 
+def test_init_against_existing_remote_clones(tmp_path):
+    """Regression: onboarding a second machine must clone, not fork the brain.
+
+    `ig init --remote <brain>` on a machine without a clone used to create a
+    second, unrelated root commit; the push was then rejected as a
+    non-fast-forward and the brain looked broken.
+    """
+    bare = tmp_path / "remote.git"
+    _git("init", "--bare", "-b", "main", str(bare))
+    first = Brain(str(tmp_path / "brain1"), mode="git", remote=str(bare))
+    first.init(remote=str(bare), commit=True)
+    BrainEngine(first, HashEmbedder()).ingest("First engine writes node A", source="t1")
+
+    second = Brain(str(tmp_path / "brain2"), mode="git", remote=str(bare))
+    second.init(remote=str(bare), commit=True)  # must clone the existing brain
+    assert any("node A" in n.text for n in second.read_nodes())
+
+    # and it stays pushable afterwards
+    BrainEngine(second, HashEmbedder()).ingest("Second engine writes node B", source="t2")
+    _git("fetch", "origin", cwd=str(second.path))
+    head = _git("rev-parse", "HEAD", cwd=str(second.path)).stdout.strip()
+    remote_head = _git("rev-parse", "origin/main", cwd=str(second.path)).stdout.strip()
+    assert head == remote_head
+
+
 def test_crash_between_node_and_edge_write_leaves_readable_brain(tmp_path):
     """#31-family: an interrupted ingest sequence leaves a READABLE brain."""
     brain = Brain(str(tmp_path / "brain"), mode="local")
