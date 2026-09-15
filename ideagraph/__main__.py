@@ -212,6 +212,93 @@ def cmd_gaps(engine: BrainEngine, args: list[str]) -> None:
         print(render(cov, threshold))
 
 
+def cmd_communities(engine: BrainEngine, args: list[str]) -> None:
+    """Read-only topology report: communities, god nodes, structural gaps."""
+    from .communities import analyze_communities, render_communities
+
+    min_size = 15
+    top = 10
+    betweenness_sample: int | None = None
+    include_pending = True
+    with_members = False
+    as_json = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--min-size" and i + 1 < len(args):
+            try:
+                min_size = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --min-size expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
+        elif arg == "--top" and i + 1 < len(args):
+            try:
+                top = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --top expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
+        elif arg == "--betweenness-sample" and i + 1 < len(args):
+            try:
+                betweenness_sample = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --betweenness-sample expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
+        elif arg == "--no-pending":
+            include_pending = False
+            i += 1
+        elif arg == "--members":
+            with_members = True
+            i += 1
+        elif arg == "--json":
+            as_json = True
+            i += 1
+        else:
+            i += 1
+    rep = analyze_communities(engine.brain, min_size=min_size, top=top,
+                              betweenness_sample=betweenness_sample,
+                              include_pending=include_pending,
+                              with_members=with_members)
+    if as_json:
+        import json as _json
+        payload = {
+            "nodes": rep.nodes,
+            "edges": rep.edges,
+            "modularity": round(rep.modularity, 4),
+            "betweenness_sample": rep.betweenness_sample,
+            "communities": [{
+                "id": c.id,
+                "size": c.size,
+                "degree_sum": c.degree_sum,
+                "internal_edges": c.internal_edges,
+                "label": c.label,
+                "sample": c.sample,
+                **({"members": c.members} if with_members else {}),
+            } for c in rep.communities],
+            "god_nodes": [{
+                "id": g.id, "degree": g.degree,
+                "betweenness": g.betweenness, "text": g.text,
+            } for g in rep.god_nodes],
+            "gaps": [{
+                "a": g.a, "b": g.b,
+                "a_label": g.a_label, "b_label": g.b_label,
+                "a_size": g.a_size, "b_size": g.b_size,
+                "observed_edges": g.observed_edges,
+                "expected_edges": g.expected_edges,
+                "deficit": g.deficit,
+                "bridge_nodes": g.bridge_nodes,
+                "a_samples": g.a_samples, "b_samples": g.b_samples,
+            } for g in rep.gaps],
+            "isolated": rep.isolated,
+            "unclassified": rep.unclassified,
+        }
+        print(_json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(render_communities(rep))
+
+
 def cmd_merge(engine: BrainEngine, args: list[str]) -> None:
     if len(args) != 2:
         print("Usage: ig merge <survivor_id> <deletee_id>  (consolidates deletee into survivor)")
@@ -337,6 +424,7 @@ COMMANDS = {
     "merge": cmd_merge,
     "near-dup": cmd_near_dup,
     "status": cmd_status,
+    "communities": cmd_communities,
 }
 
 

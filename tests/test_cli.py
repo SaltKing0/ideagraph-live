@@ -191,3 +191,60 @@ def test_search_usage_error_mentions_json(tmp_path):
     r = run_cli(["search"], tmp_path)
     assert r.returncode == 1
     assert "Usage: ig search <term> [--json]" in r.stdout
+
+# ---------------------------------------------------------------------------
+# ig communities (report #3): read-only topology report
+# ---------------------------------------------------------------------------
+
+def test_communities_missing_brain_clean_error(tmp_path):
+    # Family behavior (mirrors test_status_on_missing_brain_clean_error):
+    # either a friendly message / empty report or a non-zero exit — never a
+    # traceback. The engine auto-creates an empty local-mode brain, so the
+    # honest output is a clean empty report.
+    r = run_cli(["communities"], tmp_path)
+    assert "Traceback" not in r.stdout + r.stderr
+    assert r.returncode != 0 or "Communities (0 nodes" in r.stdout
+
+
+def test_communities_bad_numeric_usage_error(tmp_path):
+    r = run_cli(["ingest", "alpha beta gamma delta knowledge"], tmp_path)
+    assert r.returncode == 0
+    r = run_cli(["communities", "--min-size", "abc"], tmp_path)
+    assert r.returncode == 1
+    assert "Traceback" not in r.stdout
+    assert "--min-size expects a number" in r.stdout
+    r = run_cli(["communities", "--top", "xyz"], tmp_path)
+    assert r.returncode == 1
+    assert "--top expects a number" in r.stdout
+    r = run_cli(["communities", "--betweenness-sample", "pi"], tmp_path)
+    assert r.returncode == 1
+    assert "--betweenness-sample expects a number" in r.stdout
+
+
+def test_communities_json_shape(tmp_path):
+    run_cli(["ingest", "alpha beta gamma delta knowledge"], tmp_path)
+    r = run_cli(["communities", "--min-size", "1", "--json"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    import json
+    data = json.loads(r.stdout)
+    for key in ("nodes", "edges", "modularity", "betweenness_sample",
+                "communities", "god_nodes", "gaps", "isolated"):
+        assert key in data, f"missing key {key}"
+    assert data["nodes"] >= 1
+
+
+def test_communities_top_zero_json_empty_gaps(tmp_path):
+    run_cli(["ingest", "alpha beta gamma delta knowledge"], tmp_path)
+    r = run_cli(["communities", "--min-size", "1", "--top", "0", "--json"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    import json
+    data = json.loads(r.stdout)
+    assert data["gaps"] == []
+
+
+def test_communities_human_report_mentions_sections(tmp_path):
+    run_cli(["ingest", "alpha beta gamma delta knowledge"], tmp_path)
+    r = run_cli(["communities", "--min-size", "1"], tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "Communities (" in r.stdout
+    assert "God nodes" in r.stdout
