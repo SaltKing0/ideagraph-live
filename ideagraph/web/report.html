@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8">
+  <title>IdeaGraph BRAIN_REPORT</title>
+  <style>
+    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3; --dim:#8b949e;
+            --green:#3fb950; --red:#f85149; --blue:#58a6ff; --purple:#bc8cff; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,Menlo,monospace;
+           min-height:100vh; }
+    header { display:flex; align-items:center; gap:12px; padding:10px 14px;
+             border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); }
+    header h1 { font-size:13px; margin:0; color:var(--dim); font-weight:normal; }
+    header a { color:var(--dim); font-size:12px; text-decoration:none; margin-left:auto; }
+    header a:hover { color:var(--fg); }
+    header button { background:var(--panel); border:1px solid var(--border); color:var(--fg);
+                    font-family:inherit; font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer; }
+    header button:hover { border-color:var(--blue); }
+    main { max-width:900px; margin:0 auto; padding:18px 16px 60px; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; font-size:13px; margin:0; }
+    pre .warn { color:var(--red); font-weight:bold; }
+    pre .ok { color:var(--green); }
+    pre .dim { color:var(--dim); }
+    pre .head { color:var(--purple); }
+    #error { color:var(--red); padding:20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BRAIN_REPORT <span id="meta"></span></h1>
+    <button id="copy">Copy markdown</button>
+    <a href="/">graph</a>
+  </header>
+  <main><pre id="out">loading…</pre><div id="error" hidden></div></main>
+  <script src="/report.js"></script>
+</body>
+</html>

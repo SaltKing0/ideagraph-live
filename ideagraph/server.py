@@ -78,6 +78,30 @@ def graph():
     return JSONResponse(runtime.make_brain().graph_state())
 
 
+@app.get("/report")
+def report_page():
+    return FileResponse(DOCS_DIR / "report.html", headers=NO_CACHE)
+
+
+@app.get("/report.js")
+def report_js():
+    return FileResponse(DOCS_DIR / "report.js", headers=NO_CACHE)
+
+
+@app.get("/api/report")
+def api_report(since: str | None = None, top: int = 5):
+    """Read-only BRAIN_REPORT digest (report #7). Never mutates the brain."""
+    from .report import report_data, render_report
+    brain = runtime.make_brain()
+    try:
+        data = report_data(brain, since=since, top=top)
+        data["markdown"] = render_report(brain, since=since, top=top)
+        return JSONResponse(data)
+    finally:
+        if hasattr(brain, "close"):
+            brain.close()
+
+
 class IngestBody(BaseModel):
     text: str
     source: str = "human"

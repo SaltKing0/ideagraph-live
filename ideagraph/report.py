@@ -97,7 +97,12 @@ def _parse_since(opts: dict) -> datetime:
     except ValueError:
         pass
     iso = text.replace("Z", "+00:00")
-    dt = datetime.fromisoformat(iso)
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError as exc:
+        raise ValueError(
+            f"--since expects hours (e.g. 24) or ISO datetime, got: {text!r}"
+        ) from exc
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt

@@ -15,7 +15,7 @@
              border-bottom:1px solid var(--border); flex:none; }
     header h1 { font-size:13px; margin:0; color:var(--dim); font-weight:normal; }
     header .count { color:var(--blue); }
-    header a { color:var(--dim); font-size:12px; text-decoration:none; margin-left:auto; }
+    header a { color:var(--dim); font-size:12px; text-decoration:none; }\n    header a:first-of-type { margin-left:auto; }
     header a:hover { color:var(--fg); }
 
     #flash { position:fixed; top:52px; left:50%; transform:translateX(-50%);
@@ -78,7 +78,7 @@
 <body>
 <header>
   <h1>IdeaGraph Review · <span class="count" id="count">0 pending</span></h1>
-  <a href="/">← Cockpit</a>
+  <a href="/">\n    <a href="/report">report</a>← Cockpit</a>
 </header>
 <div id="flash"></div>
 

@@ -46,3 +46,35 @@ def test_unknown_undo_and_local_ui_routes(client_and_edge):
         response = client.get(path)
         assert response.status_code == 200
         assert content_type in response.headers["content-type"]
+
+def test_api_report_read_only_digest(client_and_edge):
+    """Report #7: /api/report returns the digest without mutating anything."""
+    client, edge = client_and_edge
+    before = client.get("/api/graph").json()
+    r = client.get("/api/report")
+    assert r.status_code == 200
+    data = r.json()
+    for key in ("generated_at", "markdown", "nodes", "edges", "kinds",
+                "intent_queue", "hubs", "hygiene", "research_next"):
+        assert key in data
+    assert data["nodes"] == 2 and data["edges"] == 1
+    assert "BRAIN_REPORT" in data["markdown"]
+    # read-only: nothing changed
+    assert client.get("/api/graph").json() == before
+
+
+def test_api_report_params_validated(client_and_edge):
+    """since=garbage → 400 client error with the usage hint (audit #57
+    convention: engine ValueErrors are client errors, never 500s)."""
+    client, _ = client_and_edge
+    r = client.get("/api/report", params={"since": "garbage"})
+    assert r.status_code == 400
+    assert "--since expects" in str(r.json())
+    data = client.get("/api/report", params={"top": 1}).json()
+    assert len(data["hubs"]) <= 1
+
+
+def test_report_page_and_js_served(client_and_edge):
+    client, _ = client_and_edge
+    assert client.get("/report").status_code == 200
+    assert client.get("/report.js").status_code == 200
