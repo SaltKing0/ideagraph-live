@@ -42,7 +42,9 @@ def engine_python(engine: str) -> str:
 
 
 PY = engine_python(ENGINE)
-HISTORY = os.path.expanduser("~/.cache/ideagraph/ig_evolve_history.jsonl")
+HISTORY = os.environ.get(
+    "IG_EVOLVE_HISTORY",
+    os.path.expanduser("~/.cache/ideagraph/ig_evolve_history.jsonl"))
 
 
 def run(cmd: list[str], cwd: str = ENGINE) -> tuple[int, str]:

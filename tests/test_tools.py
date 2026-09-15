@@ -157,12 +157,37 @@ def test_adapt_runs_on_real_brain_dir(tmp_path, brain):
 # ---------------------------------------------------------------------------
 
 def test_evolve_list_cases(tmp_path):
+    """--list prints the evolve history; the path is overridable for tests.
+
+    The history lives in the user's cache dir, so the test seeds its own file
+    (IG_EVOLVE_HISTORY) instead of asserting on whatever the machine happens
+    to have — that made it pass locally and fail in CI.
+    """
+    hist = tmp_path / "ig_evolve_history.jsonl"
+    hist.write_text(json.dumps({
+        "ts": "2026-01-01T00:00:00Z", "case_id": "roadmap-confidence-floor",
+        "action": "propose", "passed": False, "suite_tail": "1 failed"}) + "\n",
+        encoding="utf-8")
     r = subprocess.run(
         [PY, str(REPO / "tools" / "ig_evolve.py"),
          "--engine", str(REPO), "--list"],
-        capture_output=True, text=True, env=_env(tmp_path), timeout=120)
+        capture_output=True, text=True,
+        env=_env(tmp_path, IG_EVOLVE_HISTORY=str(hist)), timeout=120)
     assert r.returncode == 0
     assert "roadmap-confidence-floor" in r.stdout
+    assert "propose" in r.stdout
+
+
+def test_evolve_list_without_history(tmp_path):
+    """An empty history is a clean message, not an error."""
+    r = subprocess.run(
+        [PY, str(REPO / "tools" / "ig_evolve.py"),
+         "--engine", str(REPO), "--list"],
+        capture_output=True, text=True,
+        env=_env(tmp_path, IG_EVOLVE_HISTORY=str(tmp_path / "none.jsonl")),
+        timeout=120)
+    assert r.returncode == 0
+    assert "no evolve history yet" in r.stdout
 
 
 def test_evolve_flip_unknown_case_fails_cleanly(tmp_path):

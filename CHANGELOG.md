@@ -33,6 +33,11 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   "engine venv python not found" and `ig_adapt.py` silently returned no gap
   weights when `<engine>/.venv` was missing (CI, plain `pip install`). Both now
   fall back to the running interpreter, like `ig_cycle.py` already did.
+- **`ig_evolve --list` reads an overridable history path** —
+  `IG_EVOLVE_HISTORY` replaces the hardcoded
+  `~/.cache/ideagraph/ig_evolve_history.jsonl`, and the test seeds its own file
+  instead of asserting on whatever the machine happens to have (it passed
+  locally, where the file existed, and failed in CI).
 - **Installable on current Pythons** — `numpy==2.3.1` ships wheels for
   cp311–cp313 only, so `pip install ideagraph-live` failed to resolve on
   Python 3.14 (and on 3.10). The pin now carries an environment marker
