@@ -487,6 +487,16 @@ def cmd_search(engine: BrainEngine, args: list[str]) -> None:
     print(f"\n{len(hits)} hits (hybrid dense+BM25)")
 
 
+def cmd_mcp(engine: BrainEngine, args: list[str]) -> None:
+    """Read-only MCP server over stdio (report #1)."""
+    try:
+        from .mcp.server import main as mcp_main
+    except ImportError:
+        print("MCP support is not installed — pip install 'ideagraph-live[mcp]'")
+        sys.exit(1)
+    mcp_main()
+
+
 COMMANDS = {
     "init": cmd_init,
     "ingest": cmd_ingest,
@@ -501,6 +511,7 @@ COMMANDS = {
     "status": cmd_status,
     "communities": cmd_communities,
     "report": cmd_report,
+    "mcp": cmd_mcp,
 }
 
 

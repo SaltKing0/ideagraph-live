@@ -78,7 +78,8 @@ def rrf_fuse(ranked_lists: list[list[tuple[str, float]]], k: int = 60) -> list[t
     return sorted(fused.items(), key=lambda x: x[1], reverse=True)
 
 
-def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> tuple[list[str], dict[str, str], list[tuple[str, float]]]:
+def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30,
+                        persist: bool = True) -> tuple[list[str], dict[str, str], list[tuple[str, float]]]:
     """Shared candidate retrieval for the retrieve()/rerank path."""
     nodes = engine.brain.read_nodes()
     # Audit #7: tombstones are "forgotten" — they must not come back as
@@ -89,7 +90,8 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> 
     node_ids = [n.id for n in nodes]
     qvec = engine.embedder.embed(query)
 
-    vecs = engine.brain.vectors_for(set(node_ids), lambda t: engine.embedder.embed(t))
+    vecs = engine.brain.vectors_for(set(node_ids), lambda t: engine.embedder.embed(t),
+                                    persist=persist)
     # Audit #8 (follow-up fix): vectors with a foreign dimension are not
     # comparable with the query (different embedder in the same brain, e.g.
     # demo seed with precomputed ST vectors + HashEmbedder engine). Instead of
@@ -130,7 +132,8 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30) -> 
     return node_ids, {n.id: n.text for n in nodes}, candidates
 
 
-def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30) -> list[tuple[str, float]]:
+def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30,
+             persist: bool = True) -> list[tuple[str, float]]:
     """Hybrid retrieval over the brain. Returns top-k (node_id, rrf_score).
 
     Dense: cosine of the query embedding against the cached node vectors.
@@ -140,7 +143,8 @@ def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30) ->
     `reranker` set on the engine (cross-encoder or stub) re-sorts them to
     top-`k`. Without a reranker (default) the behavior is identical.
     """
-    node_ids, text_by_id, candidates = retrieve_candidates(engine, query, rerank_k)
+    node_ids, text_by_id, candidates = retrieve_candidates(engine, query, rerank_k,
+                                                           persist=persist)
     if not candidates:
         return []
 

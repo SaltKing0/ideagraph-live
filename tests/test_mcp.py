@@ -1,0 +1,205 @@
+"""Tests for the read-only MCP server (report #1).
+
+Two layers, mirroring the engine's test split:
+- format.py helpers: pure unit tests, NO `mcp` import needed.
+- tool behavior: in-process client/server session (mcp's memory streams),
+  over a seeded temp brain. Skipped entirely when the [mcp] extra is absent
+  (CI light job installs only .[dev]).
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import sys
+import tempfile
+import textwrap
+from pathlib import Path
+
+import pytest
+
+MCP_AVAILABLE = importlib.util.find_spec("mcp") is not None
+
+# ---------------------------------------------------------------- format.py
+
+from ideagraph.mcp import format as fmt
+
+
+def test_snippet_truncates_then_escapes():
+    """Order is truncate-then-escape (audit #55): a pipe at the cap must not
+    survive into the output."""
+    out = fmt.snippet("a" * 200 + "|tail", 200)
+    assert out.endswith(fmt.ELLIPSIS)
+    assert "|" not in out
+
+
+def test_snippet_escapes_markdown_breakers():
+    assert fmt.snippet("a|b<c>d&e") == "a\\|b\\<c\\>d\\&e"
+
+
+def test_snippet_empty():
+    assert fmt.snippet("") == ""
+    assert fmt.snippet(None) == ""
+
+
+def test_envelopes_shape():
+    e = fmt.err("node_not_found", "no node x")
+    assert e["ok"] is False and e["error"]["code"] == "node_not_found"
+    inv = fmt.invalid("bad k")
+    assert inv["ok"] is False and inv["error"]["code"] == "invalid_params"
+    miss = fmt.brain_missing("/nope")
+    assert miss["ok"] is False and miss["error"]["code"] == "brain_missing"
+    nf = fmt.node_not_found("abc123")
+    assert nf["error"]["code"] == "node_not_found" and "abc123" in nf["error"]["message"]
+
+
+# ------------------------------------------------------------ tool behavior
+
+def _seed_brain(root: Path) -> Path:
+    """Minimal brain with 2 linked nodes + 1 pending edge (from the proven
+    hash-embedder pattern: high word overlap -> similar edge)."""
+    brain = root / "brain"
+    (brain / "nodes").mkdir(parents=True)
+    (brain / "nodes" / "aaaaaaaaaaaa.md").write_text(textwrap.dedent("""\
+        ---
+        id: aaaaaaaaaaaa
+        title: Agent Memory
+        created: 2026-09-15T10:00:00
+        source: test
+        type: semantic
+        status: active
+        tags: []
+        ---
+        agent memory agent memory agent memory store
+    """), encoding="utf-8")
+    (brain / "nodes" / "bbbbbbbbbbbb.md").write_text(textwrap.dedent("""\
+        ---
+        id: bbbbbbbbbbbb
+        title: Agent Memory Design
+        created: 2026-09-15T10:05:00
+        source: test
+        type: semantic
+        status: active
+        tags: []
+        ---
+        agent memory agent memory agent memory design
+    """), encoding="utf-8")
+    (brain / "edges.jsonl").write_text(
+        json.dumps({"id": "edge00000001", "source": "aaaaaaaaaaaa",
+                    "target": "bbbbbbbbbbbb", "kind": "similar",
+                    "pending": True, "confidence": 0.8,
+                    "valid_from": "2026-09-15T10:05:00"}) + "\n",
+        encoding="utf-8")
+    return brain
+
+
+@pytest.fixture()
+def mcp_env(monkeypatch, tmp_path):
+    """Point the runtime at a seeded temp brain; hash embedder for speed."""
+    brain = _seed_brain(tmp_path)
+    monkeypatch.setenv("IG_BRAIN_PATH", str(brain))
+    monkeypatch.setenv("IG_BRAIN_MODE", "local")
+    monkeypatch.setenv("IDEAGRAPH_EMBEDDER", "hash")
+    # tests must never leak vectors into a real brain even if persist flips
+    monkeypatch.setenv("IG_MCP_CACHE_VECTORS", "0")
+    return brain
+
+
+def _call(tool: str, args: dict):
+    """In-process MCP call: client session <-> server over memory streams."""
+    import anyio
+    from mcp.shared.memory import create_connected_server_and_client_session
+    from ideagraph.mcp.server import mcp as server
+
+    async def _run():
+        low = server._mcp_server
+        if callable(low):
+            low = low()
+        async with create_connected_server_and_client_session(low) as session:
+            res = await session.call_tool(tool, args)
+            payload = json.loads(res.content[0].text)
+            err = getattr(res, "isError", False)
+            return payload, err
+
+    return anyio.run(_run)
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp extra not installed")
+class TestMCPTools:
+    def test_search_brain_finds_node(self, mcp_env):
+        payload, err = _call("search_brain", {"query": "agent memory"})
+        assert err is False
+        assert payload["ok"] is True
+        assert payload["count"] >= 1
+        assert payload["results"][0]["id"] in ("aaaaaaaaaaaa", "bbbbbbbbbbbb")
+
+    def test_search_brain_empty_query_rejected(self, mcp_env):
+        payload, err = _call("search_brain", {"query": "   "})
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "invalid_params"
+
+    def test_search_brain_k_bounds(self, mcp_env):
+        payload, _ = _call("search_brain", {"query": "agent memory", "k": 99})
+        assert payload["error"]["code"] == "invalid_params"
+
+    def test_get_node_full(self, mcp_env):
+        payload, err = _call("get_node", {"id": "aaaaaaaaaaaa"})
+        assert err is False and payload["ok"] is True
+        node = payload["node"]
+        assert node["id"] == "aaaaaaaaaaaa"
+        assert "agent memory" in node["text"]
+        assert payload["degree"] == 1
+        edge = payload["edges"][0]
+        assert edge["kind"] == "similar"
+        assert edge["pending"] is True
+
+    def test_get_node_unknown(self, mcp_env):
+        payload, _ = _call("get_node", {"id": "zzzzzzzzzzzz"})
+        assert payload["error"]["code"] == "node_not_found"
+
+    def test_get_node_max_chars_cap(self, mcp_env):
+        payload, _ = _call("get_node", {"id": "aaaaaaaaaaaa", "max_chars": 10**9})
+        assert payload["error"]["code"] == "invalid_params"
+
+    def test_neighbors_undirected(self, mcp_env):
+        # the fixture edge is pending -> include it explicitly (default
+        # excludes pending, tested separately)
+        payload, err = _call("neighbors", {"id": "bbbbbbbbbbbb",
+                                           "include_pending": True})
+        assert err is False and payload["ok"] is True
+        assert payload["count"] == 1
+        nb = payload["neighbors"][0]
+        assert nb["id"] == "aaaaaaaaaaaa"
+        assert nb["direction"] == "in"   # edge source is aaaa -> target bbbb
+        assert nb["hops"] == 1
+
+    def test_neighbors_pending_excluded_by_default(self, mcp_env):
+        payload, _ = _call("neighbors", {"id": "aaaaaaaaaaaa"})
+        assert payload["count"] == 0
+        payload, _ = _call("neighbors", {"id": "aaaaaaaaaaaa",
+                                         "include_pending": True})
+        assert payload["count"] == 1
+
+    def test_brain_status(self, mcp_env):
+        payload, err = _call("brain_status", {})
+        assert err is False and payload["ok"] is True
+        assert payload["total"] == 2
+        assert payload["pending_edges"] == 1
+        assert "/" not in payload["brain_path_basename"]  # basename only
+
+    def test_brain_missing_envelope(self, monkeypatch):
+        monkeypatch.setenv("IG_BRAIN_PATH", "/tmp/does-not-exist-ig-mcp")
+        monkeypatch.setenv("IG_BRAIN_MODE", "local")
+        monkeypatch.setenv("IDEAGRAPH_EMBEDDER", "hash")
+        payload, _ = _call("search_brain", {"query": "anything"})
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "brain_missing"
+
+    def test_read_only_no_vector_file_written(self, mcp_env):
+        """The core guarantee: a search with the default strict mode must
+        leave vectors.jsonl untouched/absent."""
+        vec_file = mcp_env / "vectors.jsonl"
+        before = vec_file.read_text() if vec_file.exists() else None
+        _call("search_brain", {"query": "agent memory"})
+        after = vec_file.read_text() if vec_file.exists() else None
+        assert before == after

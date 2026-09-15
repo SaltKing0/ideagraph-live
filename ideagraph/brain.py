@@ -355,6 +355,18 @@ class Brain:
                 continue  # skip broken files instead of crashing
         return out
 
+    def read_node(self, node_id: str) -> Node | None:
+        """Read ONE node by id (report #1): node_path() + from_markdown with
+        the same skip-broken tolerance as read_nodes(). A single-node fetch
+        must not pay the full read_nodes() glob (0.076 s at live scale)."""
+        path = self.node_path(node_id)
+        if path is None or not path.exists():
+            return None
+        try:
+            return Node.from_markdown(path.read_text(encoding="utf-8"))
+        except (ValueError, KeyError, OSError):
+            return None
+
     # ---------- Embedding-Cache ----------
 
     @property
@@ -383,7 +395,12 @@ class Brain:
             for nid, vec in sorted(vectors.items()))
         _atomic_write(self.vectors_file, content)
 
-    def vectors_for(self, node_ids: set[str], embed_fn, batch_fn=None) -> dict[str, list[float]]:
+    def vectors_for(self, node_ids: set[str], embed_fn, batch_fn=None,
+                    persist: bool = True) -> dict[str, list[float]]:
+        """`persist=False` (report #1): compute missing vectors but never
+        write vectors.jsonl — the strictly read-only path for the MCP server
+        (a cold-cache write into the private repo would dirty it and churn
+        the cron rebase)."""
         """Vectors from cache; missing ones are computed and stored.
 
         Audit #4: reads nodes/vectors ONCE up front instead of per missing ID
@@ -410,7 +427,7 @@ class Brain:
                         continue
                     cached[nid] = embed_fn(node.text)
                     dirty = True
-        if dirty:
+        if dirty and persist:
             self.write_vectors(cached)
         return {nid: v for nid, v in cached.items() if nid in node_ids}
 

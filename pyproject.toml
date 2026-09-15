@@ -31,10 +31,12 @@ dependencies = [
 
 [project.optional-dependencies]
 st = ["sentence-transformers==5.0.0"]
+mcp = ["mcp>=1.28,<2", "sse-starlette>=1.6.1,<3"]
 dev = ["pytest==8.4.0"]
 
 [project.scripts]
 ig = "ideagraph.__main__:main"
+ig-mcp = "ideagraph.mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/SaltKing0/ideagraph-live"
@@ -44,7 +46,8 @@ Changelog = "https://github.com/SaltKing0/ideagraph-live/blob/main/CHANGELOG.md"
 PyPI = "https://pypi.org/project/ideagraph-live/"
 
 [tool.setuptools]
-packages = ["ideagraph", "ideagraph.web"]
+packages = ["ideagraph", "ideagraph.web", "ideagraph.mcp"]
 
 [tool.setuptools.package-data]
 "ideagraph.web" = ["*.html", "*.js"]
+"ideagraph.mcp" = ["agent/*.md"]
