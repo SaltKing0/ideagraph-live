@@ -6,6 +6,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-15
+
 ### Added
 - **PyPI publishing** via GitHub Actions with OIDC trusted publishing
   (`.github/workflows/release.yml`) — publishing a release uploads to PyPI,
@@ -27,6 +29,10 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - **`ig init --remote <existing brain>` clones instead of forking it** — on a
   machine without a clone it created a second, unrelated root commit, so the
   next push was rejected as a non-fast-forward and the brain looked broken.
+- **Pipeline tools run without a repo venv** — `ig_evolve.py` aborted with
+  "engine venv python not found" and `ig_adapt.py` silently returned no gap
+  weights when `<engine>/.venv` was missing (CI, plain `pip install`). Both now
+  fall back to the running interpreter, like `ig_cycle.py` already did.
 - **Installable on current Pythons** — `numpy==2.3.1` ships wheels for
   cp311–cp313 only, so `pip install ideagraph-live` failed to resolve on
   Python 3.14 (and on 3.10). The pin now carries an environment marker
@@ -248,7 +254,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   license. Similarity edges (`ähnlich`, `erweitert` — renamed to
   `similar`/`extends` in 0.5.0).
 
-[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SaltKing0/ideagraph-live/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/SaltKing0/ideagraph-live/compare/v0.3.0...v0.3.1

@@ -28,7 +28,20 @@ import sys
 
 ENGINE = os.environ.get("IG_ENGINE_PATH",
                       str(Path(__file__).resolve().parents[1]))
-PY = os.path.join(ENGINE, ".venv", "bin", "python")
+
+
+def engine_python(engine: str) -> str:
+    """Interpreter for the engine: its own venv if present, else this one.
+
+    The venv is the documented local setup, but it does not exist in CI or
+    after a plain `pip install` — hardcoding it made every `--list`/`--flip`
+    call abort with "engine venv python not found".
+    """
+    venv_py = os.path.join(engine, ".venv", "bin", "python")
+    return venv_py if os.path.exists(venv_py) else sys.executable
+
+
+PY = engine_python(ENGINE)
 HISTORY = os.path.expanduser("~/.cache/ideagraph/ig_evolve_history.jsonl")
 
 
@@ -121,10 +134,7 @@ def main() -> int:
 
     if args.engine != ENGINE:  # --engine flag overrides the module default
         ENGINE = args.engine
-        PY = os.path.join(ENGINE, ".venv", "bin", "python")
-    if not os.path.exists(PY):
-        print(f"engine venv python not found: {PY} (use --engine)")
-        return 1
+        PY = engine_python(ENGINE)
 
     if args.list:
         rows = read_history()

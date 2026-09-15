@@ -63,9 +63,9 @@ def gap_counts(engine: str, brain: str = "") -> dict[str, int]:
         env["IG_BRAIN_PATH"] = "~/ideagraph-brain"  # engine's neutral default
     eng_py = os.path.join(engine, ".venv", "bin", "python")
     if not os.path.exists(eng_py):
-        print(f"WARNING: engine venv python missing at {eng_py} — no gap weights",
-              file=sys.stderr)
-        return {}
+        # No venv (CI, plain `pip install`): the running interpreter has the
+        # engine importable, so use it instead of silently dropping the weights.
+        eng_py = sys.executable
     r = subprocess.run([eng_py, "-m", "ideagraph", "gaps", "--json"],
                        capture_output=True, text=True, env=env, cwd=engine)
     if r.returncode != 0:
