@@ -127,3 +127,33 @@ def test_gaps_coverage_ignores_tombstones(tmp_path):
     cov = analyze_coverage(b)
     assert cov.total == 1
     assert cov.unclassified == 0  # the live node matches, the tombstone is gone
+
+
+def test_near_dup_ignores_tombstoned_nodes(tmp_path):
+    """A merged deletee is a tombstone: its stale vector must not re-report the pair.
+
+    `ig merge` tombstones the deletee and redirects its edges, but the deletee's
+    vector stays in vectors.jsonl — without the live-node filter the merged pair
+    re-appears in EVERY `ig near-dup` run forever (the phantom-node class already
+    filtered in connectivity()/analyze_coverage()).
+    """
+    b = _brain(tmp_path)
+    b.write_node(Node(id="a", text="Thema A"))
+    b.write_node(Node(id="b", text="Thema A Variante", status="tombstone"))
+    b.write_node(Node(id="c", text="Thema A Zweite Fassung"))
+    # a=[1,0,0]; b=[0.8,0.6,0] -> cos 0.8 (tombstone); c=[0.9,0.4359,0] -> cos 0.9
+    _write_vecs(b, {"a": [1, 0, 0], "b": [0.8, 0.6, 0],
+                    "c": [0.9, 0.4358898943540674, 0]})
+    pairs = near_dup_pairs(b, lo=0.78, hi=0.92)
+    got = {frozenset((p.a, p.b)) for p in pairs}
+    assert frozenset(("a", "b")) not in got   # tombstoned deletee is not reviewed
+    assert frozenset(("a", "c")) in got       # live pairs still are
+
+
+def test_near_dup_all_tombstones_returns_empty(tmp_path):
+    """Two tombstones must not crash the report (the live set drops below 2)."""
+    b = _brain(tmp_path)
+    b.write_node(Node(id="a", text="Thema A", status="tombstone"))
+    b.write_node(Node(id="b", text="Thema A Variante", status="tombstone"))
+    _write_vecs(b, {"a": [1, 0, 0], "b": [0.8, 0.6, 0]})
+    assert near_dup_pairs(b, lo=0.78, hi=0.92) == []

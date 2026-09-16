@@ -61,6 +61,12 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 - Test-fixture lesson: LPA's update order is sorted(node ids) — uuid4 fixture ids
   shuffled that order between runs and flaked borderline partitions. Fixtures now
   pin ids (the live brain has stable ids, so production determinism is unaffected).
+- `ig near-dup` reviewed tombstones: `ig merge` tombstones the deletee and
+  redirects its edges, but the deletee's vector stays in `vectors.jsonl`, so the
+  pair it was merged for re-appeared in EVERY later report and could never be
+  cleared. `near_dup_pairs()` now filters `status != "tombstone"` before the
+  cosine matrix — the same live-node rule already applied in `connectivity()`
+  and `analyze_coverage()`.
 
 ## [0.5.2] - 2026-09-15
 

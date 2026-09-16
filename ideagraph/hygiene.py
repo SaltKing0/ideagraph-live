@@ -96,12 +96,23 @@ def near_dup_pairs(
     ids, V = _load_vectors(brain)
     if len(ids) < 2:
         return []
+    # Tombstones are edge-less BY DESIGN (`ig merge` redirects the deletee's edges
+    # away), so a merged deletee keeps its stale vector in vectors.jsonl and would
+    # re-report the very pair it was merged for on EVERY run — the same phantom-node
+    # class as the connectivity()/gaps filter. Review only live nodes.
+    nodes = brain.read_nodes()
+    live = {n.id for n in nodes if n.status != "tombstone"}
+    keep = [i for i, nid in enumerate(ids) if nid in live]
+    if len(keep) < 2:
+        return []
+    ids = [ids[i] for i in keep]
+    V = V[keep]
     S = V @ V.T
     np.fill_diagonal(S, -1.0)
     band = (S >= lo) & (S < hi + 1e-6)
     band = np.triu(band, k=1)
     ii, jj = np.nonzero(band)
-    texts = {n.id: n.text for n in brain.read_nodes()}
+    texts = {n.id: n.text for n in nodes}
     pairs = [NearDup(float(S[i][j]), ids[int(i)], ids[int(j)],
                      texts.get(ids[int(i)], ids[int(i)])[:72],
                      texts.get(ids[int(j)], ids[int(j)])[:72])
