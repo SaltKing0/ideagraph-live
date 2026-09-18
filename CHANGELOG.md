@@ -6,6 +6,22 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-09-18
+
+### Changed
+- `fastapi` pin `0.116.0` → `0.141.1`. The old pin forced `starlette<0.47`, which made
+  the `mcp` extra uninstallable on Python 3.14 (see Fixed). The server code needs no
+  changes: the full suite is green on both `starlette 0.46.2` and `starlette 1.6.0`, and a
+  live uvicorn smoke (UI, `/api/graph`, `/api/report`, `/report`) works on the new pair.
+
+### Fixed
+- **`pip install 'ideagraph-live[mcp]'` is resolvable again on Python 3.14.** It failed
+  with `ResolutionImpossible`: `fastapi==0.116.0` pinned `starlette>=0.40,<0.47`, while
+  `mcp>=1.28` declares `starlette>=0.48.0; python_version >= "3.14"`. A fresh 3.14 install
+  now resolves `fastapi 0.141.1 + starlette 1.6.0 + mcp 1.30.0 + sse-starlette 2.4.1`
+  (verified with `pip install --dry-run` and a real install, plus a stdio MCP smoke).
+  The base install was never affected — only the documented MCP extra was.
+
 ## [0.5.3] - 2026-09-18
 
 ### Added
@@ -339,7 +355,8 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   license. Similarity edges (`ähnlich`, `erweitert` — renamed to
   `similar`/`extends` in 0.5.0).
 
-[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/SaltKing0/ideagraph-live/compare/v0.5.0...v0.5.1

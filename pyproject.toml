@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ideagraph-live"
-version = "0.5.3"
+version = "0.5.4"
 description = "Self-growing idea graph: Ingest → Embed → Suggest → Visualize. A generic engine for a persistent knowledge graph backed by your own private git repo (the 'brain')."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,7 @@ classifiers = [
 # Core stays light (HashEmbedder works out of the box, zero heavy deps).
 # The real ST embedder is opt-in via [st] — it pulls PyTorch (~2 GB).
 dependencies = [
-  "fastapi==0.116.0",
+  "fastapi==0.141.1",
   "uvicorn[standard]==0.35.0",
   "httpx==0.28.1",
   # numpy is the only compiled dependency: 2.3.1 ships wheels for cp311-cp313
