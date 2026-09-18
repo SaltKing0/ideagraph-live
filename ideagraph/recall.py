@@ -112,14 +112,21 @@ def aggregate(brain: Brain, *, dry_run: bool = False, commit: bool = True) -> di
             brain.write_node(node)
         touched += 1
 
-    if not dry_run and commit:
+    if not dry_run:
+        # Move the ledger, THEN optionally commit. The move is bookkeeping that
+        # must happen whenever the counters were written — tying it to `commit`
+        # was a real bug (found live 2026-09-18): `dream.refresh()` batches the
+        # commit with `commit=False`, so the source entries stayed in place and
+        # EVERY pass folded them again (recall_count 1 -> 2 on a single real
+        # ledger line), inflating exactly the signal the promotion gates read.
         path = ledger_path(brain)
         processed = pathlib.Path(brain.path) / (LEDGER_NAME + ".processed")
         with open(processed, "a", encoding="utf-8") as fh:
             fh.write(path.read_text(encoding="utf-8"))
         path.write_text("", encoding="utf-8")
-        brain.commit_and_push(
-            f"recall: aggregate {sum(counts.values())} recalls into {touched} nodes")
+        if commit:
+            brain.commit_and_push(
+                f"recall: aggregate {sum(counts.values())} recalls into {touched} nodes")
     return {"nodes": touched, "recalls": sum(counts.values()),
             "ledger_entries": len(entries), "dry_run": dry_run}
 
