@@ -1,8 +1,8 @@
-ROADMAP_CASES is deliberately empty as of 2026-09-15.
+ROADMAP_CASES is deliberately empty as of 2026-09-18.
 All registered roadmap cases have been implemented and flipped into GOLDEN_SET
-(21 golden cases, see ideagraph/evals.py — the latest are
-roadmap-communities-two-clusters (#3), roadmap-brain-report (#7) and
-roadmap-neighbors (#1)).
+(22 golden cases, see ideagraph/evals.py — the latest is
+roadmap-intent-fanout-cap: the intent fan-out dam, registered RED, implemented
+and flipped in one session; the fixture was measured before it was asserted).
 To register a new aspirational feature: add a roadmap-* EvalTask to
 ideagraph/evals.py ROADMAP_CASES, then delete this marker file.
 Audit #52: this marker keeps the flip-gate test from being silently vacuous.

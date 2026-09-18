@@ -117,6 +117,10 @@ ig init [--remote <url>] [--demo]  # create a brain (empty / connected / demo)
 ig ingest "New idea ..."           # ingest (duplicates are merged)
 ig search "attention"              # hybrid search (dense + BM25 via RRF)
 ig pending / accept / reject       # review edge suggestions
+ig accept-pending [--max-intent-per-source 2] [--dry-run]
+                                   # accept pending suggestions in ONE commit,
+                                   # but hold intent edges beyond the cap
+                                   # (contradicts/supersedes fan-out) for review
 ig gaps [--min 10] [--json]        # coverage report + under-covered areas
 ig communities [--min-size 15] [--top 10] [--json]
                                    # topology: communities, god nodes, structural gaps

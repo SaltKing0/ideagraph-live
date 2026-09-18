@@ -7,6 +7,7 @@ Examples:
   python -m ideagraph pending
   python -m ideagraph accept <edge_id>
   python -m ideagraph reject <edge_id>
+  python -m ideagraph accept-pending [--max-intent-per-source 2] [--dry-run] [--json]
   python -m ideagraph link <node_a> <node_b> [--kind same_as]
   python -m ideagraph search "attention" [--json]
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
@@ -497,6 +498,50 @@ def cmd_mcp(engine: BrainEngine, args: list[str]) -> None:
     mcp_main()
 
 
+def cmd_accept_pending(engine: BrainEngine, args: list[str]) -> None:
+    """Review policy: accept pending suggestions, cap intent fan-out per source.
+
+    Non-intent pending edges are accepted; intent edges beyond
+    `--max-intent-per-source` (default 2, env IG_INTENT_AUTO_ACCEPT_MAX) stay
+    pending for `ig pending`. One commit for the whole batch.
+    """
+    max_intent, dry_run, as_json = None, False, False
+    i = 0
+    while i < len(args):
+        if args[i] == "--max-intent-per-source" and i + 1 < len(args):
+            try:
+                max_intent = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --max-intent-per-source expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            if max_intent < 0:
+                print("Usage: --max-intent-per-source must be >= 0")
+                sys.exit(1)
+            i += 2
+        elif args[i] == "--dry-run":
+            dry_run = True
+            i += 1
+        elif args[i] == "--json":
+            as_json = True
+            i += 1
+        else:
+            print(f"Unknown option for accept-pending: {args[i]!r}")
+            sys.exit(1)
+    from .review import accept_pending
+    res = accept_pending(engine.brain, max_intent_per_source=max_intent,
+                         dry_run=dry_run)
+    if as_json:
+        import json as _json
+        print(_json.dumps(res, ensure_ascii=False, indent=2))
+        return
+    verb = "would accept" if dry_run else "accepted"
+    print(f"{verb} {len(res['accepted'])} pending edge(s); "
+          f"held {len(res['held'])} intent edge(s) for review "
+          f"(cap {res['cap']} per source)")
+    if res["held"]:
+        print("Review them with: ig pending")
+
+
 COMMANDS = {
     "init": cmd_init,
     "ingest": cmd_ingest,
@@ -512,6 +557,7 @@ COMMANDS = {
     "communities": cmd_communities,
     "report": cmd_report,
     "mcp": cmd_mcp,
+    "accept-pending": cmd_accept_pending,
 }
 
 

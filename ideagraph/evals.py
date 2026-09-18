@@ -24,6 +24,7 @@ from typing import Callable
 
 from .brain import Brain, Node
 from .brain_engine import BrainEngine
+from .intent import INTENT_KINDS
 from .retrieval import retrieve
 from .reranker import ReverseReranker
 
@@ -108,6 +109,12 @@ class EvalOracle:
     report_absent: list[str] = field(default_factory=list)
     # graph-traversal expectations (report #1): neighborhood reachability
     neighborhoods: list[NeighborhoodExpectation] = field(default_factory=list)
+    # Intent fan-out dam (`roadmap-intent-fanout-cap`): no source node may hold
+    # more than this many AUTO-ACCEPTED (pending=False) intent edges. Intent
+    # edges carry no confidence, so the confidence bands cannot judge them and
+    # the marker heuristic is the only producer — the cap is the structural
+    # bound on that stream.
+    max_auto_intent_per_source: int | None = None
 
 
 @dataclass
@@ -257,6 +264,21 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
         for needle in oracle.report_absent:
             if needle in rendered:
                 failures.append(f"report should not contain: {needle!r}")
+
+    if oracle.max_auto_intent_per_source is not None:
+        per_source: dict[str, int] = {}
+        for e in edges:
+            if (e.kind in INTENT_KINDS and not e.pending and not e.rejected
+                    and e.valid_to is None):
+                per_source[e.source] = per_source.get(e.source, 0) + 1
+        over = {s: n for s, n in per_source.items()
+                if n > oracle.max_auto_intent_per_source}
+        if over:
+            worst_source, worst_n = max(over.items(), key=lambda kv: kv[1])
+            failures.append(
+                f"intent fan-out: source {worst_source} has {worst_n} auto-accepted "
+                f"intent edges (max {oracle.max_auto_intent_per_source}); "
+                f"{len(over)} source(s) over the cap")
 
     return failures
 
@@ -756,6 +778,33 @@ GOLDEN_SET: list[EvalTask] = [
                     hops=1,
                 ),
             ],
+        ),
+    ),
+    # Intent fan-out dam (2026-09-18): registered RED, implemented, flipped.
+    # Intent edges carry confidence=None, so the confidence bands can never
+    # judge them; the marker heuristic is their only producer and mass-fires in
+    # a homogeneous brain — live measurement before the dam: 168 intent edges
+    # ever created, 66 invalidated again (39 % false), one source holding 10
+    # auto-accepted `contradicts`, 26 false edges added in one cycle.
+    # MEASURED fixture (HashEmbedder, real engine path): the marker text fires 6
+    # `supersedes` edges at cos 0.866/0.722 (threshold 0.45) and the maximum
+    # pairwise cosine is 0.866 < dedupe 0.92, so the case fails on the CAP, not
+    # on a missing edge.
+    EvalTask(
+        id="roadmap-intent-fanout-cap",
+        name="Intent edges: auto-accepted fan-out per source is capped, the rest stay pending",
+        ingests=[
+            ("alpha beta gamma delta training pipeline", {}),
+            ("alpha beta gamma epsilon training pipeline", {}),
+            ("alpha beta gamma zeta training pipeline", {}),
+            ("alpha beta gamma eta training pipeline", {}),
+            ("alpha beta gamma theta training pipeline", {}),
+            ("alpha beta gamma iota training pipeline", {}),
+            ("alpha beta gamma kappa training pipeline ersetzt delta", {}),
+        ],
+        oracle=EvalOracle(
+            node_count=7,
+            max_auto_intent_per_source=2,
         ),
     ),
 ]

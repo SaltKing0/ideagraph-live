@@ -57,6 +57,11 @@ CONTINUE_MARKERS: tuple[tuple[str, ...], ...] = (
 # check already disambiguates most double hits.
 _PRIORITY = ("supersedes", "contradicts", "continues")
 
+# The three intent kinds, public and single-source: the review policy
+# (`review.INTENT_KINDS` import) and the eval oracle both bound their behavior
+# on this tuple instead of re-listing the strings.
+INTENT_KINDS: tuple[str, ...] = _PRIORITY
+
 _MARKER_TO_INTENT: dict[tuple[str, ...], str] = {}
 for _m in SUPERSEDE_MARKERS:
     _MARKER_TO_INTENT[_m] = "supersedes"

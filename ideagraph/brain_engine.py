@@ -16,6 +16,7 @@ from .similarity import cosine
 from .suggester import suggest, is_auto_accept
 from .intent import detect_intent
 from .reranker import get_reranker
+from .review import intent_auto_accept_max
 
 DEDUPE_THRESHOLD = 0.92
 # Intent edges may only fire for pairs that are genuinely topically
@@ -155,6 +156,14 @@ class BrainEngine:
         if auto_accept is None:
             auto_accept = auto_accept_from_env()
         intent_pending = intent_pending_from_env()
+        # Intent fan-out dam (ROADMAP_CASE `roadmap-intent-fanout-cap`): the
+        # marker heuristic auto-accepted every intent edge it produced, so one
+        # marker word could write dozens of false `contradicts` into the graph
+        # (live: 39 % of all intent edges ever created were invalidated again).
+        # At most `intent_auto_accept_max()` intent edges per source are
+        # auto-accepted; the rest are born PENDING (kept, reviewable, not
+        # dropped) — see ideagraph/review.py for the policy and its bounds.
+        intent_auto_left = intent_auto_accept_max(env)
         text = text.strip()
         if not text:
             raise ValueError("Empty text cannot be ingested.")
@@ -194,7 +203,9 @@ class BrainEngine:
             # additionally prove real topical relatedness (ST cosine
             # >= INTENT_SIM_THRESHOLD), otherwise a single marker word spams all nodes.
             intent_edges: list[Edge] = []
-            for ex in self.brain.read_nodes():
+            # Sorted by target id: which edges fall inside the cap must not
+            # depend on the filesystem's node read order (determinism).
+            for ex in sorted(self.brain.read_nodes(), key=lambda n: n.id):
                 if ex.id == node.id:
                     continue
                 intent = detect_intent(node.text, ex.text)
@@ -203,7 +214,14 @@ class BrainEngine:
                 ex_vec = candidates.get(ex.id)
                 if ex_vec is None or cosine(vec, ex_vec) < INTENT_SIM_THRESHOLD:
                     continue
-                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=intent_pending))
+                if intent_pending:
+                    pending = True
+                elif intent_auto_left > 0:
+                    pending = False
+                    intent_auto_left -= 1
+                else:
+                    pending = True
+                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=pending))
             # Admit rule: explicitly declared relations (target_text|id, kind).
             if relations:
                 for ref, kind in relations:

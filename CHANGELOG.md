@@ -6,6 +6,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`ig accept-pending`** — the review policy as a command: accepts pending
+  suggestions in ONE commit, but caps auto-accepted intent edges per source
+  (`--max-intent-per-source`, default 2, env `IG_INTENT_AUTO_ACCEPT_MAX`).
+  Everything beyond the cap stays pending for `ig pending`; `--dry-run` shows
+  the decision without writing, `--json` is machine-readable.
+- **Intent fan-out dam** (`ideagraph/review.py`, enforced in
+  `brain_engine.ingest` at birth and on the review path): at most 2 intent
+  edges (`contradicts`/`supersedes`/`continues`) per source are auto-accepted,
+  the rest are born pending — kept and reviewable instead of invisible.
+  Eval layer: `EvalOracle.max_auto_intent_per_source` + the ROADMAP_CASE
+  `roadmap-intent-fanout-cap`, registered RED, implemented, flipped (22 golden
+  cases).
+
+### Fixed
+- **Unreviewed intent-edge stream.** Intent edges carry `confidence=None`, so
+  the 0.95 auto-accept band could never judge them, while the marker heuristic
+  auto-accepted every edge it produced. Measured on the live brain before the
+  dam: 168 intent edges ever created, **66 of them invalidated again (39 %
+  false)**, one source holding 10 auto-accepted `contradicts`, and 26 false
+  edges added in a single cycle — none of them visible in `ig pending`. The cap
+  is a bound, not a repair: marker heuristics cannot read descriptive negation,
+  so the semantic fix stays a documented roadmap item.
+
 ## [0.5.4] - 2026-09-18
 
 ### Changed
