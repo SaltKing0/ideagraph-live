@@ -25,6 +25,7 @@ from typing import Callable
 from .brain import Brain, Node
 from .brain_engine import BrainEngine
 from .intent import INTENT_KINDS
+from .recall import aggregate as aggregate_recalls
 from .retrieval import retrieve
 from .reranker import ReverseReranker
 
@@ -46,6 +47,11 @@ class EdgeExpectation:
     kind: str
     pending: bool | None = None          # if set: edge must have this pending value
     min_confidence: float | None = None  # if set: Edge.confidence >= this value
+    # Who created the edge (`roadmap-edge-origin`): "suggester" (cosine kNN),
+    # "intent" (marker heuristic), "manual" (ig link / declared relations),
+    # "consolidator" (dream pass). Maintenance passes may rewrite heuristic
+    # edges; manual ones are user-authored and must be left alone.
+    origin: str | None = None
 
 
 @dataclass
@@ -115,6 +121,11 @@ class EvalOracle:
     # the marker heuristic is the only producer — the cap is the structural
     # bound on that stream.
     max_auto_intent_per_source: int | None = None
+    # Recall tracking (`roadmap-recall-tracking`): text -> expected
+    # `recall_count` after the recall ledger was aggregated. This is the input
+    # signal for promotion/decay — a memory that does not know what it is asked
+    # for cannot decide what to keep.
+    node_recalls: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -237,6 +248,16 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
                 f"edge {eexp.source!r}->{eexp.target!r}: expected confidence>={eexp.min_confidence}, "
                 f"got {[e.confidence for e in kind_match]}"
             )
+        # Edge provenance (`roadmap-edge-origin`): who CREATED the edge. A
+        # maintenance pass may rewrite heuristic edges but never manual ones,
+        # so the origin has to be asserted, not inferred from the text.
+        if eexp.origin is not None and not any(
+            getattr(e, "origin", None) == eexp.origin for e in kind_match
+        ):
+            failures.append(
+                f"edge {eexp.source!r}->{eexp.target!r}: expected origin "
+                f"{eexp.origin!r}, got {[getattr(e, 'origin', None) for e in kind_match]}"
+            )
 
     for eexp in oracle.no_edge:
         s = find_node_by_text(brain, eexp.source)
@@ -264,6 +285,16 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
         for needle in oracle.report_absent:
             if needle in rendered:
                 failures.append(f"report should not contain: {needle!r}")
+
+    if oracle.node_recalls:
+        for text, expected in oracle.node_recalls.items():
+            n = find_node_by_text(brain, text)
+            if n is None:
+                failures.append(f"recall node missing: {text!r}")
+            elif getattr(n, "recall_count", 0) != expected:
+                failures.append(
+                    f"node {text!r}: expected recall_count {expected}, "
+                    f"got {getattr(n, 'recall_count', 0)}")
 
     if oracle.max_auto_intent_per_source is not None:
         per_source: dict[str, int] = {}
@@ -805,6 +836,62 @@ GOLDEN_SET: list[EvalTask] = [
         oracle=EvalOracle(
             node_count=7,
             max_auto_intent_per_source=2,
+        ),
+    ),
+    # Welle A (2026-09-18): the two signals the consolidation half of a memory
+    # system runs on — registered RED, implemented, flipped in one session.
+    # `roadmap-edge-origin`: a maintenance pass may rewrite heuristic edges but
+    # never user-authored ones, so the provenance has to be stored, not inferred
+    # from the text (the 96-edge backlog cleanup was exactly that inference by
+    # hand). `roadmap-recall-tracking`: promotion/decay needs actual use —
+    # recall_count + distinct query fingerprints, folded from a local ledger so
+    # the read path stays cheap and git-clean.
+    EvalTask(
+        id="roadmap-edge-origin",
+        name="Edges carry their provenance: suggester kNN vs manual link",
+        ingests=[
+            ("agent memory systems store knowledge graphs for retrieval", {}),
+            ("agent memory systems store knowledge graphs for retrieval and search", {}),
+            ("Retrieval-Augmented Generation connects a model to external documents", {}),
+            ("Graph RAG combines vector search with multi-hop traversal", {}),
+        ],
+        actions=[_link_same_as(
+            "Retrieval-Augmented Generation connects a model to external documents",
+            "Graph RAG combines vector search with multi-hop traversal")],
+        oracle=EvalOracle(
+            node_count=4,
+            edges=[
+                # MEASURED (neighbors fixture): these two sit at cos 0.875, i.e.
+                # the `similar` band — the suggester produces the edge.
+                EdgeExpectation(
+                    source="agent memory systems store knowledge graphs for retrieval and search",
+                    target="agent memory systems store knowledge graphs for retrieval",
+                    kind="similar", origin="suggester"),
+                EdgeExpectation(
+                    source="Retrieval-Augmented Generation connects a model to external documents",
+                    target="Graph RAG combines vector search with multi-hop traversal",
+                    kind="same_as", origin="manual"),
+            ],
+        ),
+    ),
+    EvalTask(
+        id="roadmap-recall-tracking",
+        name="Recall tracking: retrieved nodes carry recall counts, untouched ones stay at 0",
+        ingests=[
+            ("alpha beta gamma delta training pipeline", {}),
+            ("omega psi chi phi gardening tomatoes", {}),
+        ],
+        actions=[
+            lambda e: retrieve(e, "alpha beta gamma delta training pipeline", k=1, track=True),
+            lambda e: retrieve(e, "alpha beta gamma delta training", k=1, track=True),
+            lambda e: aggregate_recalls(e.brain),
+        ],
+        oracle=EvalOracle(
+            node_count=2,
+            node_recalls={
+                "alpha beta gamma delta training pipeline": 2,
+                "omega psi chi phi gardening tomatoes": 0,
+            },
         ),
     ),
 ]

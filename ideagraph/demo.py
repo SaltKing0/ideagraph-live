@@ -145,7 +145,8 @@ def build_demo_brain(path: str, commit: bool = True) -> dict:
 
     for s, t, kind, pending, conf in _EDGES:
         brain.add_edge(Edge(source=nodes[s].id, target=nodes[t].id,
-                            kind=kind, pending=pending, confidence=conf))
+                            kind=kind, pending=pending, confidence=conf,
+                            origin="manual" if conf is None else "suggester"))
 
     # Embedding cache for the demo nodes (so `ig search` works immediately).
     # Route through get_embedder() so a light install (no [st] extra) degrades

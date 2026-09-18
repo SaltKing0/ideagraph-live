@@ -221,14 +221,16 @@ class BrainEngine:
                     intent_auto_left -= 1
                 else:
                     pending = True
-                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=pending))
+                intent_edges.append(Edge(source=node.id, target=ex.id, kind=intent, pending=pending,
+                                         origin="intent"))
             # Admit rule: explicitly declared relations (target_text|id, kind).
             if relations:
                 for ref, kind in relations:
                     target = next((n for n in self.brain.read_nodes()
                                    if n.id == ref or n.text.strip().lower() == ref.strip().lower()), None)
                     if target is not None and target.id != node.id:
-                        intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False))
+                        intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False,
+                                             origin="manual"))
             # Similarity edges (V2#3): pending unless either the confidence band (>=0.95)
             # or the env override (IDEAGRAPH_AUTO_ACCEPT) auto-accepts the edge.
             # Tier-3 confidence floor (roadmap-confidence-floor): suggestions below the
@@ -247,7 +249,7 @@ class BrainEngine:
                     f"IG_EDGE_CONF_FLOOR must be a number, got: {_floor_raw!r}")
             sim_edges = [Edge(source=s.source, target=s.target, kind=s.kind,
                               pending=not (is_auto_accept(s.confidence) or auto_accept),
-                              confidence=s.confidence)
+                              confidence=s.confidence, origin="suggester")
                          for s in suggest(node.id, vec, candidates)
                          if s.confidence >= floor]
             # Intent/admit-rule edges take precedence; similarity must not duplicate the same pair.
@@ -294,7 +296,12 @@ class BrainEngine:
                                 source=target_node.source, tags=target_node.tags,
                                 sources=getattr(target_node, 'sources', []),
                                 ntype=target_node.ntype,
-                                status=target_node.status))
+                                status=target_node.status,
+                                # Recall stats must survive a text rewrite:
+                                # they are the input for promotion/decay.
+                                recall_count=getattr(target_node, "recall_count", 0),
+                                recall_queries=list(getattr(target_node, "recall_queries", [])),
+                                last_recalled=getattr(target_node, "last_recalled", None)))
                             evolved += 1
             self.brain.rebuild_index()
             suffix = f", {evolved} nodes evolved" if evolved else ""
@@ -363,7 +370,8 @@ class BrainEngine:
                         if e.valid_to is None and not e.rejected]
             if (source_id, target_id, kind) in existing:
                 raise ValueError("This edge already exists.")
-            edge = Edge(source=source_id, target=target_id, kind=kind, pending=False)
+            edge = Edge(source=source_id, target=target_id, kind=kind, pending=False,
+                        origin="manual")
             self.brain.add_edge(edge)
             self.brain.commit_and_push(f"edge link: {source_id[:8]} --[{kind}]--> {target_id[:8]}")
             return edge

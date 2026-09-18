@@ -7,6 +7,30 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Edge provenance (`Edge.origin`)**: every edge records who created it —
+  `suggester` (cosine kNN), `intent` (marker heuristic), `manual` (`ig link`,
+  declared relations, demo seed), `consolidator` (a dream pass). Set at every
+  creation site, serialized only when present (no churn for legacy edges) and
+  assertable in the eval layer (`EdgeExpectation.origin`). Why: the 2026-09-18
+  backlog cleanup had to reconstruct "which of these 96 intent edges were
+  machine guesses?" by hand from the marker text — a maintenance pass that may
+  rewrite heuristic edges but never user-authored ones needs that stored.
+  Golden case `roadmap-edge-origin`.
+- **Recall tracking** (`ideagraph/recall.py`, `ig recall`): the read path
+  appends one line per search to a gitignored ledger (`recalls.jsonl` in the
+  brain root, `IG_NO_RECALL_TRACKING=1` disables) — no node rewrite, no commit
+  per search; `ig recall --aggregate` folds the ledger into the derived node
+  counters `recall_count` / `recall_queries` (distinct query fingerprints,
+  capped) / `last_recalled` in ONE commit and moves the ledger to
+  `recalls.jsonl.processed` as the audit trail. `ig search` tracks, the
+  read-only MCP surface does not. Why: promotion/decay needs actual use, and
+  with every node sitting in `probation` forever there was no signal at all —
+  the counters are what OpenClaw's dreaming gates on (`minRecallCount`,
+  `minUniqueQueries`). Golden case `roadmap-recall-tracking`.
+- `ig recall [--top N] [--aggregate] [--dry-run] [--json]` — recall statistics
+  and the aggregation step.
+
+### Added
 - **`ig accept-pending`** — the review policy as a command: accepts pending
   suggestions in ONE commit, but caps auto-accepted intent edges per source
   (`--max-intent-per-source`, default 2, env `IG_INTENT_AUTO_ACCEPT_MAX`).

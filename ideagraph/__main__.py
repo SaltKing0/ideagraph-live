@@ -8,6 +8,7 @@ Examples:
   python -m ideagraph accept <edge_id>
   python -m ideagraph reject <edge_id>
   python -m ideagraph accept-pending [--max-intent-per-source 2] [--dry-run] [--json]
+  python -m ideagraph recall [--top 10] [--aggregate] [--dry-run] [--json]
   python -m ideagraph link <node_a> <node_b> [--kind same_as]
   python -m ideagraph search "attention" [--json]
   python -m ideagraph gaps [--taxonomy tax.json] [--min 10] [--json]
@@ -459,7 +460,10 @@ def cmd_search(engine: BrainEngine, args: list[str]) -> None:
         sys.exit(1)
     q = " ".join(args)
     id2node = {n.id: n for n in engine.brain.read_nodes()}
-    hits = retrieve(engine, q, k=5)
+    # track=True: the CLI is the human/agent search surface, so its queries feed
+    # the recall ledger (gitignored append, aggregated by `ig recall
+    # --aggregate`). The MCP surface stays untracked (strictly read-only).
+    hits = retrieve(engine, q, k=5, track=True)
     if as_json:
         import json as _json
         results = []
@@ -542,6 +546,77 @@ def cmd_accept_pending(engine: BrainEngine, args: list[str]) -> None:
         print("Review them with: ig pending")
 
 
+def cmd_recall(engine: BrainEngine, args: list[str]) -> None:
+    """Recall statistics: what the memory is actually asked for.
+
+    Without flags: the most-recalled nodes (derived counters) + ledger size.
+    `--aggregate` folds the ledger into the node counters in one commit
+    (`--dry-run` to preview, `--json` for machines).
+    """
+    top_n, aggregate, dry_run, as_json = 10, False, False, False
+    i = 0
+    while i < len(args):
+        if args[i] == "--top" and i + 1 < len(args):
+            try:
+                top_n = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: --top expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            i += 2
+        elif args[i] == "--aggregate":
+            aggregate = True
+            i += 1
+        elif args[i] == "--dry-run":
+            dry_run = True
+            i += 1
+        elif args[i] == "--json":
+            as_json = True
+            i += 1
+        else:
+            print(f"Unknown option for recall: {args[i]!r}")
+            sys.exit(1)
+
+    from .recall import aggregate as aggregate_recalls, ledger_path, read_ledger, top
+    if aggregate:
+        res = aggregate_recalls(engine.brain, dry_run=dry_run)
+        if as_json:
+            import json as _json
+            print(_json.dumps(res, ensure_ascii=False, indent=2))
+            return
+        verb = "would fold" if dry_run else "folded"
+        print(f"{verb} {res['ledger_entries']} ledger entries into {res['nodes']} node(s) "
+              f"({res['recalls']} recalls)")
+        if dry_run:
+            print("Dry run — nothing written.")
+        return
+
+    rows = top(engine.brain, top_n)
+    ledger = read_ledger(engine.brain)
+    id2node = {n.id: n for n in engine.brain.read_nodes()}
+    if as_json:
+        import json as _json
+        print(_json.dumps({
+            "ledger_entries": len(ledger),
+            "ledger_path": str(ledger_path(engine.brain)),
+            "top": [{"id": nid, "recall_count": c,
+                     "snippet": _short(id2node[nid].text, 120)}
+                    for nid, c in rows if nid in id2node],
+        }, ensure_ascii=False, indent=2))
+        return
+    print(f"recall ledger: {len(ledger)} unaggregated entr"
+          f"{'y' if len(ledger) == 1 else 'ies'}")
+    if not rows:
+        print("no node has been recalled yet — run `ig recall --aggregate` "
+              "after some searches")
+        return
+    print("most-recalled nodes:")
+    for nid, count in rows:
+        node = id2node.get(nid)
+        if node is None:
+            continue
+        print(f"  {count:4}x  {nid}  {_short(node.text, 90)}")
+
+
 COMMANDS = {
     "init": cmd_init,
     "ingest": cmd_ingest,
@@ -558,6 +633,7 @@ COMMANDS = {
     "report": cmd_report,
     "mcp": cmd_mcp,
     "accept-pending": cmd_accept_pending,
+    "recall": cmd_recall,
 }
 
 

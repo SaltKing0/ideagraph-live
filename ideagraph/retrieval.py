@@ -133,7 +133,7 @@ def retrieve_candidates(engine: BrainEngine, query: str, rerank_k: int = 30,
 
 
 def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30,
-             persist: bool = True) -> list[tuple[str, float]]:
+             persist: bool = True, track: bool = False) -> list[tuple[str, float]]:
     """Hybrid retrieval over the brain. Returns top-k (node_id, rrf_score).
 
     Dense: cosine of the query embedding against the cached node vectors.
@@ -142,6 +142,10 @@ def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30,
     Rerank (V2#1, optional): hybrid yields top-`rerank_k` candidates; a
     `reranker` set on the engine (cross-encoder or stub) re-sorts them to
     top-`k`. Without a reranker (default) the behavior is identical.
+    track (recall tracking): append the returned ids to the local recall ledger
+    (`recall.record`). Off by default so read-only surfaces (MCP) stay
+    read-only; CLI/HTTP pass True. The ledger write is an append to a
+    gitignored file — it never dirties the brain repo.
     """
     node_ids, text_by_id, candidates = retrieve_candidates(engine, query, rerank_k,
                                                            persist=persist)
@@ -149,9 +153,17 @@ def retrieve(engine: BrainEngine, query: str, k: int = 5, rerank_k: int = 30,
         return []
 
     reranker = getattr(engine, "reranker", None)
-    if reranker is None:
-        return candidates[:k]
+    result = candidates[:k] if reranker is None else _rerank(engine, query, k,
+                                                             text_by_id, candidates)
+    if track:
+        from .recall import record, tracking_enabled
+        if tracking_enabled():
+            record(engine.brain, query, [nid for nid, _ in result])
+    return result
 
+
+def _rerank(engine: BrainEngine, query: str, k: int, text_by_id: dict[str, str],
+            candidates: list[tuple[str, float]]) -> list[tuple[str, float]]:
     with_text = [(nid, text_by_id[nid], score) for nid, score in candidates]
-    reranked = reranker.rerank(query, with_text, k)
+    reranked = engine.reranker.rerank(query, with_text, k)
     return [(nid, score) for nid, _, score in reranked]

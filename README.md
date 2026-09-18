@@ -129,6 +129,9 @@ ig report [--since 24h|--top 5] [--json] [--write]
                                    # review queue, hubs, hygiene, research next);
                                    # --write regenerates the tracked BRAIN_REPORT.md
 ig status / near-dup               # hygiene: islands, orphans, near-dup pairs
+ig recall [--top 10] [--aggregate] # what the memory is actually asked for
+                                   # (--aggregate folds the local recall ledger
+                                   #  into the node counters, one commit)
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 ig mcp                             # read-only MCP server over stdio (AI assistants)
 ```

@@ -52,7 +52,9 @@ class Node:
     def __init__(self, text: str, id: str | None = None, created: str | None = None,
                  source: str = "human", tags: list[str] | None = None,
                  sources: list[str] | None = None, ntype: str = "semantic",
-                 status: str = "probation"):
+                 status: str = "probation",
+                 recall_count: int = 0, recall_queries: list[str] | None = None,
+                 last_recalled: str | None = None):
         self.text = text
         self.id = id or uuid.uuid4().hex[:12]
         self.created = created or _now_iso()
@@ -69,6 +71,15 @@ class Node:
         # V2#2 memory hygiene: dual buffer — new nodes start in probation,
         # get promoted after dedup/verification, or end up as tombstones.
         self.status = status if status in VALID_STATUS else "probation"
+        # Recall tracking (the signal a memory system needs and this one never
+        # had): how often a node was actually retrieved, over how many DISTINCT
+        # queries, and when last. OpenClaw's dreaming promotion gates are built
+        # on exactly these three numbers; without them "promote what is used"
+        # cannot be decided. Derived data: written by `recall.aggregate()` from
+        # the local ledger, never on the read path itself.
+        self.recall_count = int(recall_count or 0)
+        self.recall_queries = list(recall_queries or [])
+        self.last_recalled = last_recalled
 
     def to_markdown(self) -> str:
         tags = "[" + ", ".join(self.tags) + "]" if self.tags else "[]"
@@ -81,6 +92,13 @@ class Node:
         # the rewrite "changes" the file without any content gain.
         lines.append("sources: [" + ", ".join(self.sources) + "]")
         lines.append(f"tags: {tags}")
+        # Recall stats only when they exist — writing them unconditionally
+        # would rewrite all ~2k node files for zero information.
+        if self.recall_count:
+            lines.append(f"recalls: {self.recall_count}")
+            lines.append("recall_queries: [" + ", ".join(self.recall_queries) + "]")
+            if self.last_recalled:
+                lines.append(f"last_recalled: {self.last_recalled}")
         return "---\n" + "\n".join(lines) + "\n---\n\n" + f"{self.text}\n"
 
     @classmethod
@@ -101,14 +119,25 @@ class Node:
             raise ValueError("Frontmatter without 'id:' — skipping file")
         tags = [t.strip() for t in meta.get("tags", "[]").strip("[]").split(",") if t.strip()]
         sources = [s.strip() for s in meta.get("sources", "").strip("[]").split(",") if s.strip()]
+        try:
+            recall_count = int(meta.get("recalls", "0") or 0)
+        except ValueError:
+            recall_count = 0
+        recall_queries = [q.strip() for q in
+                          meta.get("recall_queries", "").strip("[]").split(",") if q.strip()]
         return cls(text=text.strip(), id=meta["id"], created=meta.get("created"),
                    source=meta.get("source", "human"), tags=tags, sources=sources,
-                   ntype=meta.get("type", "semantic"), status=meta.get("status", "probation"))
+                   ntype=meta.get("type", "semantic"), status=meta.get("status", "probation"),
+                   recall_count=recall_count, recall_queries=recall_queries,
+                   last_recalled=meta.get("last_recalled"))
 
     def to_dict(self) -> dict:
         return {"id": self.id, "text": self.text, "created": self.created,
                 "source": self.source, "tags": self.tags, "sources": self.sources,
-                "type": self.ntype, "status": self.status}
+                "type": self.ntype, "status": self.status,
+                "recall_count": self.recall_count,
+                "recall_queries": self.recall_queries,
+                "last_recalled": self.last_recalled}
 
 
 class Edge:
@@ -116,12 +145,21 @@ class Edge:
                  pending: bool = True, id: str | None = None,
                  valid_from: str | None = None, valid_to: str | None = None,
                  confidence: float | None = None,
-                 invalidated_by: str | None = None, rejected: bool = False):
+                 invalidated_by: str | None = None, rejected: bool = False,
+                 origin: str | None = None):
         self.source = source
         self.target = target
         self.kind = kind
         self.pending = pending
         self.id = id or uuid.uuid4().hex[:12]
+        # Provenance of the EDGE ITSELF (who created it): "suggester" (cosine
+        # kNN), "intent" (marker heuristic), "manual" (ig link / declared
+        # relations / demo seed), "consolidator" (a dream pass). None = legacy
+        # edge written before the field existed. Reports and maintenance passes
+        # must treat heuristic edges as rewritable and manual ones as
+        # user-authored — without this, "which edges are machine guesses?" can
+        # only be reconstructed from the text (done by hand once, 2026-09-18).
+        self.origin = origin
         # Bi-temporality (Zep/Graphiti lesson): fact validity kept separate
         # from commit time (which the git history provides for free).
         self.valid_from = valid_from or _now_iso()
@@ -138,6 +176,8 @@ class Edge:
                 "valid_from": self.valid_from, "valid_to": self.valid_to,
                 "confidence": self.confidence,
                 "invalidated_by": self.invalidated_by}
+        if self.origin is not None:
+            result["origin"] = self.origin
         if self.rejected:
             result["rejected"] = True
         return result
@@ -469,7 +509,8 @@ class Brain:
                             valid_to=d.get("valid_to"),
                             confidence=d.get("confidence"),
                             invalidated_by=d.get("invalidated_by"),
-                            rejected=d.get("rejected", False))
+                            rejected=d.get("rejected", False),
+                            origin=d.get("origin"))
             except (json.JSONDecodeError, KeyError, TypeError):
                 continue
             if edge.rejected and not include_rejected:
