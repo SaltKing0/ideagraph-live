@@ -177,20 +177,23 @@ def report_data(brain: Brain, **opts) -> dict:
 
     # --- intent review queue: grouped by source, fan-out desc
     by_source: Counter = Counter()
+    pending_by_source: Counter = Counter()
+    kinds_by_source: dict[str, set[str]] = {}
     for e in edges:
         if e.kind in INTENT_KINDS:
             by_source[e.source] += 1
+            kinds_by_source.setdefault(e.source, set()).add(e.kind)
+            if e.pending:
+                pending_by_source[e.source] += 1
     intent_queue = []
     for sid, fan in by_source.most_common(top):
         node = id2node.get(sid)
+        ks = kinds_by_source.get(sid, set())
         intent_queue.append({
             "source": sid,
             "fan_out": fan,
-            "kind": "mixed" if len({e.kind for e in edges
-                                    if e.source == sid
-                                    and e.kind in INTENT_KINDS}) > 1
-                    else next(e.kind for e in edges
-                              if e.source == sid and e.kind in INTENT_KINDS),
+            "pending": pending_by_source.get(sid, 0),
+            "kind": "mixed" if len(ks) > 1 else next(iter(ks)),
             "title": _short(node.text) if node else "?",
             "warn": fan >= 3,
         })
@@ -322,12 +325,14 @@ def render_report(brain: Brain, **opts) -> str:
     lines.append("")
     lines.append("## Intent review queue")
     if data["intent_queue"]:
-        lines.append("fan-out by source (contradicts/supersedes, auto-accepted, "
-                     "confidence=None — fan-out is the false-positive signal):")
+        lines.append("fan-out by source (contradicts/supersedes, confidence=None — "
+                     "fan-out is the false-positive signal; `pending` = held back "
+                     "for `ig pending` by the intent cap):")
         for q in data["intent_queue"]:
             warn = " ⚠ HIGH FAN-OUT" if q["warn"] else ""
+            held = f" · {q['pending']} pending" if q.get("pending") else ""
             lines.append(f"{q['fan_out']}x [{q['kind']}] {q['source']} "
-                         f"\"{q['title']}\"{warn}")
+                         f"\"{q['title']}\"{held}{warn}")
     else:
         lines.append("no intent edges — nothing to review")
     lines.append("")

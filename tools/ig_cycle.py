@@ -286,18 +286,23 @@ def main() -> int:
     for f_ in failed:
         print("  FAILED:", f_)
 
-    # Accept pending edges (one commit). Audit #28: the review script lives in the
-    # agent's skill dir OUTSIDE the repo — resolve via env override with a graceful
-    # skip instead of a hard crash when it's missing.
-    review = os.environ.get(
-        "IG_REVIEW_SCRIPT",
-        os.path.expanduser("~/.cache/ideagraph/review_edges.py"))
-    if os.path.exists(review):
+    # Accept pending edges in ONE commit — through the ENGINE's review policy
+    # (`ig accept-pending`), which accepts every non-intent pending edge but
+    # caps auto-accepted intent edges per source (ideagraph/review.py;
+    # ROADMAP_CASE `roadmap-intent-fanout-cap`). The previous path called an
+    # accept-ALL script by default, which is exactly the leak the cap closes:
+    # intent edges are auto-accepted at birth with confidence=None, so the
+    # confidence bands cannot judge them and a marker word mass-fires.
+    # IG_REVIEW_SCRIPT stays available as an EXPLICIT opt-in escape hatch for a
+    # custom policy (no default path — an unset variable must not silently
+    # bypass the cap).
+    out = run([eng_py, "-m", "ideagraph", "accept-pending"], git_env, args.engine)
+    print(out.strip().splitlines()[0] if out.strip() else "review: no output")
+    review = os.environ.get("IG_REVIEW_SCRIPT", "")
+    if review and os.path.exists(review):
         out = run([eng_py, review], git_env, args.engine)
-        print(out.strip().splitlines()[-1] if out.strip() else "review: no output")
-    else:
-        print(f"review_edges.py not found at {review} — skipping edge accept "
-              "(pending edges stay pending; review them manually)")
+        print(f"IG_REVIEW_SCRIPT override: "
+              f"{out.strip().splitlines()[-1] if out.strip() else 'no output'}")
 
     # Regenerate BRAIN_REPORT.md (report #7): rides the cycle as its own commit
     # (one commit per generation). A report failure must never fail the cycle.

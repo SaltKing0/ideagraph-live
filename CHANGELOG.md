@@ -19,6 +19,13 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   Eval layer: `EvalOracle.max_auto_intent_per_source` + the ROADMAP_CASE
   `roadmap-intent-fanout-cap`, registered RED, implemented, flipped (22 golden
   cases).
+- `tools/ig_cycle.py` now runs the engine's review policy (`ig accept-pending`)
+  instead of the external accept-ALL script — the previous default path is
+  exactly the leak the cap closes. `IG_REVIEW_SCRIPT` remains an explicit
+  opt-in override (no default path: an unset variable must not silently bypass
+  the cap). `ig report`'s intent queue now shows how many edges per source are
+  HELD (`N pending`), so the section is a review queue instead of a report of
+  past damage.
 
 ### Fixed
 - **Unreviewed intent-edge stream.** Intent edges carry `confidence=None`, so

@@ -118,6 +118,17 @@ def test_report_intent_queue_groups_by_source_fanout():
         assert top["source"] == "n3" and top["fan_out"] == 3
         assert top["warn"] is True  # fan-out >= 3 warning
         assert top["kind"] == "mixed"  # contradicts + supersedes from one source
+        assert top["pending"] == 0  # all three are live (accepted)
+        # Intent edges the cap held back are part of the same queue — that is
+        # what makes it a REVIEW queue instead of a report of past damage.
+        _add_edges(eng.brain,
+                   Edge(source=ids[3], target=ids[0], kind="contradicts",
+                        pending=True))
+        data = report_data(eng.brain)
+        top = data["intent_queue"][0]
+        assert top["fan_out"] == 4 and top["pending"] == 1
+        rendered = render_report(eng.brain)
+        assert "1 pending" in rendered
     finally:
         _teardown(eng)
 
