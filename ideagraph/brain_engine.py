@@ -141,6 +141,7 @@ class BrainEngine:
                allow_duplicates: bool = False, ntype: str = "semantic",
                auto_accept: bool | None = None,
                relations: list[tuple[str, str]] | None = None,
+               edge_origin: str = "manual",
                env: dict[str, str] | None = None) -> tuple[Node, list[Edge], bool]:
         """Ingest with dedupe. Returns: (node, edges, is_duplicate).
 
@@ -230,7 +231,7 @@ class BrainEngine:
                                    if n.id == ref or n.text.strip().lower() == ref.strip().lower()), None)
                     if target is not None and target.id != node.id:
                         intent_edges.append(Edge(source=node.id, target=target.id, kind=kind, pending=False,
-                                             origin="manual"))
+                                             origin=edge_origin))
             # Similarity edges (V2#3): pending unless either the confidence band (>=0.95)
             # or the env override (IDEAGRAPH_AUTO_ACCEPT) auto-accepts the edge.
             # Tier-3 confidence floor (roadmap-confidence-floor): suggestions below the

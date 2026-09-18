@@ -22,6 +22,7 @@ IDEAGRAPH_EMBEDDER (st|hash), IDEAGRAPH_EMBEDDER_MODEL.
 
 from __future__ import annotations
 
+import os
 import sys
 
 from . import runtime
@@ -493,12 +494,26 @@ def cmd_search(engine: BrainEngine, args: list[str]) -> None:
 
 
 def cmd_mcp(engine: BrainEngine, args: list[str]) -> None:
-    """Read-only MCP server over stdio (report #1)."""
+    """MCP server over stdio. Read-only by default; `--write` adds the agent
+    memory tools (remember / recall / forget) — an opt-in, because a
+    model-initiated write commits AND pushes to a private repo."""
+    write = "--write" in args
+    unknown = [a for a in args if a != "--write"]
+    if unknown:
+        print(f"Unknown option for mcp: {unknown[0]!r} (only --write is supported)")
+        sys.exit(1)
+    if write:
+        # Set BEFORE importing the module: tool registration and the server
+        # instructions are decided at import time.
+        os.environ["IG_MCP_WRITE"] = "1"
     try:
         from .mcp.server import main as mcp_main
     except ImportError:
         print("MCP support is not installed — pip install 'ideagraph-live[mcp]'")
         sys.exit(1)
+    if write:
+        from .mcp.server import register_write_tools
+        register_write_tools()
     mcp_main()
 
 

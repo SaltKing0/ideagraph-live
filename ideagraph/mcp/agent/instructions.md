@@ -14,5 +14,21 @@ similarities. The brain is read-only from here; changes go through the
 owner (`ig ingest`, `ig pending`).
 ```
 
+## If the server runs in write mode (`ig mcp --write`)
+
+```markdown
+## Knowledge brain (write mode)
+The IdeaGraph MCP server also has `remember`, `recall` and `forget`.
+- `remember` — keep a durable finding you would otherwise lose. It is recorded
+  with source=agent, so provenance stays visible. Do not use it for notes that
+  belong in the repo, the PR or the chat.
+- `recall` — search whose hits COUNT AS USE (they feed the promotion signal).
+  Prefer `recall` over `search_brain` when you actually act on the result;
+  `search_brain` for pure exploration.
+- `forget` — only with a real reason, and only for a memory that is wrong or
+  superseded. It tombstones the node instead of deleting it; the owner can see
+  the history. Never use it to "clean up" something you merely dislike.
+```
+
 There is deliberately NO per-command hook: noisy PreToolUse nudges are the
 known anti-pattern that gets MCP tools abandoned.

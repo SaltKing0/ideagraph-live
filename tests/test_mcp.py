@@ -227,3 +227,134 @@ class TestMCPTools:
         _call("search_brain", {"query": "agent memory"})
         after = vec_file.read_text() if vec_file.exists() else None
         assert before == after
+
+
+# ------------------------------------------------------ write path (Welle C)
+
+WRITE_TOOLS = ("remember", "recall", "forget")
+
+
+@pytest.fixture()
+def write_env(mcp_env, monkeypatch):
+    """Write mode ON, same seeded brain."""
+    monkeypatch.setenv("IG_MCP_WRITE", "1")
+    return mcp_env
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp extra not installed")
+class TestMCPWriteTools:
+    """The tools are called directly: registration mutates the module-global
+    server, which would leak into the read-only tests above. The real
+    `tools/list` surface is asserted by the subprocess test below."""
+
+    def test_write_disabled_by_default(self, mcp_env, monkeypatch):
+        monkeypatch.delenv("IG_MCP_WRITE", raising=False)
+        from ideagraph.mcp import server
+        calls = [server.remember(text="x"),
+                 server.recall(query="x"),
+                 server.forget(id="aaaaaaaaaaaa", reason="cleanup")]
+        for payload in calls:
+            assert payload["ok"] is False
+            assert payload["error"]["code"] == "write_disabled"
+            assert "ig mcp --write" in payload["error"]["message"]
+
+    def test_remember_creates_a_node(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.remember(text="a note the agent decided to keep")
+        assert payload["ok"] is True and payload["duplicate"] is False
+        node_file = write_env / "nodes" / f"{payload['node_id']}.md"
+        assert node_file.exists()
+        assert "source: agent" in node_file.read_text(encoding="utf-8")
+
+    def test_remember_rejects_empty_text(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.remember(text="   ")
+        assert payload["ok"] is False
+        assert payload["error"]["code"] == "invalid_params"
+
+    def test_remember_enforces_the_size_cap(self, write_env, monkeypatch):
+        from ideagraph.mcp import server
+        monkeypatch.setattr(server, "MAX_REMEMBER_CHARS", 20)
+        payload = server.remember(text="x" * 50)
+        assert payload["error"]["code"] == "invalid_params"
+        assert "20" in payload["error"]["message"]
+
+    def test_recall_tracks_and_reports_recall_count(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.recall(query="agent memory", k=3)
+        assert payload["ok"] is True and payload["tracked"] is True
+        assert payload["count"] >= 1
+        assert "recall_count" in payload["results"][0]
+        assert (write_env / "recalls.jsonl").exists()
+
+    def test_recall_validates_like_search(self, write_env):
+        from ideagraph.mcp import server
+        assert server.recall(query="  ")["error"]["code"] == "invalid_params"
+        assert server.recall(query="x", k=99)["error"]["code"] == "invalid_params"
+
+    def test_forget_requires_a_reason(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.forget(id="aaaaaaaaaaaa", reason="   ")
+        assert payload["error"]["code"] == "invalid_params"
+        assert "reason" in payload["error"]["message"]
+
+    def test_forget_unknown_node(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.forget(id="zzzzzzzzzzzz", reason="cleanup")
+        assert payload["error"]["code"] == "node_not_found"
+
+    def test_forget_tombstones_without_deleting(self, write_env):
+        from ideagraph.mcp import server
+        payload = server.forget(id="aaaaaaaaaaaa", reason="obsolete note")
+        assert payload["ok"] is True
+        assert payload["status"] == "tombstone"
+        assert payload["edges_invalidated"] == 1
+        assert (write_env / "nodes" / "aaaaaaaaaaaa.md").exists()
+        assert "status: tombstone" in (write_env / "nodes" / "aaaaaaaaaaaa.md").read_text(
+            encoding="utf-8")
+
+
+REGISTRATION_SCRIPT = r'''
+import json, os
+import anyio
+from mcp.shared.memory import create_connected_server_and_client_session
+from ideagraph.mcp.server import mcp as srv, register_write_tools
+
+register_write_tools()
+
+async def run():
+    low = srv._mcp_server
+    if callable(low):
+        low = low()
+    async with create_connected_server_and_client_session(low) as session:
+        tools = (await session.list_tools()).tools
+        return {t.name: bool(getattr(t.annotations, "readOnlyHint", True))
+                for t in tools}
+
+print(json.dumps(anyio.run(run)))
+'''
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="mcp extra not installed")
+def test_write_mode_registers_exactly_the_write_tools(mcp_env, tmp_path):
+    """`ig mcp --write` must add the three write tools with readOnlyHint False
+    and leave the read-only ones alone. Runs in a subprocess: registration
+    mutates the module-global server, which must not leak into this process."""
+    import subprocess
+    script = tmp_path / "registration.py"
+    script.write_text(REGISTRATION_SCRIPT, encoding="utf-8")
+    env = dict(os.environ,
+               IG_BRAIN_PATH=str(mcp_env), IG_BRAIN_MODE="local",
+               IDEAGRAPH_EMBEDDER="hash", IG_MCP_WRITE="1",
+               PYTHONPATH=str(Path(__file__).resolve().parent.parent))
+    proc = subprocess.run([sys.executable, str(script)], env=env,
+                          capture_output=True, text=True, timeout=180)
+    assert proc.returncode == 0, proc.stderr[-800:]
+    flags = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    for name in WRITE_TOOLS:
+        assert name in flags, f"{name} not registered in write mode"
+        assert flags[name] is False, f"{name} must not claim readOnlyHint"
+    for name in ("search_brain", "get_node", "neighbors", "brain_status"):
+        assert flags.get(name) is True, f"{name} must stay read-only"
+    assert len(flags) == 7

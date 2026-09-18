@@ -479,6 +479,25 @@ def report(results: list[EvalResult]) -> tuple[int, list[EvalResult]]:
 # Golden set — regression on every engine change (MUST be green)
 # ---------------------------------------------------------------------------
 
+def _agent_remember(text: str, relation_target: str | None = None) -> Callable[[BrainEngine], None]:
+    """Test action: an agent writes a note (Welle C write path)."""
+    def action(engine: BrainEngine) -> None:
+        from .agent_memory import remember
+        relations = [(relation_target, "extends")] if relation_target else None
+        remember(engine, text, relations=relations)
+    return action
+
+
+def _agent_forget(text: str, reason: str) -> Callable[[BrainEngine], None]:
+    """Test action: an agent forgets a node — tombstoned, never deleted."""
+    def action(engine: BrainEngine) -> None:
+        from .agent_memory import forget
+        node = find_node_by_text(engine.brain, text)
+        if node is not None:
+            forget(engine.brain, node.id, reason=reason)
+    return action
+
+
 def _link_same_as(source_text: str, target_text: str) -> Callable[[BrainEngine], None]:
     def action(engine: BrainEngine) -> None:
         s = find_node_by_text(engine.brain, source_text)
@@ -998,6 +1017,31 @@ GOLDEN_SET: list[EvalTask] = [
             node_count=8,
             # 2 summaries x 3 members, all `origin="consolidator"`
             min_edges_by_origin={"consolidator": 6},
+        ),
+    ),
+    # Welle C (2026-09-18): the agent-facing write path. An agent that consults
+    # the brain must be able to leave something in it — under its own provenance
+    # (`source="agent"` / `origin="agent"`), never destructively (`forget`
+    # tombstones and invalidates, it never deletes), and only when the operator
+    # opts in (`ig mcp --write`; the MCP default stays read-only).
+    EvalTask(
+        id="roadmap-agent-memory",
+        name="Agent write path: remember marks provenance, forget tombstones without deleting",
+        ingests=[
+            ("alpha beta gamma delta", {}),
+            ("omega psi chi phi", {}),
+        ],
+        actions=[
+            _agent_remember("a note an agent decided to keep", "alpha beta gamma delta"),
+            _agent_forget("omega psi chi phi", reason="superseded by the newer note"),
+        ],
+        oracle=EvalOracle(
+            # 2 ingests + 1 remembered; the forgotten node is NEVER deleted
+            node_count=3,
+            nodes_present=["a note an agent decided to keep", "omega psi chi phi"],
+            node_status={"omega psi chi phi": "tombstone"},
+            # the agent-declared relation carries agent provenance
+            min_edges_by_origin={"agent": 1},
         ),
     ),
 ]

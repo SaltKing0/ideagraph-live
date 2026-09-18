@@ -7,6 +7,25 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Agent memory (`ig mcp --write`)** — the write half of the MCP surface, and
+  the last piece of the memory loop: an assistant can now leave something in the
+  brain, not only read it.
+  - `remember` writes one note, recorded with `source="agent"`; dedupe-aware, so
+    a near-duplicate merges into the existing node instead of forking it.
+  - `recall` is a search whose hits **count as use** (`recall_count`) — the
+    promotion signal the dream pass consumes. `search_brain` stays the
+    side-effect-free variant for exploration.
+  - `forget` removes a node from every live view by **tombstoning** it and
+    invalidating its live edges (`valid_to`, audit trail kept) — it never
+    deletes. `reason` is mandatory and lands in the commit message.
+  - Write mode is opt-in per server process; the read-only default is unchanged.
+    The write tools are registered only in write mode and carry
+    `readOnlyHint: false`, so clients ask their user before a model writes into
+    the private brain; in read-only mode they answer with a `write_disabled`
+    envelope. One commit per write.
+  - Engine-level core in `ideagraph/agent_memory.py` (testable without `mcp`),
+    `ingest(..., edge_origin=)` for agent-declared relations, golden case
+    `roadmap-agent-memory`.
 - **The dream pass** (`ideagraph/dream.py`, `ig dream`) — the consolidation half
   of the memory system, split into three explicitly requested steps so nothing
   happens implicitly:

@@ -141,6 +141,7 @@ ig dream --distill [--llm]         # one abstraction node per community
                                    #  IG_DREAM_LLM_CMD)
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 ig mcp                             # read-only MCP server over stdio (AI assistants)
+ig mcp --write                     # + remember/recall/forget (agent memory, opt-in)
 ```
 
 ## MCP server (AI assistants)
@@ -175,9 +176,27 @@ Four tools, all annotated `readOnlyHint`:
 | `neighbors` | undirected graph neighborhood, 1–2 hops — the question vector search cannot answer |
 | `brain_status` | cheap orientation: size, connectivity, pending-review load |
 
-Design guarantees: **no write tools** (ingest commits and pushes to a private
-repo — model-initiated writes with no human review are the highest-risk thing
-this surface could do), the engine loads lazily (first search, not import),
+### Agent memory: `ig mcp --write` (opt-in)
+
+```bash
+ig mcp --write   # or IG_MCP_WRITE=1 — adds three write tools
+```
+
+| Tool | Purpose |
+|---|---|
+| `remember` | store one note; recorded with `source="agent"`, dedupe-aware (a near-duplicate merges into the existing node) |
+| `recall` | search whose hits **count as use** (`recall_count`) — the promotion signal the dream pass consumes; use `search_brain` for pure exploration |
+| `forget` | remove a node from every live view — it **tombstones and invalidates, it never deletes**, and a mandatory `reason` lands in the commit message |
+
+Write mode keeps the same discipline as the rest of the engine: **provenance**
+(so "what did a model write?" stays a query), **never destructive**, **one commit
+per write**. The write tools are registered only in write mode and carry
+`readOnlyHint: false`, so a client asks its user before letting a model write into
+the private brain. In read-only mode they return a `write_disabled` envelope.
+
+Design guarantees: the read-only default stays strict — ingest commits and pushes
+to a private repo, so model-initiated writes are an explicit operator decision,
+not a default; the engine loads lazily (first search, not import),
 response payloads are capped and escaped in one place (`ideagraph/mcp/format.py`),
 and by default even the derived vector cache is **never written** — a search on
 a cold clone does not dirty the private repo (`IG_MCP_CACHE_VECTORS=1` opts
