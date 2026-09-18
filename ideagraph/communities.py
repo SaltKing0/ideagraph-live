@@ -276,9 +276,22 @@ def _classify(label_counts: Counter) -> str:
 def analyze_communities(brain: Brain, min_size: int = DEFAULT_MIN_COMMUNITY,
                         top: int = DEFAULT_TOP, betweenness_sample: int | None = None,
                         include_pending: bool = True, taxonomy: dict | None = None,
-                        with_members: bool = False) -> CommunityReport:
-    """Full topology report: partition, god nodes, structural gaps."""
+                        with_members: bool = False,
+                        exclude_ids: set[str] | None = None) -> CommunityReport:
+    """Full topology report: partition, god nodes, structural gaps.
+
+    `exclude_ids` removes nodes from the partition entirely. A derived node (a
+    consolidator summary) must not feed back into the structure it summarizes:
+    otherwise a second dream pass partitions a different graph and cannot be
+    idempotent — the summary nodes join their own communities and shift them.
+    """
     nodes, adj, deg = build_graph(brain, include_pending=include_pending)
+    if exclude_ids:
+        keep = [n for n in nodes if n not in exclude_ids]
+        keep_set = set(keep)
+        adj = {n: {m for m in adj[n] if m in keep_set} for n in keep}
+        deg = Counter({n: d for n, d in deg.items() if n in keep_set})
+        nodes = keep
     id2text = {n.id: n.text for n in brain.read_nodes() if n.status != "tombstone"}
     labels = label_propagation(nodes, adj)
     q = modularity(nodes, adj, labels)

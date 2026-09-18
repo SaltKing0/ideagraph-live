@@ -126,6 +126,11 @@ class EvalOracle:
     # signal for promotion/decay — a memory that does not know what it is asked
     # for cannot decide what to keep.
     node_recalls: dict[str, int] = field(default_factory=dict)
+    # Edge-provenance floors (`roadmap-dream-distill`): origin -> minimum number
+    # of LIVE edges carrying that origin. A pass that writes `consolidator` edges
+    # is only observable through counts — the texts it generates are not
+    # knowable up front. Pending/rejected/invalidated edges do not count.
+    min_edges_by_origin: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -311,6 +316,14 @@ def verify_end_state(brain: Brain, oracle: EvalOracle) -> list[str]:
                 f"intent edges (max {oracle.max_auto_intent_per_source}); "
                 f"{len(over)} source(s) over the cap")
 
+    for origin, minimum in oracle.min_edges_by_origin.items():
+        found = sum(1 for e in edges
+                    if getattr(e, "origin", None) == origin
+                    and not e.pending and not e.rejected and e.valid_to is None)
+        if found < minimum:
+            failures.append(
+                f"edges with origin {origin!r}: expected >= {minimum} live, got {found}")
+
     return failures
 
 
@@ -473,6 +486,36 @@ def _link_same_as(source_text: str, target_text: str) -> Callable[[BrainEngine],
         if s and t:
             engine.link(s.id, t.id, "same_as")
     return action
+
+
+def _force_kind(source_text: str, target_text: str, kind: str) -> Callable[[BrainEngine], None]:
+    """Test action: rewrite the kind of an existing similarity edge.
+
+    Simulates drift/legacy data (an edge whose kind no longer matches the band
+    rule its cosine implies) so `dream.refresh()` has something to re-derive.
+    """
+    def action(engine: BrainEngine) -> None:
+        s = find_node_by_text(engine.brain, source_text)
+        t = find_node_by_text(engine.brain, target_text)
+        if not s or not t:
+            return
+        edges = engine.brain.read_edges(include_rejected=True)
+        for edge in edges:
+            if ({edge.source, edge.target} == {s.id, t.id}
+                    and edge.kind in ("extends", "similar")):
+                edge.kind = kind
+        engine.brain.write_edges(edges)
+    return action
+
+
+def _dream_distill(engine: BrainEngine) -> None:
+    from .dream import distill
+    distill(engine.brain, min_size=2, limit=5, members_per_summary=3)
+
+
+def _dream_refresh(engine: BrainEngine) -> None:
+    from .dream import refresh
+    refresh(engine.brain)
 
 
 GOLDEN_SET: list[EvalTask] = [
@@ -892,6 +935,69 @@ GOLDEN_SET: list[EvalTask] = [
                 "alpha beta gamma delta training pipeline": 2,
                 "omega psi chi phi gardening tomatoes": 0,
             },
+        ),
+    ),
+    # Welle B (2026-09-18): the consolidation half — the dream pass. Measured
+    # before building: recall-gated promotion had 0 eligible nodes, a degree gate
+    # >= 3 matched 99 % of nodes, the corpus was 27 days old (so no staleness
+    # gate can fire), and the 97 near-dup pairs in the review band are
+    # demonstrably related-but-distinct — so promotion/decay/auto-merge are NOT
+    # part of the pass yet. What IS measurable today: the deterministic refresh
+    # and the distillation of communities (30 communities >= 10 nodes cover 94 %
+    # of the live brain).
+    EvalTask(
+        id="roadmap-dream-refresh",
+        name="Dream refresh re-derives drifted suggester kinds, leaves manual edges alone",
+        ingests=[
+            ("agent memory systems store knowledge graphs for retrieval", {}),
+            ("agent memory systems store knowledge graphs for retrieval and search", {}),
+            ("Retrieval-Augmented Generation connects a model to external documents", {}),
+            ("Graph RAG combines vector search with multi-hop traversal", {}),
+            # 5th ingest declares a relation explicitly -> origin="manual". Its
+            # cosine is in the `similar` band, so a pass that ignored provenance
+            # would "correct" a user-authored edge.
+            ("agent memory systems store knowledge graphs for retrieval and ranking",
+             {"relations": [("agent memory systems store knowledge graphs for retrieval",
+                             "extends")]}),
+        ],
+        actions=[
+            # drift the suggester edge (cos 0.875 => must be `similar` again)
+            _force_kind("agent memory systems store knowledge graphs for retrieval and search",
+                        "agent memory systems store knowledge graphs for retrieval",
+                        "extends"),
+            _dream_refresh,
+        ],
+        oracle=EvalOracle(
+            node_count=5,
+            edges=[
+                EdgeExpectation(
+                    source="agent memory systems store knowledge graphs for retrieval and search",
+                    target="agent memory systems store knowledge graphs for retrieval",
+                    kind="similar", origin="suggester"),
+                EdgeExpectation(
+                    source="agent memory systems store knowledge graphs for retrieval and ranking",
+                    target="agent memory systems store knowledge graphs for retrieval",
+                    kind="extends", origin="manual"),
+            ],
+        ),
+    ),
+    EvalTask(
+        id="roadmap-dream-distill",
+        name="Dream pass distills each community into one consolidator summary node",
+        ingests=[
+            ("alpha beta gamma delta", {}),
+            ("alpha beta gamma epsilon", {}),
+            ("alpha beta gamma zeta", {}),
+            ("omega psi chi phi", {}),
+            ("omega psi chi kappa", {}),
+            ("omega psi chi lambda", {}),
+        ],
+        actions=[_dream_distill],
+        oracle=EvalOracle(
+            # 6 members + 2 summary nodes (one per cluster)
+            node_count=8,
+            # 2 summaries x 3 members, all `origin="consolidator"`
+            min_edges_by_origin={"consolidator": 6},
         ),
     ),
 ]

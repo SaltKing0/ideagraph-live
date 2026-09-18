@@ -617,6 +617,114 @@ def cmd_recall(engine: BrainEngine, args: list[str]) -> None:
         print(f"  {count:4}x  {nid}  {_short(node.text, 90)}")
 
 
+def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
+    """The dream pass: plan (default, read-only), refresh, distill.
+
+    No flags = the eligibility report (nothing written). `--refresh` runs the
+    deterministic maintenance, `--distill` writes one abstraction node per
+    community (extractive by default; `--llm` needs IG_DREAM_LLM_CMD, a shell
+    command that reads the digest on stdin and prints the summary).
+    """
+    from .dream import DREAM_MAX_DISTILL, DREAM_MIN_COMMUNITY, distill, plan, refresh
+    do_refresh, do_distill, dry_run, as_json = False, False, False, False
+    min_size, limit, use_llm = DREAM_MIN_COMMUNITY, DREAM_MAX_DISTILL, False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--refresh":
+            do_refresh, i = True, i + 1
+        elif a == "--distill":
+            do_distill, i = True, i + 1
+        elif a == "--dry-run":
+            dry_run, i = True, i + 1
+        elif a == "--json":
+            as_json, i = True, i + 1
+        elif a == "--llm":
+            use_llm, i = True, i + 1
+        elif a in ("--min-size", "--limit") and i + 1 < len(args):
+            try:
+                value = int(args[i + 1])
+            except ValueError:
+                print(f"Usage: {a} expects a number, got: {args[i + 1]!r}")
+                sys.exit(1)
+            if a == "--min-size":
+                min_size = value
+            else:
+                limit = value
+            i += 2
+        else:
+            print(f"Unknown option for dream: {a!r}")
+            sys.exit(1)
+
+    summarizer = _dream_summarizer() if use_llm else None
+
+    if not do_refresh and not do_distill:
+        result = plan(engine.brain, min_community=min_size)
+        if as_json:
+            import json as _json
+            print(_json.dumps({
+                "nodes": result.nodes, "edges": result.edges,
+                "promotion_candidates": len(result.promotion_candidates),
+                "decay_candidates": len(result.decay_candidates),
+                "merge_candidates": len(result.merge_candidates),
+                "distill_candidates": result.distill_candidates,
+                "refresh": result.refresh,
+            }, ensure_ascii=False, indent=2))
+            return
+        print(result.render())
+        print("\nNothing written. Use --refresh / --distill to run a pass.")
+        return
+
+    out = {}
+    if do_refresh:
+        out["refresh"] = refresh(engine.brain, dry_run=dry_run)
+    if do_distill:
+        out["distill"] = distill(engine.brain, min_size=min_size, limit=limit,
+                                 summarizer=summarizer, dry_run=dry_run)
+    if as_json:
+        import json as _json
+        print(_json.dumps(out, ensure_ascii=False, indent=2))
+        return
+    if "refresh" in out:
+        r = out["refresh"]
+        print(f"refresh: {r['kind_changes']} kind(s) re-derived, "
+              f"{r['recalls']} recall(s) folded into {r['recall_nodes']} node(s)"
+              + (" (dry run)" if r["dry_run"] else ""))
+    if "distill" in out:
+        d = out["distill"]
+        print(f"distill: {d['summaries']} summar{'y' if d['summaries'] == 1 else 'ies'} "
+              f"from {d['communities']} communit{'y' if d['communities'] == 1 else 'ies'}, "
+              f"{d['edges']} consolidator edge(s)"
+              + (" (extractive)" if not d["used_llm"] else " (llm)")
+              + (" (dry run)" if d["dry_run"] else ""))
+
+
+def _dream_summarizer():
+    """`--llm`: a shell command that turns the extractive digest into prose.
+
+    No provider coupling in the engine (the repo has no LLM dependency): the
+    command is configured as IG_DREAM_LLM_CMD, receives the digest on stdin and
+    must print the summary on stdout.
+    """
+    import os
+    import subprocess
+    cmd = os.environ.get("IG_DREAM_LLM_CMD", "").strip()
+    if not cmd:
+        print("--llm needs IG_DREAM_LLM_CMD (a shell command reading the digest on "
+              "stdin and printing the summary on stdout).")
+        sys.exit(1)
+
+    def summarizer(digest: str) -> str:
+        proc = subprocess.run(cmd, shell=True, input=digest, capture_output=True,
+                              text=True, timeout=300)
+        if proc.returncode != 0 or not proc.stdout.strip():
+            raise RuntimeError(f"IG_DREAM_LLM_CMD failed ({proc.returncode}): "
+                               f"{proc.stderr.strip()[:200]}")
+        return proc.stdout.strip()
+
+    return summarizer
+
+
 COMMANDS = {
     "init": cmd_init,
     "ingest": cmd_ingest,
@@ -633,6 +741,7 @@ COMMANDS = {
     "report": cmd_report,
     "mcp": cmd_mcp,
     "accept-pending": cmd_accept_pending,
+    "dream": cmd_dream,
     "recall": cmd_recall,
 }
 

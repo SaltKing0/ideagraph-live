@@ -7,6 +7,34 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The dream pass** (`ideagraph/dream.py`, `ig dream`) — the consolidation half
+  of the memory system, split into three explicitly requested steps so nothing
+  happens implicitly:
+  - `ig dream` (default, read-only) prints the eligibility plan: promotion and
+    decay candidates under the given gates, the near-dup review list, the
+    distillable communities, and what `refresh` would change. Nothing is
+    written; every gate is a flag.
+  - `ig dream --refresh` — deterministic maintenance, one commit: re-derive the
+    kind of `origin="suggester"` similarity edges from the stored cosine
+    (manual edges are user-authored and never rewritten), fold the recall
+    ledger, rebuild `INDEX.md`, regenerate the tracked `BRAIN_REPORT.md`.
+  - `ig dream --distill` — one abstraction node per community (extractive digest
+    by default: size, dominant area, internal edge mix, strongest members),
+    linked to its strongest members with `origin="consolidator"`. Deterministic
+    summary ids make repeated passes idempotent; summary nodes are excluded from
+    the partition they describe, so a second pass sees the same communities.
+    `--llm` swaps in a model via `IG_DREAM_LLM_CMD` (a command reading the
+    extractive digest on stdin) — opt-in, no provider dependency in the engine.
+  - Measured before building, which is why promotion/decay/auto-merge are NOT
+    part of it yet: recall-gated promotion had 0 eligible nodes, a degree gate
+    `>= 3` matched 99 % of the brain, the corpus was 27 days old (no staleness
+    gate can fire), and the 97 near-dup pairs are demonstrably
+    related-but-distinct. Those gates wait for a real recall distribution.
+  - Golden cases `roadmap-dream-refresh`, `roadmap-dream-distill`.
+- `EvalOracle.min_edges_by_origin` — origin floors, because a pass that writes
+  generated nodes is only observable through counts.
+- `analyze_communities(..., exclude_ids=)` — keep derived nodes out of the
+  partition they summarize.
 - **Edge provenance (`Edge.origin`)**: every edge records who created it —
   `suggester` (cosine kNN), `intent` (marker heuristic), `manual` (`ig link`,
   declared relations, demo seed), `consolidator` (a dream pass). Set at every

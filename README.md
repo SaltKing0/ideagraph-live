@@ -132,6 +132,13 @@ ig status / near-dup               # hygiene: islands, orphans, near-dup pairs
 ig recall [--top 10] [--aggregate] # what the memory is actually asked for
                                    # (--aggregate folds the local recall ledger
                                    #  into the node counters, one commit)
+ig dream                           # dream plan (read-only): promotion/decay
+                                   # candidates, near-dup review list, distillable
+                                   # communities, what a refresh would change
+ig dream --refresh                 # deterministic maintenance, one commit
+ig dream --distill [--llm]         # one abstraction node per community
+                                   # (extractive by default; --llm needs
+                                   #  IG_DREAM_LLM_CMD)
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 ig mcp                             # read-only MCP server over stdio (AI assistants)
 ```
