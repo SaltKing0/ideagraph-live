@@ -193,14 +193,14 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest tests/ -q   # 240 tests
+.venv/bin/python -m pytest tests/ -q   # prints the current suite count
 ```
 
 ## Status
 
-Core features, the hygiene loop, and the self-evolving pipeline are
-implemented; release `v0.5.1` is published — see
-[CHANGELOG.md](CHANGELOG.md).
+Core features, the hygiene loop, the topology/digest reports, the read-only MCP
+server, and the self-evolving pipeline are implemented; release `v0.5.3` is
+published — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Open source / privacy
 
