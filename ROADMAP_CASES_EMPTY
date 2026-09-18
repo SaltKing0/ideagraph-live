@@ -1,9 +1,9 @@
 ROADMAP_CASES is deliberately empty as of 2026-09-18 (night).
 All registered roadmap cases have been implemented and flipped into GOLDEN_SET
-(27 golden cases, see ideagraph/evals.py — the latest are roadmap-dream-refresh,
-roadmap-dream-distill and roadmap-agent-memory: the consolidation half of the
-memory system plus the agent-facing write path, all registered RED, implemented
-and flipped in one session).
+(28 golden cases, see ideagraph/evals.py — the latest are roadmap-dream-refresh,
+roadmap-dream-distill, roadmap-agent-memory and roadmap-dream-lifecycle: the
+consolidation half of the memory system, the agent-facing write path and the
+status lifecycle, all registered RED, implemented and flipped in one session).
 To register a new aspirational feature: add a roadmap-* EvalTask to
 ideagraph/evals.py ROADMAP_CASES, then delete this marker file.
 Audit #52: this marker keeps the flip-gate test from being silently vacuous.

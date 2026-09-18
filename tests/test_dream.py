@@ -10,6 +10,7 @@ the live brain before building: recall-gated promotion had 0 eligible nodes, a
 degree gate >= 3 matched 99 % of nodes, the corpus was 27 days old, and the 97
 near-dup pairs in the review band are demonstrably related-but-distinct.
 """
+import datetime
 import sys
 from pathlib import Path
 
@@ -17,8 +18,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ideagraph.brain import Brain, Edge, Node
 from ideagraph.dream import (
+    DECAY_DAYS,
+    DECAY_MAX_DEGREE,
+    PROMOTE_MIN_DEGREE,
+    PROMOTE_MIN_RECALL,
+    STALE_STATUS,
     SUMMARY_TAG,
     distill,
+    lifecycle,
+    lifecycle_plan,
+    node_age_days,
     plan,
     refresh,
     refresh_plan,
@@ -28,6 +37,21 @@ from ideagraph.recall import record
 
 def _brain(tmp_path) -> Brain:
     return Brain(str(tmp_path / "brain"), mode="local")
+
+
+def _node(b: Brain, nid: str, *, status: str = "probation", recalls: int = 0,
+          days_old: float = 0.0, tags: list[str] | None = None) -> Node:
+    created = (datetime.datetime.now(datetime.timezone.utc)
+               - datetime.timedelta(days=days_old)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    node = Node(id=nid, text=f"node {nid}", status=status, tags=tags,
+                created=created, recall_count=recalls)
+    b.write_node(node)
+    return node
+
+
+def _edge(eid: str, src: str, tgt: str) -> Edge:
+    return Edge(id=eid, source=src, target=tgt, kind="extends", pending=False,
+                origin="suggester", confidence=0.7)
 
 
 def _two_clusters(b: Brain) -> None:
@@ -229,3 +253,143 @@ def test_distill_commits_once_per_pass(tmp_path, monkeypatch):
     distill(b, min_size=2, members_per_summary=2)
 
     assert len(calls) == 1 and "2 community summaries" in calls[0]
+
+
+# ---------------------------------------------------------------------------
+# lifecycle (promotion / decay)
+# ---------------------------------------------------------------------------
+
+def test_lifecycle_promotes_used_and_connected(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "used", recalls=1)
+    _node(b, "quiet")
+    _node(b, "lonely", recalls=1)          # recalled but not connected
+    b.write_edges([_edge("e1", "used", "quiet"), _edge("e2", "used", "lonely")])
+
+    res = lifecycle(b, min_recall=1, min_degree=2, stale_days=30)
+
+    status = {n.id: n.status for n in b.read_nodes()}
+    assert res["promoted"] == 1
+    assert status["used"] == "active", "used + degree 2"
+    assert status["quiet"] == "probation", "30 days not reached yet"
+    assert status["lonely"] == "probation", "recalled but degree 1 < 2"
+
+
+def test_lifecycle_decays_unused_weak_and_old(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "old", days_old=DECAY_DAYS + 1)
+    _node(b, "fresh")
+    _node(b, "hub", days_old=DECAY_DAYS + 1)
+    _node(b, "talked", days_old=DECAY_DAYS + 1, recalls=2)
+    # hub has degree 4 -> above the decay ceiling
+    b.write_edges([_edge("e1", "hub", "old"), _edge("e2", "hub", "fresh"),
+                   _edge("e3", "hub", "talked"), _edge("e4", "hub", "x0")])
+    _node(b, "x0")
+
+    res = lifecycle(b, min_recall=1, min_degree=2, stale_days=DECAY_DAYS,
+                    max_degree=DECAY_MAX_DEGREE)
+
+    status = {n.id: n.status for n in b.read_nodes()}
+    assert res["staled"] == 1
+    assert status["old"] == STALE_STATUS, "unused + weak + old"
+    assert status["fresh"] == "probation", "too young to decay"
+    assert status["hub"] == "probation", "degree above the ceiling"
+    assert status["talked"] == "probation", "recalled -> never decayed"
+
+
+def test_lifecycle_never_deletes_and_keeps_files(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "old", days_old=90)
+    path = b.node_path("old")
+    before = len(b.read_nodes())
+
+    lifecycle(b, stale_days=30)
+
+    assert b.node_path("old").exists() and path.exists()
+    assert len(b.read_nodes()) == before
+
+
+def test_lifecycle_revives_a_stale_node_that_is_used_again(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "stale_one", status=STALE_STATUS, recalls=1)
+    _node(b, "other")
+    b.write_edges([_edge("e1", "stale_one", "other"), _edge("e2", "stale_one", "x")])
+
+    res = lifecycle(b, min_recall=1, min_degree=2)
+
+    assert res["revived"] == 1 and res["promoted"] == 0
+    assert {n.id: n.status for n in b.read_nodes()}["stale_one"] == "active"
+
+
+def test_lifecycle_never_regrades_summaries(tmp_path):
+    """A pass must not demote the nodes a pass wrote."""
+    b = _brain(tmp_path)
+    _node(b, "summary", status="active", days_old=90, tags=[SUMMARY_TAG])
+
+    res = lifecycle(b, stale_days=30)
+
+    assert res["staled"] == 0
+    assert {n.id: n.status for n in b.read_nodes()}["summary"] == "active"
+
+
+def test_lifecycle_dry_run_writes_nothing(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "used", recalls=1)
+    _node(b, "old", days_old=90)
+
+    res = lifecycle(b, min_recall=1, min_degree=0, stale_days=30, dry_run=True)
+
+    assert res["promoted"] == 1 and res["staled"] == 1 and res["dry_run"] is True
+    status = {n.id: n.status for n in b.read_nodes()}
+    assert status["used"] == "probation" and status["old"] == "probation"
+
+
+def test_lifecycle_commits_once_with_the_gates_in_the_message(tmp_path, monkeypatch):
+    b = _brain(tmp_path)
+    _node(b, "used", recalls=1)
+    _node(b, "old", days_old=90)
+    calls = []
+    monkeypatch.setattr(b, "commit_and_push",
+                        lambda message, push=True: calls.append(message))
+
+    lifecycle(b, min_recall=1, min_degree=0, stale_days=30)
+
+    assert len(calls) == 1
+    assert "1 promoted" in calls[0] and "1 stale" in calls[0]
+    assert "recall >= 1" in calls[0] and "30d" in calls[0]
+
+
+def test_lifecycle_plan_matches_the_pass(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "used", recalls=1)
+
+    plan_ = lifecycle_plan(b, min_recall=1, min_degree=0, stale_days=30)
+    res = lifecycle(b, min_recall=1, min_degree=0, stale_days=30)
+
+    assert plan_["promote"] == ["used"]
+    assert res["promoted"] == len(plan_["promote"]) == 1
+    assert plan_["gates"]["min_recall"] == 1
+
+
+def test_plan_uses_the_same_gates_as_the_pass(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "used", recalls=1)
+    _node(b, "old", days_old=90)
+
+    reported = plan(b, min_recall=1, min_degree=0, stale_days=30, min_community=10)
+
+    assert len(reported.promotion_candidates) == 1
+    assert len(reported.decay_candidates) == 1
+
+
+def test_default_gates_are_the_measured_ones(tmp_path):
+    b = _brain(tmp_path)
+    _node(b, "recent", days_old=DECAY_DAYS - 1)
+
+    assert (PROMOTE_MIN_RECALL, PROMOTE_MIN_DEGREE) == (1, 2)
+    assert DECAY_MAX_DEGREE == 2
+    assert lifecycle(b)["staled"] == 0, "a corpus younger than 30 days decays nothing"
+
+
+def test_node_age_days_handles_bad_timestamps():
+    assert node_age_days(Node(text="x", created="not-a-date")) == 0.0

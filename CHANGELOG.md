@@ -7,6 +7,31 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The status lifecycle (`ig dream --lifecycle`)** — the dual buffer finally has
+  a driver, and its gates are derived from the live distribution instead of
+  copied from another system. Measured before choosing them: 5 nodes with
+  `recall_count > 0` (all degree >= 2), degree min 2 / p25 3 / median 5 / p75 7,
+  age median 11.9 d / oldest 26.7 d — so a gate of `recall >= 3` would have
+  promoted exactly 0 nodes, and a degree gate `>= 3` would have matched 99 % of
+  the brain.
+  - `probation → active` when **used** (`recall_count >= 1`) and **connected**
+    (degree >= 2, the corpus minimum = "not an island").
+  - `probation/active → stale` when unused, weakly connected (degree <= 2) and
+    old (>= 30 days of silence). **`stale` is a demotion, never a deletion**: the
+    node stays in the file, stays retrievable, leaves the promotion pool and
+    shows up in `ig status` / `ig report` / `brain_status`.
+  - `stale → active` again as soon as it is recalled: decay is reversible.
+  - A pass never re-grades its own output (distillation summaries are excluded).
+  - Gates are flags (`--min-recall`, `--min-degree`, `--stale-days`,
+    `--max-degree`), `ig dream` reports the candidates under any gate, and the
+    pass is one commit with the gates in the message.
+  - New status value `stale` (`VALID_STATUS`), golden case
+    `roadmap-dream-lifecycle`.
+- **The dream pass rides the autonomous cycle** (`tools/ig_cycle.py`):
+  `ig dream --refresh --distill --lifecycle` runs after the review and report
+  steps — deterministic, never destructive, one commit per step, and a failure
+  never fails the cycle (same rule as the report step). `--distill` only writes
+  what is new, so later cycles add nothing until the topology changes.
 - **Agent memory (`ig mcp --write`)** — the write half of the MCP surface, and
   the last piece of the memory loop: an assistant can now leave something in the
   brain, not only read it.

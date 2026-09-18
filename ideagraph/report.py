@@ -353,12 +353,15 @@ def render_report(brain: Brain, **opts) -> str:
     statuses = h["statuses"]
     prob = statuses.get("probation", 0)
     act = statuses.get("active", 0)
+    stale = statuses.get("stale", 0)
     nd = h.get("near_dup_pairs")
     nd_txt = f", {nd} near-dup pairs" if nd is not None else ""
     lines.append(f"orphans {h['orphans']} / islands {h['islands']} / "
                  f"weak {h['weak']}{nd_txt} → ig status / ig near-dup")
-    lines.append(f"{prob} probation / {act} active — consolidate() has never "
-                 "run against this brain; the dual buffer is inert")
+    lines.append(f"{prob} probation / {act} active / {stale} stale — the status "
+                 "lifecycle is driven by `ig dream --lifecycle`: used + connected "
+                 "promotes, unused + weakly connected + old demotes to stale "
+                 "(a demotion, never a deletion)")
     if data.get("coverage"):
         c = data["coverage"]
         lines.append("")

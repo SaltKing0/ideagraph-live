@@ -479,6 +479,25 @@ def report(results: list[EvalResult]) -> tuple[int, list[EvalResult]]:
 # Golden set — regression on every engine change (MUST be green)
 # ---------------------------------------------------------------------------
 
+def _dream_lifecycle() -> Callable[[BrainEngine], None]:
+    """Test action: the lifecycle pass under the case's gates."""
+    def action(engine: BrainEngine) -> None:
+        from .dream import lifecycle
+        lifecycle(engine.brain, min_recall=1, min_degree=2, stale_days=0,
+                  max_degree=2)
+    return action
+
+
+def _record_recall(query: str, texts: list[str]) -> Callable[[BrainEngine], None]:
+    """Test action: record a recall of the given nodes (the promotion signal)."""
+    def action(engine: BrainEngine) -> None:
+        from .recall import record
+        ids = [n.id for n in engine.brain.read_nodes()
+               if n.text.strip() in {t.strip() for t in texts}]
+        record(engine.brain, query, ids)
+    return action
+
+
 def _agent_remember(text: str, relation_target: str | None = None) -> Callable[[BrainEngine], None]:
     """Test action: an agent writes a note (Welle C write path)."""
     def action(engine: BrainEngine) -> None:
@@ -1042,6 +1061,37 @@ GOLDEN_SET: list[EvalTask] = [
             node_status={"omega psi chi phi": "tombstone"},
             # the agent-declared relation carries agent provenance
             min_edges_by_origin={"agent": 1},
+        ),
+    ),
+    # Welle B/2 (2026-09-18): the status lifecycle — promotion and decay driven by
+    # the recall signal. Gates are data-derived (see ideagraph/dream.py): the
+    # case pins them explicitly so it stays readable.
+    EvalTask(
+        id="roadmap-dream-lifecycle",
+        name="Lifecycle pass promotes what is used, demotes what is not, deletes nothing",
+        ingests=[
+            ("alpha beta gamma delta", {}),
+            ("omega psi chi phi", {}),
+            ("kappa lambda my tau", {}),
+        ],
+        actions=[
+            _link_same_as("alpha beta gamma delta", "omega psi chi phi"),
+            _link_same_as("alpha beta gamma delta", "kappa lambda my tau"),
+            # alpha (degree 2) and kappa (degree 1) are recalled; omega is not
+            _record_recall("what is used", ["alpha beta gamma delta", "kappa lambda my tau"]),
+            _dream_refresh,            # folds the ledger into recall_count
+            # stale_days=0 so the decay gate can fire on a fresh fixture — the
+            # live default is 30 days (a month of silence).
+            _dream_lifecycle(),
+        ],
+        oracle=EvalOracle(
+            # nothing is ever deleted, not even a demoted node
+            node_count=3,
+            node_status={
+                "alpha beta gamma delta": "active",     # used + connected
+                "omega psi chi phi": "stale",           # unused + weak + old
+                "kappa lambda my tau": "probation",     # used, but not connected
+            },
         ),
     ),
 ]

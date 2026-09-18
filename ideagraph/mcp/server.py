@@ -233,7 +233,7 @@ def brain_status() -> dict:
             "orphans": len(conn.orphans), "islands": len(conn.islands),
             "weak": len(conn.weak), "pending_edges": pending,
             "status": {k: counts.get(k, 0)
-                       for k in ("active", "probation", "tombstone")},
+                       for k in ("active", "probation", "stale", "tombstone")},
             "brain_path_basename": os.path.basename(brain_p.rstrip("/"))}
 
 

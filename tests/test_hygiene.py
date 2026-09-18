@@ -34,7 +34,10 @@ def test_node_status_roundtrip():
 
 
 def test_valid_status():
-    assert VALID_STATUS == ("probation", "active", "tombstone")
+    # `stale` (Welle B/2) is the demotion target of `ig dream --lifecycle`:
+    # a node that is unused, weakly connected and old. It stays a valid status
+    # (never a tombstone) so the node remains in the file and in search.
+    assert VALID_STATUS == ("probation", "active", "stale", "tombstone")
 
 
 def test_ingest_creates_probation_node(tmp_path):

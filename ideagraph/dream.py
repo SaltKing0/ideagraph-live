@@ -17,22 +17,25 @@ nothing happens implicitly:
                  `summarizer=` / `--llm` swaps in a model). Marked
                  `origin="consolidator"` so the next pass can tell what a pass
                  wrote.
+    lifecycle()— promotion and decay from the recall signal: probation → active
+                 (used and connected), probation/active → stale (unused, weakly
+                 connected, old), stale → active again (used once more). Never
+                 destructive: `stale` is a demotion, the node stays in the file.
 
 Reference points (both are the same shape): OpenClaw's dreaming (light/REM/deep,
 promotion only through gates, consolidation turn that merges duplicates and
 retires superseded entries) and the Hermes curator (deterministic transitions
 that never delete, pinned/cron-referenced entries protected, LLM consolidation
-OFF by default). Measured on the live brain before building this: recall-gated
-promotion had 0 eligible nodes, a degree gate >= 3 matched 99 % of nodes, and the
-corpus was 27 days old — so promotion/decay gates are NOT part of this pass yet;
-they wait for a real recall distribution. The merge axis (97 pairs in the review
-band) is a REVIEW list, not an auto-merge: the top pairs are demonstrably
-related-but-distinct.
+OFF by default). The gates are DERIVED FROM THE LIVE DISTRIBUTION, not copied
+from those systems — see `lifecycle_plan` for the measurement behind each
+number. The merge axis (97 pairs in the review band) is a REVIEW list, not an
+auto-merge: the top pairs are demonstrably related-but-distinct.
 """
 
 from __future__ import annotations
 
 import collections
+import datetime
 import hashlib
 import json
 import pathlib
@@ -44,6 +47,20 @@ from .communities import analyze_communities
 from .hygiene import connectivity, near_dup_pairs
 from .intent import INTENT_KINDS
 from .similarity import cosine
+
+# --- Lifecycle gates (measured 2026-09-18 on the live brain, not guessed) -----
+# recall distribution: 5 nodes with recall_count > 0, all of them degree >= 2;
+# degree: min 2 / p25 3 / median 5 / p75 7; age: median 11.9 d, oldest 26.7 d.
+# So: "used at least once AND connected" is the honest promotion bar at this
+# size (a gate of recall >= 3 would have promoted exactly 0 nodes), the corpus
+# minimum degree 2 means "not an island", 30 days is a month of silence, and
+# degree <= 2 is the weakest tail (24 nodes). Decay cannot fire before the
+# corpus is 30 days old — that is the honest outcome, not a reason to lower it.
+PROMOTE_MIN_RECALL = 1
+PROMOTE_MIN_DEGREE = 2
+DECAY_DAYS = 30
+DECAY_MAX_DEGREE = 2
+STALE_STATUS = "stale"
 
 # Similarity kinds are re-derived from the stored cosine with the band rule the
 # suggester uses (`suggester.py`): >= 0.75 same topic, below that builds-on.
@@ -88,35 +105,114 @@ class DreamPlan:
         return "\n".join(lines)
 
 
-def plan(brain: Brain, *, min_recall: int = 3, min_degree: int = 5,
-         stale_days: int = 30, min_community: int = DREAM_MIN_COMMUNITY,
-         merge_band: tuple[float, float] = (0.78, 0.92)) -> DreamPlan:
-    """Eligibility report for every axis. Read-only."""
+def node_age_days(node: Node, now: "datetime.datetime | None" = None) -> float:
+    """Age in days from `created`; 0.0 when the timestamp is unparseable."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    try:
+        t = datetime.datetime.fromisoformat((node.created or "").replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return (now - t).total_seconds() / 86400
+
+
+def _live_graph(brain: Brain) -> tuple[dict[str, Node], collections.Counter, list[Edge]]:
+    """Live nodes (no tombstones) + degree over live edges + those edges."""
     nodes = {n.id: n for n in brain.read_nodes() if n.status != "tombstone"}
     edges = [e for e in brain.read_edges(include_rejected=True)
              if not e.pending and not e.rejected and e.valid_to is None]
-    degree = collections.Counter()
+    degree: collections.Counter = collections.Counter()
     for e in edges:
         degree[e.source] += 1
         degree[e.target] += 1
+    return nodes, degree, edges
 
-    promotion = [nid for nid, n in nodes.items()
-                 if getattr(n, "recall_count", 0) >= min_recall
-                 and degree.get(nid, 0) >= min_degree]
-    import datetime
+
+def lifecycle_plan(brain: Brain, *, min_recall: int = PROMOTE_MIN_RECALL,
+                   min_degree: int = PROMOTE_MIN_DEGREE,
+                   stale_days: int = DECAY_DAYS,
+                   max_degree: int = DECAY_MAX_DEGREE) -> dict:
+    """Who the lifecycle pass would touch under these gates. Read-only.
+
+    Gates are data-derived (measured 2026-09-18 on the live brain), not copied
+    from another system: `min_recall=1` because the ledger is young and "used
+    once and connected" is the honest bar at this size; `min_degree=2` is the
+    corpus minimum (every live node has >= 2 edges, so it means "not an island");
+    `stale_days=30` is a month of silence; `max_degree=2` is the weakest tail.
+    """
+    nodes, degree, _ = _live_graph(brain)
+    summaries = _summary_ids(brain)
     now = datetime.datetime.now(datetime.timezone.utc)
 
-    def age_days(node: Node) -> float:
-        try:
-            t = datetime.datetime.fromisoformat((node.created or "").replace("Z", "+00:00"))
-        except ValueError:
-            return 0.0
-        return (now - t).total_seconds() / 86400
+    def used(nid: str) -> bool:
+        return getattr(nodes[nid], "recall_count", 0) >= min_recall
 
-    decay = [nid for nid, n in nodes.items()
-             if getattr(n, "recall_count", 0) == 0
-             and degree.get(nid, 0) <= 2
-             and age_days(n) >= stale_days]
+    promote, revive, decay = [], [], []
+    for nid, n in nodes.items():
+        if nid in summaries:
+            continue          # derived nodes: a pass never re-grades its own output
+        deg = degree.get(nid, 0)
+        if n.status == "probation" and used(nid) and deg >= min_degree:
+            promote.append(nid)
+        elif n.status == STALE_STATUS and used(nid) and deg >= min_degree:
+            revive.append(nid)   # decay is reversible: being used again revives
+        elif (n.status in ("probation", "active")
+              and getattr(n, "recall_count", 0) == 0
+              and deg <= max_degree
+              and node_age_days(n, now) >= stale_days):
+            decay.append(nid)
+    return {"promote": promote, "revive": revive, "decay": decay,
+            "gates": {"min_recall": min_recall, "min_degree": min_degree,
+                      "stale_days": stale_days, "max_degree": max_degree}}
+
+
+def lifecycle(brain: Brain, *, min_recall: int = PROMOTE_MIN_RECALL,
+              min_degree: int = PROMOTE_MIN_DEGREE, stale_days: int = DECAY_DAYS,
+              max_degree: int = DECAY_MAX_DEGREE, dry_run: bool = False,
+              commit: bool = True) -> dict:
+    """Promotion and decay: the status lifecycle, one commit, never destructive.
+
+    ROADMAP_CASE `roadmap-dream-lifecycle`.
+
+    probation → active (used and connected), active/probation → stale (unused,
+    weakly connected, old), stale → active again (used once more). Nothing is
+    deleted and nothing leaves the file: `stale` is a demotion, not a removal —
+    it takes the node out of the promotion pool and marks it for the report.
+    """
+    plan_ = lifecycle_plan(brain, min_recall=min_recall, min_degree=min_degree,
+                           stale_days=stale_days, max_degree=max_degree)
+    promote, revive, decay = plan_["promote"], plan_["revive"], plan_["decay"]
+
+    if not dry_run and (promote or revive or decay):
+        nodes = {n.id: n for n in brain.read_nodes()}
+        for nid in promote + revive:
+            nodes[nid].status = "active"        # used + connected = consolidated
+            brain.write_node(nodes[nid])
+        for nid in decay:
+            nodes[nid].status = STALE_STATUS    # demotion, never a removal
+            brain.write_node(nodes[nid])
+        brain.rebuild_index()
+        if commit:
+            brain.commit_and_push(
+                f"dream lifecycle: {len(promote)} promoted, {len(revive)} revived, "
+                f"{len(decay)} stale (recall >= {min_recall} and degree >= "
+                f"{min_degree}; unused, degree <= {max_degree}, age >= {stale_days}d)")
+
+    return {"promoted": len(promote), "revived": len(revive), "staled": len(decay),
+            "candidates": {"promote": len(promote), "revive": len(revive),
+                           "decay": len(decay)},
+            "dry_run": dry_run}
+
+
+def plan(brain: Brain, *, min_recall: int = PROMOTE_MIN_RECALL,
+         min_degree: int = PROMOTE_MIN_DEGREE, stale_days: int = DECAY_DAYS,
+         min_community: int = DREAM_MIN_COMMUNITY,
+         merge_band: tuple[float, float] = (0.78, 0.92)) -> DreamPlan:
+    """Eligibility report for every axis. Read-only."""
+    nodes, degree, edges = _live_graph(brain)
+    life = lifecycle_plan(brain, min_recall=min_recall, min_degree=min_degree,
+                          stale_days=stale_days)
+    promotion = life["promote"] + life["revive"]
+    decay = life["decay"]
 
     merges = [(f"{nodes[p.a].text.split(chr(10))[0][:46]}"
                if p.a in nodes else p.a,

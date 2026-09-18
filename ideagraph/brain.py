@@ -30,7 +30,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-VALID_STATUS = ("probation", "active", "tombstone")
+VALID_STATUS = ("probation", "active", "stale", "tombstone")
 
 
 def _atomic_write(path: Path, content: str) -> None:

@@ -640,9 +640,14 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
     community (extractive by default; `--llm` needs IG_DREAM_LLM_CMD, a shell
     command that reads the digest on stdin and prints the summary).
     """
-    from .dream import DREAM_MAX_DISTILL, DREAM_MIN_COMMUNITY, distill, plan, refresh
+    from .dream import (DECAY_DAYS, DECAY_MAX_DEGREE, DREAM_MAX_DISTILL,
+                        DREAM_MIN_COMMUNITY, PROMOTE_MIN_DEGREE,
+                        PROMOTE_MIN_RECALL, distill, lifecycle, plan, refresh)
     do_refresh, do_distill, dry_run, as_json = False, False, False, False
-    min_size, limit, use_llm = DREAM_MIN_COMMUNITY, DREAM_MAX_DISTILL, False
+    do_life, use_llm = False, False
+    min_size, limit = DREAM_MIN_COMMUNITY, DREAM_MAX_DISTILL
+    min_recall, min_degree = PROMOTE_MIN_RECALL, PROMOTE_MIN_DEGREE
+    stale_days, max_degree = DECAY_DAYS, DECAY_MAX_DEGREE
     i = 0
     while i < len(args):
         a = args[i]
@@ -650,13 +655,16 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
             do_refresh, i = True, i + 1
         elif a == "--distill":
             do_distill, i = True, i + 1
+        elif a == "--lifecycle":
+            do_life, i = True, i + 1
         elif a == "--dry-run":
             dry_run, i = True, i + 1
         elif a == "--json":
             as_json, i = True, i + 1
         elif a == "--llm":
             use_llm, i = True, i + 1
-        elif a in ("--min-size", "--limit") and i + 1 < len(args):
+        elif a in ("--min-size", "--limit", "--min-recall", "--min-degree",
+                   "--stale-days", "--max-degree") and i + 1 < len(args):
             try:
                 value = int(args[i + 1])
             except ValueError:
@@ -664,8 +672,16 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
                 sys.exit(1)
             if a == "--min-size":
                 min_size = value
-            else:
+            elif a == "--limit":
                 limit = value
+            elif a == "--min-recall":
+                min_recall = value
+            elif a == "--min-degree":
+                min_degree = value
+            elif a == "--stale-days":
+                stale_days = value
+            else:
+                max_degree = value
             i += 2
         else:
             print(f"Unknown option for dream: {a!r}")
@@ -673,8 +689,9 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
 
     summarizer = _dream_summarizer() if use_llm else None
 
-    if not do_refresh and not do_distill:
-        result = plan(engine.brain, min_community=min_size)
+    if not do_refresh and not do_distill and not do_life:
+        result = plan(engine.brain, min_recall=min_recall, min_degree=min_degree,
+                      stale_days=stale_days, min_community=min_size)
         if as_json:
             import json as _json
             print(_json.dumps({
@@ -687,7 +704,7 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
             }, ensure_ascii=False, indent=2))
             return
         print(result.render())
-        print("\nNothing written. Use --refresh / --distill to run a pass.")
+        print("\nNothing written. Use --refresh / --distill / --lifecycle to run a pass.")
         return
 
     out = {}
@@ -696,6 +713,10 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
     if do_distill:
         out["distill"] = distill(engine.brain, min_size=min_size, limit=limit,
                                  summarizer=summarizer, dry_run=dry_run)
+    if do_life:
+        out["lifecycle"] = lifecycle(engine.brain, min_recall=min_recall,
+                                     min_degree=min_degree, stale_days=stale_days,
+                                     max_degree=max_degree, dry_run=dry_run)
     if as_json:
         import json as _json
         print(_json.dumps(out, ensure_ascii=False, indent=2))
@@ -712,6 +733,13 @@ def cmd_dream(engine: BrainEngine, args: list[str]) -> None:
               f"{d['edges']} consolidator edge(s)"
               + (" (extractive)" if not d["used_llm"] else " (llm)")
               + (" (dry run)" if d["dry_run"] else ""))
+    if "lifecycle" in out:
+        life = out["lifecycle"]
+        c = life["candidates"]
+        print(f"lifecycle: {life['promoted']} promoted, {life['revived']} revived, "
+              f"{life['staled']} staled (candidates: {c['promote']} to promote, "
+              f"{c['revive']} to revive, {c['decay']} to decay)"
+              + (" (dry run)" if life["dry_run"] else ""))
 
 
 def _dream_summarizer():

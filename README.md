@@ -139,6 +139,10 @@ ig dream --refresh                 # deterministic maintenance, one commit
 ig dream --distill [--llm]         # one abstraction node per community
                                    # (extractive by default; --llm needs
                                    #  IG_DREAM_LLM_CMD)
+ig dream --lifecycle               # promotion/decay from the recall signal:
+                                   # used + connected -> active, unused + weak +
+                                   # old -> stale (a demotion, never a deletion;
+                                   # gates are flags, see the section below)
 ig merge <survivor> <deletee>      # consolidate a near-duplicate pair
 ig mcp                             # read-only MCP server over stdio (AI assistants)
 ig mcp --write                     # + remember/recall/forget (agent memory, opt-in)
@@ -203,6 +207,24 @@ a cold clone does not dirty the private repo (`IG_MCP_CACHE_VECTORS=1` opts
 back in; measured cold-search cost: see CHANGELOG). `brain_status` returns the
 brain path basename only. Optional opt-in prompt snippet for your
 `CLAUDE.md`/`AGENTS.md`: `ideagraph/mcp/agent/instructions.md`.
+
+## Memory lifecycle (promotion and decay)
+
+`ig dream --lifecycle` is what makes the dual buffer mean something. The gates are
+**derived from your brain's measured distribution**, not from another project's
+numbers — `ig dream` (read-only) prints the candidates under any gate before you
+apply anything:
+
+| Transition | Gate | Default |
+|---|---|---|
+| `probation → active` | used **and** connected | `recall_count >= 1`, degree >= 2 |
+| `probation/active → stale` | unused, weak, old | `recall_count == 0`, degree <= 2, age >= 30 d |
+| `stale → active` | used again | same as promotion — decay is reversible |
+
+`stale` is a **demotion, never a deletion**: the node keeps its file, stays
+searchable, and leaves the promotion pool. `recall` (MCP write mode) and
+`ig search` feed the signal it reads. Override the gates with
+`--min-recall / --min-degree / --stale-days / --max-degree`.
 
 ## Configuration
 
