@@ -29,6 +29,9 @@ follows [SemVer](https://semver.org/spec/v2.0.0.html).
   `minUniqueQueries`). Golden case `roadmap-recall-tracking`.
 - `ig recall [--top N] [--aggregate] [--dry-run] [--json]` — recall statistics
   and the aggregation step.
+- `tools/backfill_origin.py` — one-time migration for brains written before this
+  release: infers `origin` per edge (intent kinds → `intent`, a stored cosine →
+  `suggester`, else `manual`), dry-run first, idempotent, one commit.
 
 ### Added
 - **`ig accept-pending`** — the review policy as a command: accepts pending
