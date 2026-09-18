@@ -253,9 +253,31 @@ Dedupe: near-duplicate ingests (cosine ≥ 0.92) merge into the existing node
 
 ## Status
 
-Core features, the hygiene loop, the topology/digest reports, the read-only MCP
-server, and the self-evolving pipeline are implemented; release `v0.5.3` is
-published — see [CHANGELOG.md](CHANGELOG.md).
+Core features, the hygiene loop, the topology/digest reports, the MCP server
+(read-only by default, `--write` for the agent memory path), the dream pass
+(maintenance, distillation, status lifecycle) and the self-evolving pipeline are
+implemented; release `v0.5.4` is published — see [CHANGELOG.md](CHANGELOG.md).
+
+### Known limitations
+
+- **The intent heuristics are marker-based, not semantic.** `contradicts` /
+  `supersedes` / `continues` edges come from marker words plus a similarity gate;
+  measured on real prose, **every** live intent edge created so far turned out to
+  be a false positive (168 created, all invalidated by hand — the marker usually
+  sits in an EXISTING node's descriptive text, not in the new one). Mitigations:
+  intent edges are born pending under `IDEAGRAPH_INTENT_PENDING=1`, the fan-out
+  cap (`ig accept-pending`, max 2 per source) stops mass-firing, and
+  `scripts/intent_edge_cleanup.py` triages a batch. Treat a live intent edge as a
+  claim to verify, not as a fact.
+- **Promotion/decay is a usage signal, so it measures who asked.** A node is
+  promoted for being recalled, not for being important; a young brain with few
+  searches promotes almost nothing, and decay (30 days of silence) cannot fire
+  before the corpus is that old.
+- **Distillation is extractive by default.** `--llm` needs `IG_DREAM_LLM_CMD`;
+  the summaries are structured evidence, not prose abstractions.
+- **`ig near-dup` flags related-but-distinct pairs.** The 0.78–0.92 band is a
+  review list; the top pairs on a mature brain are demonstrably distinct topics,
+  and nothing merges automatically.
 
 ## Open source / privacy
 
